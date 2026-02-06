@@ -1,0 +1,38 @@
+package com.meshmkt.meshtastic.ui.gemini.event;
+
+/**
+ * The interface for receiving real-time mesh events.
+ */
+public interface MeshtasticEventListener {
+
+    /**
+     * Fired when a text message is received from the mesh.
+     */
+    void onTextMessage(ChatMessageEvent event);
+
+    /**
+     * Fired when a node reports a new GPS location.
+     */
+    void onPositionUpdate(PositionUpdateEvent event);
+
+    /**
+     * Fired when battery or environment data arrives.
+     */
+    void onTelemetryUpdate(TelemetryUpdateEvent event);
+
+    /**
+     * Fired when a new node is discovered or updated (names/HW).
+     */
+    void onNodeDiscovery(NodeDiscoveryEvent event);
+
+    /**
+     * * Fired when a message acknowledgment (ACK) or error arrives. This allows
+     * you to track if your sent messages were successful.
+     */
+    void onMessageStatusUpdate(MessageStatusEvent event);
+
+    /**
+     * Fired when the radio connection status changes.
+     */
+    void onConnectionStatusChanged(boolean connected, String message);
+}
