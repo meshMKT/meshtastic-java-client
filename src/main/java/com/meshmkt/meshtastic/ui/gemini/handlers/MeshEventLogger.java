@@ -5,15 +5,17 @@ import com.meshmkt.meshtastic.ui.gemini.storage.NodeDatabase;
 import org.meshtastic.proto.MeshProtos;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import java.time.Instant;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
+import org.meshtastic.proto.Portnums.PortNum;
 
-/**
- * A generalized logging handler that records significant mesh events (Messages,
- * GPS updates, and Telemetry) to a dedicated SLF4J logger.
- */
 public class MeshEventLogger implements MeshtasticMessageHandler {
 
-    // This logger can be routed to its own file via SLF4J configuration
     private static final Logger eventLog = LoggerFactory.getLogger("MeshEvents");
+    private static final DateTimeFormatter TIME_FORMAT = DateTimeFormatter.ofPattern("HH:mm:ss.SSS")
+            .withZone(ZoneId.systemDefault());
+            
     private final NodeDatabase nodeDb;
 
     public MeshEventLogger(NodeDatabase nodeDb) {
@@ -22,19 +24,40 @@ public class MeshEventLogger implements MeshtasticMessageHandler {
 
     @Override
     public boolean canHandle(MeshProtos.FromRadio message) {
-        // We handle everything interesting coming from the mesh
-        return message.hasPacket() || message.hasNodeInfo();
+        return message.hasPacket() || message.hasNodeInfo() || message.hasMyInfo();
     }
 
     @Override
     public boolean handle(MeshProtos.FromRadio message) {
-        if (message.hasNodeInfo()) {
-            eventLog.info("NODE_SYNC: {} joined/updated", nodeDb.getDisplayName(message.getNodeInfo().getNum()));
-        } else if (message.hasPacket()) {
-            int from = message.getPacket().getFrom();
-            int port = message.getPacket().getDecoded().getPortnumValue();
-            eventLog.debug("PACKET: From={} Port={}", nodeDb.getDisplayName(from), port);
+        String pcTime = TIME_FORMAT.format(Instant.now());
+
+        if (message.hasMyInfo()) {
+            eventLog.info("[{}] MY_INFO: Local ID is !{}", pcTime, Integer.toHexString(message.getMyInfo().getMyNodeNum()));
+        } 
+        else if (message.hasNodeInfo()) {
+            MeshProtos.NodeInfo info = message.getNodeInfo();
+            eventLog.info("[{}] NODE_SYNC: !{} ({}) [SyncStatus: {}]", 
+                pcTime, 
+                Integer.toHexString(info.getNum()), 
+                nodeDb.getDisplayName(info.getNum()),
+                nodeDb.isSyncComplete() ? "LIVE" : "SYNCING");
+        } 
+        else if (message.hasPacket()) {
+            MeshProtos.MeshPacket p = message.getPacket();
+            String name = nodeDb.getDisplayName(p.getFrom());
+            PortNum port = p.getDecoded().getPortnum();
+            
+            
+            // Convert radio rxTime (seconds) to human readable
+            String radioTime = (p.getRxTime() == 0) ? "NONE" : 
+                TIME_FORMAT.format(Instant.ofEpochSecond(p.getRxTime()));
+
+            eventLog.info("[{}] PACKET: From={} Port={} | RadioTime={} | SyncComplete={}", 
+                pcTime, name, port, radioTime, nodeDb.isSyncComplete());
+            
+            // Log Signal metadata specifically
+            eventLog.debug("  └─ Signal: SNR={} RSSI={}", p.getRxSnr(), p.getRxRssi());
         }
-        return false; // Always allow other handlers to see the data
+        return false; // Allow other handlers to process the same message
     }
 }

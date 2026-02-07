@@ -17,6 +17,9 @@ import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.concurrent.*;
 import java.util.function.Consumer;
+import org.meshtastic.proto.MeshProtos.Data;
+import org.meshtastic.proto.MeshProtos.MeshPacket;
+import org.meshtastic.proto.Portnums.PortNum;
 
 /**
  * <h2>Meshtastic Client</h2>
@@ -72,13 +75,13 @@ public class MeshtasticClient {
     }
 
     private void initializeHandlers() {
-        
+
+        // This needs to be first
+        dispatcher.registerHandler(new SignalHandler(nodeDb));
+
         // 1. Identity & Database Handlers
         dispatcher.registerHandler(new MyInfoHandler(nodeDb));
         dispatcher.registerHandler(new NodeInfoHandler(nodeDb, internalDispatcher));
-
-        // 2. Metadata & Signal
-//        dispatcher.registerHandler(new SignalHandler(nodeDb));
 
         // 3. Functional Handlers (Logic)
         dispatcher.registerHandler(new TextMessageHandler(nodeDb, internalDispatcher));
@@ -91,6 +94,14 @@ public class MeshtasticClient {
         dispatcher.registerHandler(new MeshEventLogger(nodeDb));
     }
 
+    /**
+     * Configures the data pipeline from the transport layer to the dispatcher.
+     * <p>
+     * This refactored version monitors the incoming Protobuf stream for
+     * Metadata or MyInfo packets, which signal the end of the initial radio
+     * memory dump.
+     * </p>
+     */
     private void setupPipeline() {
         /*
          * PIPELINE: Transport -> Raw Bytes -> Protobuf Parser -> Dispatcher
@@ -98,6 +109,14 @@ public class MeshtasticClient {
         transport.addParsedPacketConsumer((byte[] packet) -> {
             try {
                 FromRadio parsedProto = FromRadio.parseFrom(packet);
+
+                // Only flip to LIVE once we see an actual packet (traffic)
+                // FromRadio.hasPacket() is FALSE for NodeInfo (the database dump)
+                if (!nodeDb.isSyncComplete() && parsedProto.hasPacket()) {
+                    log.info(">>> Real-time traffic detected. Ending sync and switching to LIVE mode.");
+                    nodeDb.setSyncComplete(true);
+                }
+
                 dispatcher.enqueue(parsedProto);
             } catch (InvalidProtocolBufferException ex) {
                 log.error("Failed to parse FromRadio Protobuf", ex);
@@ -110,6 +129,9 @@ public class MeshtasticClient {
                 connected = true;
                 log.info(">>> Transport Connected. Synchronizing with Radio...");
 
+                // Start in SYNC mode (historical data)
+                nodeDb.setSyncComplete(false);
+
                 // Handshake: Request full config
                 int syncId = (int) (System.currentTimeMillis() / 1000);
                 sendToRadio(ToRadio.newBuilder().setWantConfigId(syncId).build());
@@ -120,6 +142,8 @@ public class MeshtasticClient {
             @Override
             public void onDisconnected(String reason) {
                 connected = false;
+                // Reset sync state for next connection
+                nodeDb.setSyncComplete(false);
                 log.warn(">>> Transport Disconnected: {}", reason);
                 notifyListeners(l -> l.onConnectionStatusChanged(false, reason));
             }
@@ -176,6 +200,76 @@ public class MeshtasticClient {
     }
 
     // --- Public API ---
+    /**
+     * Manually requests the radio to re-send or fetch the NodeInfo (User) data
+     * for a specific node ID.
+     *
+     * * @param nodeId The 32-bit unsigned integer ID of the node to refresh.
+     */
+    public void refreshNodeInfo(int nodeId) {
+        log.info(">>> Manually requesting SINGLE node refresh: !{:08x}", nodeId);
+
+        // 1. Create the DATA payload specifying this is a NodeInfo request
+        org.meshtastic.proto.MeshProtos.Data payload = org.meshtastic.proto.MeshProtos.Data.newBuilder()
+                .setPortnum(org.meshtastic.proto.Portnums.PortNum.NODEINFO_APP)
+                .build();
+
+        // 2. Wrap it in a MeshPacket targeted at the specific ID
+        org.meshtastic.proto.MeshProtos.MeshPacket pk = org.meshtastic.proto.MeshProtos.MeshPacket.newBuilder()
+                .setTo(nodeId)
+                .setDecoded(payload) // This is where the payload goes
+                .setWantAck(true)
+                .build();
+
+        // 3. Send via ToRadio
+        org.meshtastic.proto.MeshProtos.ToRadio request = org.meshtastic.proto.MeshProtos.ToRadio.newBuilder()
+                .setPacket(pk)
+                .build();
+
+        sendToRadio(request);
+    }
+
+    /**
+     * Requests the latest Position (GPS) from a specific node.
+     */
+    public void requestPosition(int nodeId) {
+        log.info(">>> Requesting POSITION from node: !{:08x}", nodeId);
+        sendRequest(nodeId, org.meshtastic.proto.Portnums.PortNum.POSITION_APP);
+    }
+
+    /**
+     * Requests Telemetry (Battery, Voltage, etc.) from a specific node.
+     */
+    public void requestTelemetry(int nodeId) {
+        log.info(">>> Requesting TELEMETRY from node: !{:08x}", nodeId);
+        sendRequest(nodeId, org.meshtastic.proto.Portnums.PortNum.TELEMETRY_APP);
+    }
+
+    /**
+     * Private helper to wrap the logic for targeted requests.
+     */
+    private void sendRequest(int nodeId, org.meshtastic.proto.Portnums.PortNum port) {
+        // 1. Create empty data payload for the specific port
+        org.meshtastic.proto.MeshProtos.Data payload = org.meshtastic.proto.MeshProtos.Data.newBuilder()
+                .setPortnum(port)
+                .build();
+
+        // 2. Wrap in MeshPacket
+        org.meshtastic.proto.MeshProtos.MeshPacket pk = org.meshtastic.proto.MeshProtos.MeshPacket.newBuilder()
+                .setTo(nodeId)
+                .setDecoded(payload)
+                .setWantAck(true)
+                .build();
+
+        // 3. Send to Radio
+         // 3. Send via ToRadio
+        org.meshtastic.proto.MeshProtos.ToRadio request = org.meshtastic.proto.MeshProtos.ToRadio.newBuilder()
+                .setPacket(pk)
+                .build();
+        
+        sendToRadio(request);
+    }
+
     public void addEventListener(MeshtasticEventListener listener) {
         listeners.add(listener);
     }

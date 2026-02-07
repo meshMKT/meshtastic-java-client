@@ -7,10 +7,13 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * A "Catch-All" handler that updates signal metadata for every incoming packet,
- * regardless of the application type (Text, Position, etc).
- * 
- * Technically optional since the AbstractNodeDatabase updates signals
+ * A "Catch-All" handler that ensures signal metadata and node activity are 
+ * tracked for every single packet seen on the mesh, regardless of the 
+ * application type (Text, Position, Telemetry, etc).
+ * <p>
+ * This handler is designed to be transparent (returns false), allowing 
+ * subsequent specialized handlers to process the packet payload.
+ * </p>
  */
 public class SignalHandler implements MeshtasticMessageHandler {
 
@@ -23,6 +26,7 @@ public class SignalHandler implements MeshtasticMessageHandler {
 
     @Override
     public boolean canHandle(MeshProtos.FromRadio message) {
+        // We want to see every packet that has a sender ID and signal data
         return message.hasPacket();
     }
 
@@ -30,11 +34,12 @@ public class SignalHandler implements MeshtasticMessageHandler {
     public boolean handle(MeshProtos.FromRadio message) {
         MeshProtos.MeshPacket packet = message.getPacket();
         
-        // We update the DB for every packet heard. 
-        // Our new AbstractNodeDatabase logic will handle the timestamping.
+        // Update the signal strength and signal-to-noise ratio.
+        // The NodeDatabase implementation will handle the dual-timestamping
+        // based on the current syncComplete state.
         nodeDb.updateSignal(packet.getFrom(), packet.getRxSnr(), packet.getRxRssi());
         
-
-        return false; // Always return false so specific handlers (Text, etc) can still run
+        // Return false so the Dispatcher continues to the next handler in the chain
+        return false; 
     }
 }

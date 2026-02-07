@@ -9,7 +9,12 @@ import org.meshtastic.proto.Portnums;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+/**
+ * Handles incoming POSITION_APP packets. This refactored version delegates
+ * timing and signal logic to the Core Database.
+ */
 public class PositionHandler implements MeshtasticMessageHandler {
+
     private static final Logger log = LoggerFactory.getLogger(PositionHandler.class);
     private final NodeDatabase nodeDb;
     private final MeshEventDispatcher dispatcher;
@@ -32,7 +37,7 @@ public class PositionHandler implements MeshtasticMessageHandler {
             MeshProtos.MeshPacket packet = message.getPacket();
             MeshProtos.Position pos = MeshProtos.Position.parseFrom(packet.getDecoded().getPayload());
 
-            // NEW: Pass the whole packet context. DB extracts ID and SNR automatically.
+            // Core database now extracts Signal and assigns session-aware Timestamps
             nodeDb.updatePosition(packet, pos);
 
             dispatcher.onPositionUpdate(PositionUpdateEvent.builder()

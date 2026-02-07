@@ -6,11 +6,10 @@ import org.meshtastic.proto.MeshProtos;
 import org.meshtastic.proto.Portnums;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
 import java.nio.charset.StandardCharsets;
 
 /**
- * Dedicated logger for Chat messages using SLF4J.
+ * Dedicated logger for Chat messages.
  */
 public class MessageLoggingHandler implements MeshtasticMessageHandler {
 
@@ -33,9 +32,7 @@ public class MessageLoggingHandler implements MeshtasticMessageHandler {
         String text = packet.getDecoded().getPayload().toString(StandardCharsets.UTF_8);
         String from = nodeDb.getDisplayName(packet.getFrom());
 
-        // Log at INFO level so it shows up in standard logs
         log.info("[CHAT] {}: {}", from, text);
-
         return false;
     }
 }

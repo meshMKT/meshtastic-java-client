@@ -77,5 +77,6 @@ public interface NodeDatabase {
     void removeObserver(NodeDatabaseObserver observer);
     
     void setSyncComplete(boolean complete);
+    boolean isSyncComplete();
 
 }

@@ -11,6 +11,7 @@ import java.util.Collection;
  * A technical status strip providing real-time mesh statistics.
  */
 public class MeshStatusBar extends JPanel implements NodeDatabaseObserver {
+
     private final NodeDatabase nodeDb;
     private final JLabel statusLabel;
 
@@ -30,42 +31,64 @@ public class MeshStatusBar extends JPanel implements NodeDatabaseObserver {
 
     private void updateCounts() {
         Collection<MeshNode> allNodes = nodeDb.getAllNodes();
-        int live = 0, recent = 0, cached = 0;
+        int live = 0, recent = 0, offline = 0, cached = 0;
         boolean localActive = false;
 
         for (MeshNode node : allNodes) {
-            // If it's the local node, it's always considered LIVE and we track its presence
+            // 1. Local Radio Check
             if (node.isSelf()) {
-                live++;
                 localActive = true;
+                live++; // include the local connection
                 continue;
             }
 
-            if (node.getLastSeen() <= 0) {
+            long lastLocal = node.getLastSeenLocal();
+
+            if (lastLocal <= 0) {
                 cached++;
             } else {
-                long seconds = (System.currentTimeMillis() - node.getLastSeen()) / 1000;
-                if (seconds < 60) live++;
-                else if (seconds < 900) recent++;
-                // Anything older than 15 mins effectively becomes "historical" until the next purge
-                else cached++; 
+                long seconds = (System.currentTimeMillis() - lastLocal) / 1000;
+
+                if (seconds < 900) {        // 15 Minutes
+                    live++;
+                } else if (seconds < 7200) { // 2 Hours
+                    recent++;
+                } else {
+                    offline++;
+                }
             }
         }
 
-        String radioStatus = localActive ? "<font color='#006600'>CONNECTED</font>" : "<font color='#cc0000'>DISCONNECTED</font>";
+        // 3. UI Presentation
+        String syncIndicator = "";
+        if (localActive && !nodeDb.isSyncComplete()) {
+            syncIndicator = " <font color='#666666'>[SYNCING...]</font>";
+        }
+
+        String radioStatus = localActive
+                ? "<font color='#006600'>CONNECTED</font>"
+                : "<font color='#cc0000'>DISCONNECTED</font>";
 
         String stats = String.format(
-            "<html>RADIO: %s | " +
-            "MESH: <font color='#006600'>%d LIVE</font> | " +
-            "<font color='#994400'>%d RECENT</font> | " +
-            "<font color='#555555'>%d CACHED</font> | " +
-            "TOTAL: %d</html>",
-            radioStatus, live, recent, cached, allNodes.size()
+                "<html>RADIO: %s%s | "
+                + "MESH: <font color='#008800'>%d LIVE</font> | "
+                + "<font color='#D2691E'>%d RECENT</font> | "
+                + "<font color='#444444'>%d OFFLINE</font> | "
+                + "<font color='#777777'>%d CACHED</font> | "
+                + "TOTAL: %d</html>",
+                radioStatus, syncIndicator, live, recent, offline, cached, allNodes.size()
         );
 
         SwingUtilities.invokeLater(() -> statusLabel.setText(stats));
     }
 
-    @Override public void onNodeUpdated(MeshNode node) { updateCounts(); }
-    @Override public void onNodesPurged() { updateCounts(); }
+    @Override
+    public void onNodeUpdated(MeshNode node) {
+        updateCounts();
+    }
+
+    @Override
+    public void onNodesPurged() {
+        updateCounts();
+    }
 }

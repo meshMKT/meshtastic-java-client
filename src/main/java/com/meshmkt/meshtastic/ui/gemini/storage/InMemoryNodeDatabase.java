@@ -9,111 +9,59 @@ import java.util.stream.Collectors;
 
 /**
  * A thread-safe, memory-backed implementation of the NodeDatabase.
- * * Uses internal NodeRecord objects for storage and produces immutable 
- * MeshNode snapshots for the UI.
+ * <p>
+ * This implementation stores internal {@code NodeRecord} objects and maps them
+ * to immutable {@link MeshNode} snapshots. It maintains the distinction between
+ * remote radio time and local system arrival time.
+ * </p>
  */
 public class InMemoryNodeDatabase extends AbstractNodeDatabase {
 
-    @Override
-    public void setSyncComplete(boolean complete) {
-        throw new UnsupportedOperationException("Not supported yet."); // Generated from nbfs://nbhost/SystemFileSystem/Templates/Classes/Code/GeneratedMethodBody
-    }
-
+    /**
+     * Internal mutable container for node data.
+     */
     @Data
     private static class NodeRecord {
+
         private MeshProtos.User user;
         private MeshProtos.Position position;
         private TelemetryProtos.DeviceMetrics metrics;
         private TelemetryProtos.EnvironmentMetrics envMetrics;
         private float snr;
         private int rssi;
-        private long lastSeen;
+        private long lastSeenRemote;
+        private long lastSeenLocal;
     }
 
     private final ConcurrentHashMap<Integer, NodeRecord> nodes = new ConcurrentHashMap<>();
-    
-    // Capture when the app actually started
-    private final long sessionStartTime = System.currentTimeMillis();
-    
-    private int localNodeId = -1;
-
-    // --- Internal Logic ---
-
-    /**
-     * Internal helper to update the record and notify observers.
-     */
-    private NodeRecord getOrUpdate(int id, long t) {
-        NodeRecord r = nodes.computeIfAbsent(id, k -> new NodeRecord());
-        r.setLastSeen(t);
-        return r;
-    }
-
-    // --- Storage Overrides (Called by Handlers) ---
 
     @Override
-    protected void storeUser(int id, MeshProtos.User u, long t) {
-        NodeRecord r = getOrUpdate(id, t);
-        r.setUser(u);
-        notifyNodeUpdated(mapToDto(id, r));
+    public void setLocalNodeId(int nodeId) {
+        this.localNodeId = nodeId;
     }
 
     @Override
-    protected void storePosition(int id, MeshProtos.Position p, long t) {
-        NodeRecord r = getOrUpdate(id, t);
-        r.setPosition(p);
-        notifyNodeUpdated(mapToDto(id, r));
+    public boolean isLocalNode(int nodeId) {
+        return nodeId == localNodeId;
     }
 
     @Override
-    protected void storeMetrics(int id, TelemetryProtos.DeviceMetrics m, long t) {
-        NodeRecord r = getOrUpdate(id, t);
-        r.setMetrics(m);
-        notifyNodeUpdated(mapToDto(id, r));
-    }
-
-    @Override
-    protected void storeEnvMetrics(int id, TelemetryProtos.EnvironmentMetrics e, long t) {
-        NodeRecord r = getOrUpdate(id, t);
-        r.setEnvMetrics(e);
-        notifyNodeUpdated(mapToDto(id, r));
-    }
-
-    @Override
-    public void updateSignal(int nodeId, float snr, int rssi) {
-        long now = System.currentTimeMillis();
-        NodeRecord r = getOrUpdate(nodeId, now);
-        r.setSnr(snr);
-        r.setRssi(rssi);
-        notifyNodeUpdated(mapToDto(nodeId, r));
-    }
-
-    // --- Identity & Meta ---
-
-    @Override
-    public void setLocalNodeId(int id) {
-        this.localNodeId = id;
-    }
-
-    @Override
-    public boolean isLocalNode(int id) {
-        return id != -1 && id == localNodeId;
-    }
-
-    @Override
-    public String getDisplayName(int id) {
-        NodeRecord r = nodes.get(id);
-        if (r != null && r.getUser() != null && !r.getUser().getLongName().isEmpty()) {
-            return r.getUser().getLongName();
+    public String getDisplayName(int nodeId) {
+        NodeRecord r = nodes.get(nodeId);
+        if (r != null && r.getUser() != null) {
+            String name = r.getUser().getLongName();
+            if (name != null && !name.trim().isEmpty()) {
+                return name;
+            }
         }
-        return String.format("!%08x", id);
+        // Return the standardized Hex ID so the core is never "Empty"
+        return String.format("!%08x", nodeId);
     }
 
-    // --- Retrieval (For UI) ---
-
     @Override
-    public MeshNode getNode(int id) {
-        NodeRecord r = nodes.get(id);
-        return (r == null) ? null : mapToDto(id, r);
+    public MeshNode getNode(int nodeId) {
+        NodeRecord r = nodes.get(nodeId);
+        return (r != null) ? mapToDto(nodeId, r) : null;
     }
 
     @Override
@@ -123,27 +71,103 @@ public class InMemoryNodeDatabase extends AbstractNodeDatabase {
                 .collect(Collectors.toUnmodifiableList());
     }
 
-    // --- Purge Logic ---
+    private NodeRecord getOrUpdate(int id, MeshProtos.MeshPacket p, long localTime) {
+        NodeRecord r = nodes.computeIfAbsent(id, k -> new NodeRecord());
+
+        // Only update Remote Time if the packet has a valid timestamp
+        if (p.getRxTime() != 0) {
+            r.setLastSeenRemote(p.getRxTime() * 1000L);
+        }
+
+        // CRITICAL: Only update local time if the NEW arrival is Live.
+        // Never overwrite a 'Live' timestamp with a '0' (Sync) timestamp.
+        if (localTime > 0) {
+            r.setLastSeenLocal(localTime);
+        }
+
+        return r;
+    }
 
     @Override
+    protected void storeUser(MeshProtos.User u, MeshProtos.MeshPacket p, long localTime) {
+        NodeRecord r = getOrUpdate(p.getFrom(), p, localTime);
+        r.setUser(u);
+        notifyNodeUpdated(mapToDto(p.getFrom(), r));
+    }
+
+    @Override
+    protected void storePosition(MeshProtos.Position pos, MeshProtos.MeshPacket p, long localTime) {
+        NodeRecord r = getOrUpdate(p.getFrom(), p, localTime);
+        r.setPosition(pos);
+        notifyNodeUpdated(mapToDto(p.getFrom(), r));
+    }
+
+    @Override
+    protected void storeMetrics(TelemetryProtos.DeviceMetrics m, MeshProtos.MeshPacket p, long localTime) {
+        NodeRecord r = getOrUpdate(p.getFrom(), p, localTime);
+        r.setMetrics(m);
+        notifyNodeUpdated(mapToDto(p.getFrom(), r));
+    }
+
+    @Override
+    protected void storeEnvMetrics(TelemetryProtos.EnvironmentMetrics e, MeshProtos.MeshPacket p, long localTime) {
+        NodeRecord r = getOrUpdate(p.getFrom(), p, localTime);
+        r.setEnvMetrics(e);
+        notifyNodeUpdated(mapToDto(p.getFrom(), r));
+    }
+
+    @Override
+    protected void storeSignal(int nodeId, float snr, int rssi, long localTime) {
+        NodeRecord r = nodes.computeIfAbsent(nodeId, k -> new NodeRecord());
+        r.setSnr(snr);
+        r.setRssi(rssi);
+
+        // Only update local time if the incoming packet is LIVE.
+        // This prevents the T-Deck from flipping back to RECENT during a sync.
+        if (localTime > 0) {
+            r.setLastSeenLocal(localTime);
+        }
+
+        notifyNodeUpdated(mapToDto(nodeId, r));
+    }
+
+//    @Override
+//    public void updateSignal(int nodeId, float snr, int rssi) {
+//        // IMPORTANT: We must use the same timing logic as the data packets
+//        long localTime = isSyncComplete() ? System.currentTimeMillis() : 0;
+//
+//        NodeRecord r = nodes.computeIfAbsent(nodeId, k -> new NodeRecord());
+//        r.setSnr(snr);
+//        r.setRssi(rssi);
+//        r.setLastSeenLocal(localTime); // This is what flips the UI to "LIVE"
+//
+//        notifyNodeUpdated(mapToDto(nodeId, r));
+//    }
+
+//    @Override
+//    public void updateSignal(int nodeId, float snr, int rssi) {
+//        NodeRecord r = nodes.computeIfAbsent(nodeId, k -> new NodeRecord());
+//        r.setSnr(snr);
+//        r.setRssi(rssi);
+//        notifyNodeUpdated(mapToDto(nodeId, r));
+//    }
+    @Override
     protected void performPurge(long cutoff) {
-        boolean removed = nodes.entrySet().removeIf(e -> e.getValue().getLastSeen() < cutoff);
+        // Use the most recent available timestamp for purge checks
+        boolean removed = nodes.entrySet().removeIf(e -> {
+            long lastSeen = Math.max(e.getValue().getLastSeenRemote(), e.getValue().getLastSeenLocal());
+            return lastSeen > 0 && lastSeen < cutoff;
+        });
+
         if (removed) {
-            notifyNodesPurged(); 
+            notifyNodesPurged();
         }
     }
 
-    // --- Mapping ---
-
+    /**
+     * Maps the internal mutable record to an immutable DTO for the Core API.
+     */
     private MeshNode mapToDto(int id, NodeRecord r) {
-        
-        long rawLastSeen = r.getLastSeen();
-    boolean isLocal = isLocalNode(id);
-
-    // If it's US, we use the real timestamp immediately.
-    // If it's a remote node, we apply the 60s sync grace period.
-    long uiLastSeen = (isLocal) ? rawLastSeen : getNormalizedLastSeen(rawLastSeen);
-    
         return MeshNode.builder()
                 .nodeId(id)
                 .longName(r.getUser() != null ? r.getUser().getLongName() : null)
@@ -155,7 +179,8 @@ public class InMemoryNodeDatabase extends AbstractNodeDatabase {
                 .envMetrics(r.getEnvMetrics())
                 .snr(r.getSnr())
                 .rssi(r.getRssi())
-                .lastSeen(uiLastSeen)
+                .lastSeen(r.getLastSeenRemote())
+                .lastSeenLocal(r.getLastSeenLocal())
                 .isSelf(isLocalNode(id))
                 .build();
     }

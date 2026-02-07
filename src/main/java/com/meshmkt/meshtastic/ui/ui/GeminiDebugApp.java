@@ -10,6 +10,8 @@ import com.meshmkt.meshtastic.ui.gemini.storage.*;
 import javax.swing.*;
 import javax.swing.border.EmptyBorder;
 import java.awt.*;
+import java.awt.event.MouseAdapter;
+import java.awt.event.MouseEvent;
 import java.net.URI;
 import java.util.stream.Collectors;
 
@@ -66,6 +68,7 @@ public class GeminiDebugApp implements MeshtasticEventListener, NodeDatabaseObse
                 updateSelectionDependentButtons();
             }
         });
+        setupNodeListContextMenu();
 
         JScrollPane sideScroll = new JScrollPane(nodeListView);
         sideScroll.setPreferredSize(new Dimension(320, 0));
@@ -118,6 +121,65 @@ public class GeminiDebugApp implements MeshtasticEventListener, NodeDatabaseObse
 
         frame.setLocationRelativeTo(null);
         frame.setVisible(true);
+    }
+
+    private void setupNodeListContextMenu() {
+        JPopupMenu contextMenu = new JPopupMenu();
+        JMenuItem refreshItem = new JMenuItem("Refresh Node Details");
+        JMenuItem posItem = new JMenuItem("Request GPS/Position");
+        JMenuItem teleItem = new JMenuItem("Request Battery/Telemetry");
+
+        refreshItem.addActionListener(e -> {
+            MeshNode selected = nodeListView.getSelectedValue();
+            if (selected != null && client != null) {
+                // This calls the new method in your client
+                client.refreshNodeInfo(selected.getNodeId());
+                append("[SYSTEM] Requesting Node info refresh for ! " + String.format("%08x", selected.getNodeId()));
+            }
+        });
+
+        posItem.addActionListener(e -> {
+            MeshNode selected = nodeListView.getSelectedValue();
+            if (selected != null && client != null) {
+                // This calls the new method in your client
+                client.requestPosition(selected.getNodeId());
+                append("[SYSTEM] Requesting Position Info refresh for ! " + String.format("%08x", selected.getNodeId()));
+            }
+        });
+
+        teleItem.addActionListener(e -> {
+            MeshNode selected = nodeListView.getSelectedValue();
+            if (selected != null && client != null) {
+                // This calls the new method in your client
+                client.requestTelemetry(selected.getNodeId());
+                append("[SYSTEM] Requesting Telemetry Info refresh for ! " + String.format("%08x", selected.getNodeId()));
+            }
+        });
+
+        contextMenu.add(refreshItem);
+        contextMenu.add(posItem);
+        contextMenu.add(teleItem);
+
+        // This listener handles the right-click trigger
+        nodeListView.addMouseListener(new MouseAdapter() {
+            public void mousePressed(MouseEvent e) {
+                maybeShowPopup(e);
+            }
+
+            public void mouseReleased(MouseEvent e) {
+                maybeShowPopup(e);
+            }
+
+            private void maybeShowPopup(MouseEvent e) {
+                if (e.isPopupTrigger()) {
+                    int index = nodeListView.locationToIndex(e.getPoint());
+                    if (index != -1) {
+                        nodeListView.setSelectedIndex(index);
+                        contextMenu.show(e.getComponent(), e.getX(), e.getY());
+                    }
+                }
+            }
+        });
     }
 
     // --- NodeDatabaseObserver Implementation ---
@@ -314,19 +376,22 @@ public class GeminiDebugApp implements MeshtasticEventListener, NodeDatabaseObse
      */
     private int getSortPriority(MeshNode node) {
         if (node.isSelf()) {
-            return 0; // Local node always at the very top
+            return 0;
         }
-        if (node.getLastSeen() <= 0) {
-            return 2; // Cached at bottom
+
+        long lastLocal = node.getLastSeenLocal();
+        if (lastLocal <= 0) {
+            return 3; // Cached at the bottom
         }
-        long seconds = (System.currentTimeMillis() - node.getLastSeen()) / 1000;
-        if (seconds < 60) {
-            return 0;   // Live at top
+        long seconds = (System.currentTimeMillis() - lastLocal) / 1000;
+
+        if (seconds < 900) { // 15 Minutes (Standard Mesh Heartbeat)
+            return 1; // LIVE
         }
-        if (seconds < 900) {
-            return 1;  // Recent in middle
+        if (seconds < 7200) { // 2 Hours (Standard Map Timeout)
+            return 2; // RECENT
         }
-        return 2; // Everything else at bottom
+        return 3; // OFFLINE
     }
 
     private void append(String text) {

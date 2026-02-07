@@ -11,6 +11,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 public class TelemetryHandler implements MeshtasticMessageHandler {
+
     private static final Logger log = LoggerFactory.getLogger(TelemetryHandler.class);
     private final NodeDatabase nodeDb;
     private final MeshEventDispatcher dispatcher;
@@ -22,8 +23,7 @@ public class TelemetryHandler implements MeshtasticMessageHandler {
 
     @Override
     public boolean canHandle(MeshProtos.FromRadio message) {
-        return message.hasPacket()
-                && message.getPacket().hasDecoded()
+        return message.hasPacket() && message.getPacket().hasDecoded()
                 && message.getPacket().getDecoded().getPortnumValue() == Portnums.PortNum.TELEMETRY_APP_VALUE;
     }
 
@@ -39,25 +39,18 @@ public class TelemetryHandler implements MeshtasticMessageHandler {
 
             switch (tele.getVariantCase()) {
                 case DEVICE_METRICS:
-                    // Persist to DB
                     nodeDb.updateMetrics(packet, tele.getDeviceMetrics());
-                    
-                    // Prepare event
                     eventBuilder.batteryLevel(tele.getDeviceMetrics().getBatteryLevel())
-                                .voltage(tele.getDeviceMetrics().getVoltage());
+                            .voltage(tele.getDeviceMetrics().getVoltage());
                     break;
 
                 case ENVIRONMENT_METRICS:
-                    // Persist to DB (New sensor support!)
                     nodeDb.updateEnvMetrics(packet, tele.getEnvironmentMetrics());
-                    
                     eventBuilder.temperature(tele.getEnvironmentMetrics().getTemperature())
-                                .relativeHumidity(tele.getEnvironmentMetrics().getRelativeHumidity());
+                            .relativeHumidity(tele.getEnvironmentMetrics().getRelativeHumidity());
                     break;
             }
-
             dispatcher.onTelemetryUpdate(eventBuilder.build());
-
         } catch (Exception e) {
             log.error("Failed to parse Telemetry: {}", e.getMessage());
         }
