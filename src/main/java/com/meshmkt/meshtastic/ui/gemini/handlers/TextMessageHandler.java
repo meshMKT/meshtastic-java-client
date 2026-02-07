@@ -9,10 +9,17 @@ import org.meshtastic.proto.MeshProtos;
 import org.meshtastic.proto.Portnums;
 
 import java.nio.charset.StandardCharsets;
-import java.util.function.IntSupplier;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+/**
+ * Handles incoming TEXT_MESSAGE_APP packets.
+ * <p>
+ * This handler extracts the text content, identifies if the message is a Direct Message (DM)
+ * to the local user, and dispatches a UI event. It also updates the sender's signal
+ * metadata in the database.
+ * </p>
+ */
 public class TextMessageHandler implements MeshtasticMessageHandler {
 
     private static final Logger log = LoggerFactory.getLogger(TextMessageHandler.class);
@@ -27,10 +34,9 @@ public class TextMessageHandler implements MeshtasticMessageHandler {
 
     @Override
     public boolean canHandle(MeshProtos.FromRadio message) {
-        if (!message.hasPacket() || !message.getPacket().hasDecoded()) {
-            return false;
-        }
-        return message.getPacket().getDecoded().getPortnumValue() == Portnums.PortNum.TEXT_MESSAGE_APP_VALUE;
+        return message.hasPacket() 
+                && message.getPacket().hasDecoded() 
+                && message.getPacket().getDecoded().getPortnumValue() == Portnums.PortNum.TEXT_MESSAGE_APP_VALUE;
     }
 
     @Override
@@ -43,25 +49,31 @@ public class TextMessageHandler implements MeshtasticMessageHandler {
         int destId = packet.getTo();
         int channel = packet.getChannel();
 
-        // 1. Identify if it's a DM (Sent specifically to our ID)
+        // 1. Identify if it's a DM (Sent specifically to our local node ID)
         boolean isDm = nodeDb.isLocalNode(destId);
 
+        // 2. Resolve human-readable name from the database
         String senderName = nodeDb.getDisplayName(senderId);
+
+        // 3. Update the database metadata
+        // Hearing a text message is proof the node is active; we update signal stats here.
+        nodeDb.updateSignal(senderId, packet.getRxSnr(), packet.getRxRssi());
 
         log.info("Message from: {} (Channel: {}, DM: {}) Content: {}",
                 senderName, channel, isDm, text);
 
-        // 2. Build the enriched event
+        // 4. Build and dispatch the UI event
         ChatMessageEvent event = ChatMessageEvent.builder()
                 .text(text)
                 .senderId(senderId)
                 .senderName(senderName)
                 .destinationId(destId)
                 .channel(channel)
-                .isDirect(isDm) // Using the 'direct' field we added to the DTO
+                .isDirect(isDm)
                 .build();
 
         dispatcher.onChatMessage(event);
-        return false;
+        
+        return false; // Allow other handlers to see this if necessary
     }
 }

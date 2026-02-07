@@ -7,14 +7,13 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Handles MY_INFO packets. This identifies the local radio and marks its ID in
+ * Handles local MY_INFO packets. This identifies the local radio and marks its ID in
  * the NodeDatabase as the "Primary" local user.
  */
 public class MyInfoHandler implements MeshtasticMessageHandler {
 
     private static final Logger log = LoggerFactory.getLogger(MyInfoHandler.class);
     private final NodeDatabase nodeDb;
-    private int myNodeId;
 
     public MyInfoHandler(NodeDatabase nodeDb) {
         this.nodeDb = nodeDb;
@@ -28,17 +27,12 @@ public class MyInfoHandler implements MeshtasticMessageHandler {
     @Override
     public boolean handle(MeshProtos.FromRadio message) {
         MeshProtos.MyNodeInfo myInfo = message.getMyInfo();
-        this.myNodeId = myInfo.getMyNodeNum();
+        int myId = myInfo.getMyNodeNum();
 
-        // Register the local ID in the DB. 
-        // We might not have the 'User' object yet, but we've reserved the slot.
-        nodeDb.setLocalNodeId(myNodeId);
+        // Register the local ID in the DB.
+        nodeDb.setLocalNodeId(myId);
 
-        log.info("Local Radio identified: 0x{}", Integer.toHexString(myNodeId));
+        log.info("Local Radio hardware identified as 0x{}", Integer.toHexString(myId));
         return false;
-    }
-
-    public int getMyNodeId() {
-        return myNodeId;
     }
 }

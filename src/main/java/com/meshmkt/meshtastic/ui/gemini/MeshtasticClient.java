@@ -21,10 +21,11 @@ import java.util.function.Consumer;
 /**
  * <h2>Meshtastic Client</h2>
  * <p>
- * The high-level orchestrator for Meshtastic radio interaction. 
- * This version uses a private internal dispatcher to keep event-firing methods 
- * hidden from the end-user, ensuring a clean public API.
+ * The high-level orchestrator for Meshtastic radio interaction. This version
+ * uses a private internal dispatcher to keep event-firing methods hidden from
+ * the end-user, ensuring a clean public API.
  * </p>
+ *
  * * @version 2.5
  */
 public class MeshtasticClient {
@@ -35,10 +36,10 @@ public class MeshtasticClient {
     private final MeshtasticDispatcher dispatcher;
     private final ScheduledExecutorService internalScheduler;
     private final NodeDatabase nodeDb;
-    
+
     // The "Secret Door": Only Handlers get a reference to this
     private final InternalDispatcher internalDispatcher = new InternalDispatcher();
-    
+
     private volatile boolean connected = false;
 
     // The Event Bus: Single thread to preserve message sequence
@@ -54,7 +55,7 @@ public class MeshtasticClient {
      * Initializes the client with a pluggable transport and database.
      *
      * @param transport The physical transport layer.
-     * @param database  The storage implementation for node data.
+     * @param database The storage implementation for node data.
      */
     public MeshtasticClient(MeshtasticTransport transport, NodeDatabase database) {
         this.transport = transport;
@@ -71,18 +72,19 @@ public class MeshtasticClient {
     }
 
     private void initializeHandlers() {
+        
         // 1. Identity & Database Handlers
         dispatcher.registerHandler(new MyInfoHandler(nodeDb));
         dispatcher.registerHandler(new NodeInfoHandler(nodeDb, internalDispatcher));
 
         // 2. Metadata & Signal
-        dispatcher.registerHandler(new SignalHandler(nodeDb));
+//        dispatcher.registerHandler(new SignalHandler(nodeDb));
 
         // 3. Functional Handlers (Logic)
         dispatcher.registerHandler(new TextMessageHandler(nodeDb, internalDispatcher));
         dispatcher.registerHandler(new PositionHandler(nodeDb, internalDispatcher));
         dispatcher.registerHandler(new TelemetryHandler(nodeDb, internalDispatcher));
-        dispatcher.registerHandler(new RoutingHandler(internalDispatcher));
+        dispatcher.registerHandler(new RoutingHandler(nodeDb, internalDispatcher));
 
         // 4. Logging Handlers
         dispatcher.registerHandler(new MessageLoggingHandler(nodeDb));
@@ -111,7 +113,7 @@ public class MeshtasticClient {
                 // Handshake: Request full config
                 int syncId = (int) (System.currentTimeMillis() / 1000);
                 sendToRadio(ToRadio.newBuilder().setWantConfigId(syncId).build());
-                
+
                 notifyListeners(l -> l.onConnectionStatusChanged(true, "Connected to radio"));
             }
 
@@ -130,20 +132,35 @@ public class MeshtasticClient {
     }
 
     /**
-     * Private Inner Class: Implements the internal dispatcher interface.
-     * This keeps the "onXXX" methods off the public Client API.
+     * Private Inner Class: Implements the internal dispatcher interface. This
+     * keeps the "onXXX" methods off the public Client API.
      */
     private class InternalDispatcher implements MeshEventDispatcher {
+
         @Override
-        public void onChatMessage(ChatMessageEvent event) { notifyListeners(l -> l.onTextMessage(event)); }
+        public void onChatMessage(ChatMessageEvent event) {
+            notifyListeners(l -> l.onTextMessage(event));
+        }
+
         @Override
-        public void onPositionUpdate(PositionUpdateEvent event) { notifyListeners(l -> l.onPositionUpdate(event)); }
+        public void onPositionUpdate(PositionUpdateEvent event) {
+            notifyListeners(l -> l.onPositionUpdate(event));
+        }
+
         @Override
-        public void onTelemetryUpdate(TelemetryUpdateEvent event) { notifyListeners(l -> l.onTelemetryUpdate(event)); }
+        public void onTelemetryUpdate(TelemetryUpdateEvent event) {
+            notifyListeners(l -> l.onTelemetryUpdate(event));
+        }
+
         @Override
-        public void onNodeDiscovery(NodeDiscoveryEvent event) { notifyListeners(l -> l.onNodeDiscovery(event)); }
+        public void onNodeDiscovery(NodeDiscoveryEvent event) {
+            notifyListeners(l -> l.onNodeDiscovery(event));
+        }
+
         @Override
-        public void onMessageStatusUpdate(MessageStatusEvent event) { notifyListeners(l -> l.onMessageStatusUpdate(event)); }
+        public void onMessageStatusUpdate(MessageStatusEvent event) {
+            notifyListeners(l -> l.onMessageStatusUpdate(event));
+        }
     }
 
     private void notifyListeners(Consumer<MeshtasticEventListener> action) {
@@ -159,7 +176,6 @@ public class MeshtasticClient {
     }
 
     // --- Public API ---
-
     public void addEventListener(MeshtasticEventListener listener) {
         listeners.add(listener);
     }
@@ -169,7 +185,9 @@ public class MeshtasticClient {
     }
 
     public void connect() {
-        if (connected) return;
+        if (connected) {
+            return;
+        }
 
         transport.start();
 
@@ -187,25 +205,39 @@ public class MeshtasticClient {
     /**
      * Sends a text message with automatic MTU chunking logic.
      */
-    public void sendMessage(MessageRequest request) {
+    /**
+     * Sends a text message with automatic MTU chunking logic.
+     *
+     * @return The ID of the first (or only) packet sent.
+     */
+    public int sendMessage(MessageRequest request) {
         byte[] bytes = request.getText().getBytes(StandardCharsets.UTF_8);
 
         if (bytes.length <= 200) {
-            sendRawText(request.getRecipientId(), request.getText());
+            return sendRawText(request.getRecipientId(), request.getText()); // Return ID
         } else if (request.isAutoChunk()) {
             var result = MeshtasticChunker.prepare(request.getText());
             List<String> chunks = result.getFormattedChunks();
-            for (int i = 0; i < chunks.size(); i++) {
+
+            // For chunked messages, we return the ID of the FIRST chunk
+            int firstId = sendRawText(request.getRecipientId(), chunks.get(0));
+
+            for (int i = 1; i < chunks.size(); i++) {
                 final String chunk = chunks.get(i);
                 internalScheduler.schedule(() -> sendRawText(request.getRecipientId(), chunk),
                         (long) i * request.getDelayBetweenChunks(), TimeUnit.MILLISECONDS);
             }
+            return firstId;
         } else {
             log.error("Message exceeds 200 byte MTU. Enable autoChunk.");
+            return -1;
         }
     }
 
-    private void sendRawText(int to, String text) {
+    private int sendRawText(int to, String text) {
+        // Generate the ID here so we can return it
+        int packetId = (int) (System.currentTimeMillis() % Integer.MAX_VALUE);
+
         var data = MeshProtos.Data.newBuilder()
                 .setPortnum(Portnums.PortNum.TEXT_MESSAGE_APP)
                 .setPayload(ByteString.copyFrom(text, StandardCharsets.UTF_8))
@@ -215,14 +247,18 @@ public class MeshtasticClient {
                 .setTo(to)
                 .setDecoded(data)
                 .setWantAck(true)
-                .setId((int)(System.currentTimeMillis() % Integer.MAX_VALUE))
+                .setId(packetId) // Use the variable we just created
                 .build();
 
         sendToRadio(ToRadio.newBuilder().setPacket(packet).build());
+
+        return packetId; // Return the ID to the UI
     }
 
     public void sendToRadio(ToRadio toRadio) {
-        if (!transport.isConnected()) return;
+        if (!transport.isConnected()) {
+            return;
+        }
         transport.write(toRadio.toByteArray());
     }
 

@@ -1,140 +1,121 @@
 package com.meshmkt.meshtastic.ui.gemini.storage;
 
+import lombok.Data;
 import org.meshtastic.proto.MeshProtos;
 import org.meshtastic.proto.TelemetryProtos;
-import java.util.Collection;
+import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
-import lombok.Data;
 
 /**
- * Thread-safe, in-memory implementation of the {@link NodeDatabase}.
- * <p>
- * This class serves as the central state repository for all discovered nodes in
- * the mesh. It encapsulates raw Protobuf models within internal
- * {@code NodeRecord} objects and exposes data via clean {@link MeshNode} DTOs
- * to prevent Protobuf leakage into the UI/Logic layers.
- * </p>
+ * A thread-safe, memory-backed implementation of the NodeDatabase.
+ * * Uses internal NodeRecord objects for storage and produces immutable 
+ * MeshNode snapshots for the UI.
  */
-public class InMemoryNodeDatabase implements NodeDatabase {
+public class InMemoryNodeDatabase extends AbstractNodeDatabase {
 
-    /**
-     * Internal mutable container for node state. Use {@code @Data} for internal
-     * boilerplate, but keep it private to maintain encapsulation.
-     */
+    @Override
+    public void setSyncComplete(boolean complete) {
+        throw new UnsupportedOperationException("Not supported yet."); // Generated from nbfs://nbhost/SystemFileSystem/Templates/Classes/Code/GeneratedMethodBody
+    }
+
     @Data
     private static class NodeRecord {
-
         private MeshProtos.User user;
         private MeshProtos.Position position;
         private TelemetryProtos.DeviceMetrics metrics;
+        private TelemetryProtos.EnvironmentMetrics envMetrics;
         private float snr;
         private int rssi;
-        private long lastSeen = System.currentTimeMillis();
+        private long lastSeen;
     }
 
     private final ConcurrentHashMap<Integer, NodeRecord> nodes = new ConcurrentHashMap<>();
-    private int localNodeId;
+    
+    // Capture when the app actually started
+    private final long sessionStartTime = System.currentTimeMillis();
+    
+    private int localNodeId = -1;
+
+    // --- Internal Logic ---
 
     /**
-     * Updates or creates a user record for a specific node.
-     *
-     * @param nodeId The unique numeric ID of the node.
-     * @param user The Protobuf User message containing names and hardware info.
+     * Internal helper to update the record and notify observers.
      */
-    @Override
-    public void updateUser(int nodeId, MeshProtos.User user) {
-        nodes.computeIfAbsent(nodeId, k -> new NodeRecord()).setUser(user);
-        nodes.get(nodeId).setLastSeen(System.currentTimeMillis());
+    private NodeRecord getOrUpdate(int id, long t) {
+        NodeRecord r = nodes.computeIfAbsent(id, k -> new NodeRecord());
+        r.setLastSeen(t);
+        return r;
     }
 
-    /**
-     * Updates the GPS/Position data for a node.
-     *
-     * @param nodeId The unique numeric ID of the node.
-     * @param position The Protobuf Position message.
-     */
+    // --- Storage Overrides (Called by Handlers) ---
+
     @Override
-    public void updatePosition(int nodeId, MeshProtos.Position position) {
-        nodes.computeIfAbsent(nodeId, k -> new NodeRecord()).setPosition(position);
-        nodes.get(nodeId).setLastSeen(System.currentTimeMillis());
+    protected void storeUser(int id, MeshProtos.User u, long t) {
+        NodeRecord r = getOrUpdate(id, t);
+        r.setUser(u);
+        notifyNodeUpdated(mapToDto(id, r));
     }
 
-    /**
-     * Updates environmental or device health metrics (battery, voltage, etc.).
-     *
-     * @param nodeId The unique numeric ID of the node.
-     * @param metrics The Protobuf DeviceMetrics message.
-     */
     @Override
-    public void updateMetrics(int nodeId, TelemetryProtos.DeviceMetrics metrics) {
-        nodes.computeIfAbsent(nodeId, k -> new NodeRecord()).setMetrics(metrics);
-        nodes.get(nodeId).setLastSeen(System.currentTimeMillis());
+    protected void storePosition(int id, MeshProtos.Position p, long t) {
+        NodeRecord r = getOrUpdate(id, t);
+        r.setPosition(p);
+        notifyNodeUpdated(mapToDto(id, r));
     }
 
-    /**
-     * Updates the last known signal quality for a node.
-     *
-     * @param nodeId The unique numeric ID of the node.
-     * @param snr Signal-to-Noise Ratio.
-     * @param rssi Received Signal Strength Indicator.
-     */
+    @Override
+    protected void storeMetrics(int id, TelemetryProtos.DeviceMetrics m, long t) {
+        NodeRecord r = getOrUpdate(id, t);
+        r.setMetrics(m);
+        notifyNodeUpdated(mapToDto(id, r));
+    }
+
+    @Override
+    protected void storeEnvMetrics(int id, TelemetryProtos.EnvironmentMetrics e, long t) {
+        NodeRecord r = getOrUpdate(id, t);
+        r.setEnvMetrics(e);
+        notifyNodeUpdated(mapToDto(id, r));
+    }
+
     @Override
     public void updateSignal(int nodeId, float snr, int rssi) {
-        NodeRecord record = nodes.computeIfAbsent(nodeId, k -> new NodeRecord());
-        record.setSnr(snr);
-        record.setRssi(rssi);
-        record.setLastSeen(System.currentTimeMillis());
+        long now = System.currentTimeMillis();
+        NodeRecord r = getOrUpdate(nodeId, now);
+        r.setSnr(snr);
+        r.setRssi(rssi);
+        notifyNodeUpdated(mapToDto(nodeId, r));
     }
 
-    /**
-     * Resolves a human-readable name for a node, falling back to Hex ID if
-     * unknown.
-     *
-     * @param nodeId The unique numeric ID of the node.
-     * @return The Long Name (e.g., "MightyNode") or formatted Hex (e.g.,
-     * "!a1b2c3d4").
-     */
+    // --- Identity & Meta ---
+
     @Override
-    public String getDisplayName(int nodeId) {
-        NodeRecord record = nodes.get(nodeId);
-        if (record != null && record.getUser() != null) {
-            String name = record.getUser().getLongName();
-            if (name != null && !name.isEmpty()) {
-                return name;
-            }
+    public void setLocalNodeId(int id) {
+        this.localNodeId = id;
+    }
+
+    @Override
+    public boolean isLocalNode(int id) {
+        return id != -1 && id == localNodeId;
+    }
+
+    @Override
+    public String getDisplayName(int id) {
+        NodeRecord r = nodes.get(id);
+        if (r != null && r.getUser() != null && !r.getUser().getLongName().isEmpty()) {
+            return r.getUser().getLongName();
         }
-        return String.format("!%08x", nodeId);
+        return String.format("!%08x", id);
     }
+
+    // --- Retrieval (For UI) ---
 
     @Override
-    public void setLocalNodeId(int nodeId) {
-        this.localNodeId = nodeId;
+    public MeshNode getNode(int id) {
+        NodeRecord r = nodes.get(id);
+        return (r == null) ? null : mapToDto(id, r);
     }
 
-    @Override
-    public boolean isLocalNode(int nodeId) {
-        return nodeId == localNodeId;
-    }
-
-    /**
-     * Retrieves a single node's data mapped to a developer-friendly DTO.
-     *
-     * @param nodeId The unique numeric ID.
-     * @return A {@link MeshNode} DTO or null if not found.
-     */
-    @Override
-    public MeshNode getNode(int nodeId) {
-        NodeRecord record = nodes.get(nodeId);
-        return (record == null) ? null : mapToDto(nodeId, record);
-    }
-
-    /**
-     * Returns a snapshot of all known nodes.
-     *
-     * * @return An unmodifiable collection of {@link MeshNode} DTOs.
-     * @return 
-     */
     @Override
     public Collection<MeshNode> getAllNodes() {
         return nodes.entrySet().stream()
@@ -142,21 +123,40 @@ public class InMemoryNodeDatabase implements NodeDatabase {
                 .collect(Collectors.toUnmodifiableList());
     }
 
-    /**
-     * Internal mapper to keep the public DTO separate from internal state. This
-     * ensures that changes to the internal storage or Protobuf structure do not
-     * break external consumers.
-     */
-    private MeshNode mapToDto(int id, NodeRecord record) {
-        return new MeshNode(
-                id,
-                record.getUser() != null ? record.getUser().getLongName() : null,
-                record.getUser() != null ? record.getUser().getShortName() : null,
-                record.getPosition(),
-                record.getMetrics(),
-                record.getSnr(),
-                record.getRssi(),
-                record.getLastSeen()
-        );
+    // --- Purge Logic ---
+
+    @Override
+    protected void performPurge(long cutoff) {
+        boolean removed = nodes.entrySet().removeIf(e -> e.getValue().getLastSeen() < cutoff);
+        if (removed) {
+            notifyNodesPurged(); 
+        }
+    }
+
+    // --- Mapping ---
+
+    private MeshNode mapToDto(int id, NodeRecord r) {
+        
+        long rawLastSeen = r.getLastSeen();
+    boolean isLocal = isLocalNode(id);
+
+    // If it's US, we use the real timestamp immediately.
+    // If it's a remote node, we apply the 60s sync grace period.
+    long uiLastSeen = (isLocal) ? rawLastSeen : getNormalizedLastSeen(rawLastSeen);
+    
+        return MeshNode.builder()
+                .nodeId(id)
+                .longName(r.getUser() != null ? r.getUser().getLongName() : null)
+                .shortName(r.getUser() != null ? r.getUser().getShortName() : null)
+                .hwModel(r.getUser() != null ? r.getUser().getHwModel() : null)
+                .role(r.getUser() != null ? r.getUser().getRole() : null)
+                .position(r.getPosition())
+                .deviceMetrics(r.getMetrics())
+                .envMetrics(r.getEnvMetrics())
+                .snr(r.getSnr())
+                .rssi(r.getRssi())
+                .lastSeen(uiLastSeen)
+                .isSelf(isLocalNode(id))
+                .build();
     }
 }

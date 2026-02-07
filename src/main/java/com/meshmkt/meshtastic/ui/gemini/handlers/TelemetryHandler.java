@@ -6,11 +6,11 @@ import com.meshmkt.meshtastic.ui.gemini.event.TelemetryUpdateEvent;
 import com.meshmkt.meshtastic.ui.gemini.storage.NodeDatabase;
 import org.meshtastic.proto.MeshProtos;
 import org.meshtastic.proto.Portnums;
+import org.meshtastic.proto.TelemetryProtos;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 public class TelemetryHandler implements MeshtasticMessageHandler {
-
     private static final Logger log = LoggerFactory.getLogger(TelemetryHandler.class);
     private final NodeDatabase nodeDb;
     private final MeshEventDispatcher dispatcher;
@@ -31,48 +31,35 @@ public class TelemetryHandler implements MeshtasticMessageHandler {
     public boolean handle(MeshProtos.FromRadio message) {
         try {
             MeshProtos.MeshPacket packet = message.getPacket();
-            org.meshtastic.proto.TelemetryProtos.Telemetry tele
-                    = org.meshtastic.proto.TelemetryProtos.Telemetry.parseFrom(packet.getDecoded().getPayload());
+            TelemetryProtos.Telemetry tele = TelemetryProtos.Telemetry.parseFrom(packet.getDecoded().getPayload());
 
-            int senderId = packet.getFrom();
-            String name = nodeDb.getDisplayName(senderId);
-
-            // Start the builder with the base info and the raw proto
             var eventBuilder = TelemetryUpdateEvent.builder()
-                    .nodeId(senderId)
-                    .nodeName(name)
-                    .rawProto(tele);
+                    .nodeId(packet.getFrom())
+                    .nodeName(nodeDb.getDisplayName(packet.getFrom()));
 
             switch (tele.getVariantCase()) {
                 case DEVICE_METRICS:
-                    var metrics = tele.getDeviceMetrics();
-                    nodeDb.updateMetrics(senderId, metrics); // State update
-
-                    eventBuilder.batteryLevel(metrics.getBatteryLevel())
-                            .voltage(metrics.getVoltage())
-                            .channelUtilization(metrics.getChannelUtilization())
-                            .airUtilTx(metrics.getAirUtilTx());
+                    // Persist to DB
+                    nodeDb.updateMetrics(packet, tele.getDeviceMetrics());
+                    
+                    // Prepare event
+                    eventBuilder.batteryLevel(tele.getDeviceMetrics().getBatteryLevel())
+                                .voltage(tele.getDeviceMetrics().getVoltage());
                     break;
 
                 case ENVIRONMENT_METRICS:
-                    var env = tele.getEnvironmentMetrics();
-                    // Optional: add nodeDb.updateEnvironment(senderId, env) if you want to store it long-term
-
-                    eventBuilder.temperature(env.getTemperature())
-                            .relativeHumidity(env.getRelativeHumidity())
-                            .barometricPressure(env.getBarometricPressure());
+                    // Persist to DB (New sensor support!)
+                    nodeDb.updateEnvMetrics(packet, tele.getEnvironmentMetrics());
+                    
+                    eventBuilder.temperature(tele.getEnvironmentMetrics().getTemperature())
+                                .relativeHumidity(tele.getEnvironmentMetrics().getRelativeHumidity());
                     break;
-
-                default:
-                    log.debug("Received unhandled telemetry variant ({}) from {}", tele.getVariantCase(), name);
-                    return false;
             }
 
-            // Dispatch the final flattened event
             dispatcher.onTelemetryUpdate(eventBuilder.build());
 
         } catch (Exception e) {
-            log.error("Failed to parse Telemetry from radio: {}", e.getMessage());
+            log.error("Failed to parse Telemetry: {}", e.getMessage());
         }
         return false;
     }

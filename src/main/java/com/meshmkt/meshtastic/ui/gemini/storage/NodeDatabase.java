@@ -5,94 +5,77 @@ import org.meshtastic.proto.TelemetryProtos;
 import java.util.Collection;
 
 /**
- * Defines the contract for storing and retrieving Meshtastic node information.
+ * Core interface for managing the state of discovered mesh nodes.
  * <p>
- * This interface decouples the high-level application logic from the underlying
- * storage mechanism. Implementations are expected to handle the translation
- * between raw Protobuf messages and the internal system state.
+ * Implementations handle the extraction of metadata from
+ * {@link MeshProtos.MeshPacket} and provide thread-safe access to node
+ * snapshots.
  * </p>
  */
 public interface NodeDatabase {
 
-    // --- Write Methods ---
     /**
-     * Updates or initializes the user identification for a node.
-     *
-     * * @param nodeId The 32-bit unsigned integer ID of the node.
-     * @param user The {@link MeshProtos.User} protobuf containing names and
-     * hardware info.
+     * Updates node identity using the provided User packet and packet context.
      */
-    void updateUser(int nodeId, MeshProtos.User user);
+    void updateUser(MeshProtos.MeshPacket packet, MeshProtos.User user);
 
     /**
-     * Updates the geographic coordinates and altitude for a node.
-     *
-     * * @param nodeId The unique ID of the node.
-     * @param position The {@link MeshProtos.Position} protobuf containing GPS
-     * data.
+     * Updates node location using the provided Position packet and packet
+     * context.
      */
-    void updatePosition(int nodeId, MeshProtos.Position position);
+    void updatePosition(MeshProtos.MeshPacket packet, MeshProtos.Position position);
 
     /**
-     * Updates device-specific health data such as battery level and voltage.
-     *
-     * * @param nodeId The unique ID of the node.
-     * @param metrics The {@link TelemetryProtos.DeviceMetrics} protobuf.
+     * Updates node health using the provided DeviceMetrics and packet context.
      */
-    void updateMetrics(int nodeId, TelemetryProtos.DeviceMetrics metrics);
+    void updateMetrics(MeshProtos.MeshPacket packet, TelemetryProtos.DeviceMetrics metrics);
 
     /**
-     * Records the radio signal quality for the last packet received from this
-     * node.
-     * <p>
-     * Typically called by a PacketHandler or Dispatcher to track link quality.
-     * </p>
-     *
-     * * @param nodeId The unique ID of the node.
-     * @param snr The Signal-to-Noise Ratio (dB).
-     * @param rssi The Received Signal Strength Indicator (dBm).
+     * Updates node sensor data using the provided EnvironmentMetrics and packet
+     * context.
+     */
+    void updateEnvMetrics(MeshProtos.MeshPacket packet, TelemetryProtos.EnvironmentMetrics env);
+
+    /**
+     * Manually updates signal metadata for a specific node ID.
      */
     void updateSignal(int nodeId, float snr, int rssi);
 
     /**
-     * Sets the ID of the local node (the Pi-connected device).
-     *
-     * * @param nodeId The local node's numeric ID.
+     * Registers the ID of the local radio node.
      */
     void setLocalNodeId(int nodeId);
 
-    // --- Read Methods ---
     /**
-     * Resolves a node ID to a human-readable name. Should fall back to the
-     * "!hexid" format if the name is unknown.
-     *
-     * * @param nodeId The unique ID of the node.
-     * @return A string representing the node's Long Name or its Hex ID.
+     * Returns the display name of a node, or a hex string if unknown.
      */
     String getDisplayName(int nodeId);
 
     /**
-     * Checks if the provided ID belongs to the local radio node.
-     *
-     * * @param nodeId The ID to check.
-     * @return {@code true} if the ID matches the local node; {@code false}
-     * otherwise.
+     * Returns true if the ID matches the local radio.
      */
     boolean isLocalNode(int nodeId);
 
     /**
-     * Retrieves a complete snapshot of a node's known data.
-     *
-     * * @param nodeId The unique ID of the node.
-     * @return A {@link MeshNode} DTO, or {@code null} if the node has not been
-     * discovered.
+     * Retrieves a snapshot of a specific node.
      */
     MeshNode getNode(int nodeId);
 
     /**
-     * Retrieves all known nodes currently stored in the database.
-     *
-     * * @return A collection of {@link MeshNode} DTOs.
+     * Retrieves a collection of all known nodes.
      */
     Collection<MeshNode> getAllNodes();
+
+    /**
+     * Starts a background task to remove nodes not seen within the timeout
+     * period.
+     */
+    void startCleanupTask(int timeoutMins);
+
+    
+    void addObserver(NodeDatabaseObserver observer);
+    void removeObserver(NodeDatabaseObserver observer);
+    
+    void setSyncComplete(boolean complete);
+
 }

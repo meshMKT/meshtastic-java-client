@@ -7,8 +7,10 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Intercepts every MeshPacket to update signal strength metadata (SNR and RSSI)
- * in the NodeDatabase.
+ * A "Catch-All" handler that updates signal metadata for every incoming packet,
+ * regardless of the application type (Text, Position, etc).
+ * 
+ * Technically optional since the AbstractNodeDatabase updates signals
  */
 public class SignalHandler implements MeshtasticMessageHandler {
 
@@ -21,28 +23,18 @@ public class SignalHandler implements MeshtasticMessageHandler {
 
     @Override
     public boolean canHandle(MeshProtos.FromRadio message) {
-        // Every MeshPacket contains signal metadata
         return message.hasPacket();
     }
 
     @Override
     public boolean handle(MeshProtos.FromRadio message) {
         MeshProtos.MeshPacket packet = message.getPacket();
-        int fromId = packet.getFrom();
+        
+        // We update the DB for every packet heard. 
+        // Our new AbstractNodeDatabase logic will handle the timestamping.
+        nodeDb.updateSignal(packet.getFrom(), packet.getRxSnr(), packet.getRxRssi());
+        
 
-        // Only update if the packet actually contains signal data (not a local loopback)
-        if (packet.getRxSnr() != 0 || packet.getRxRssi() != 0) {
-            float snr = packet.getRxSnr();
-            int rssi = packet.getRxRssi();
-
-            // MATCH THIS to the interface method name: updateSignal
-            nodeDb.updateSignal(fromId, snr, rssi);
-
-            log.debug("Signal from {}: SNR {}dB, RSSI {}dBm",
-                    nodeDb.getDisplayName(fromId), snr, rssi);
-        }
-
-        // Return false so the packet continues to Text/Position/etc handlers
-        return false;
+        return false; // Always return false so specific handlers (Text, etc) can still run
     }
 }

@@ -9,11 +9,7 @@ import org.meshtastic.proto.Portnums;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-/**
- * Handles incoming POSITION_APP packets to track node locations.
- */
 public class PositionHandler implements MeshtasticMessageHandler {
-
     private static final Logger log = LoggerFactory.getLogger(PositionHandler.class);
     private final NodeDatabase nodeDb;
     private final MeshEventDispatcher dispatcher;
@@ -34,30 +30,19 @@ public class PositionHandler implements MeshtasticMessageHandler {
     public boolean handle(MeshProtos.FromRadio message) {
         try {
             MeshProtos.MeshPacket packet = message.getPacket();
-            // Parse the raw bytes inside 'decoded' into a Position object
             MeshProtos.Position pos = MeshProtos.Position.parseFrom(packet.getDecoded().getPayload());
 
-            int senderId = packet.getFrom();
+            // NEW: Pass the whole packet context. DB extracts ID and SNR automatically.
+            nodeDb.updatePosition(packet, pos);
 
-            // 1. Update the stateful database
-            nodeDb.updatePosition(senderId, pos);
-
-            // 2. Convert fixed-point integers to standard decimal degrees
-            // Meshtastic sends lat/lon as integers (scaled by 1e7)
-            double lat = pos.getLatitudeI() / 1e7;
-            double lon = pos.getLongitudeI() / 1e7;
-
-            // 3. Fire the event via the mediator
             dispatcher.onPositionUpdate(PositionUpdateEvent.builder()
-                    .nodeId(senderId)
-                    .nodeName(nodeDb.getDisplayName(senderId))
-                    .latitude(lat)
-                    .longitude(lon)
+                    .nodeId(packet.getFrom())
+                    .nodeName(nodeDb.getDisplayName(packet.getFrom()))
+                    .latitude(pos.getLatitudeI() / 1e7)
+                    .longitude(pos.getLongitudeI() / 1e7)
                     .altitude(pos.getAltitude())
                     .rawProto(pos)
                     .build());
-
-            log.debug("Position logged for node {}: {}, {}", senderId, lat, lon);
 
         } catch (Exception e) {
             log.error("Failed to parse Position payload: {}", e.getMessage());
