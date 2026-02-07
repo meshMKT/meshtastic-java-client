@@ -376,22 +376,28 @@ public class GeminiDebugApp implements MeshtasticEventListener, NodeDatabaseObse
      */
     private int getSortPriority(MeshNode node) {
         if (node.isSelf()) {
-            return 0;
+            return 0; // Always top
         }
-
         long lastLocal = node.getLastSeenLocal();
         if (lastLocal <= 0) {
-            return 3; // Cached at the bottom
+            return 3000; // CACHED/OFFLINE at bottom
         }
         long seconds = (System.currentTimeMillis() - lastLocal) / 1000;
 
-        if (seconds < 900) { // 15 Minutes (Standard Mesh Heartbeat)
-            return 1; // LIVE
+        // LIVE Group (15 mins)
+        if (seconds < 900) {
+            // If we have a distance, use it to slightly adjust priority (0-999 range)
+            // Closer nodes get a lower (better) score
+            int distanceOffset = (node.getDistanceKm() > 0) ? (int) Math.min(node.getDistanceKm(), 999) : 999;
+            return 1000 + distanceOffset;
         }
-        if (seconds < 7200) { // 2 Hours (Standard Map Timeout)
-            return 2; // RECENT
+
+        // RECENT Group (2 hours)
+        if (seconds < 7200) {
+            return 2000;
         }
-        return 3; // OFFLINE
+
+        return 3000; // OFFLINE
     }
 
     private void append(String text) {

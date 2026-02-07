@@ -17,6 +17,8 @@ import java.util.stream.Collectors;
  */
 public class InMemoryNodeDatabase extends AbstractNodeDatabase {
 
+    
+
     /**
      * Internal mutable container for node data.
      */
@@ -36,13 +38,8 @@ public class InMemoryNodeDatabase extends AbstractNodeDatabase {
     private final ConcurrentHashMap<Integer, NodeRecord> nodes = new ConcurrentHashMap<>();
 
     @Override
-    public void setLocalNodeId(int nodeId) {
-        this.localNodeId = nodeId;
-    }
-
-    @Override
-    public boolean isLocalNode(int nodeId) {
-        return nodeId == localNodeId;
+    public MeshNode getSelfNode() {
+        return getNode(localNodeId);
     }
 
     @Override
@@ -131,26 +128,6 @@ public class InMemoryNodeDatabase extends AbstractNodeDatabase {
         notifyNodeUpdated(mapToDto(nodeId, r));
     }
 
-//    @Override
-//    public void updateSignal(int nodeId, float snr, int rssi) {
-//        // IMPORTANT: We must use the same timing logic as the data packets
-//        long localTime = isSyncComplete() ? System.currentTimeMillis() : 0;
-//
-//        NodeRecord r = nodes.computeIfAbsent(nodeId, k -> new NodeRecord());
-//        r.setSnr(snr);
-//        r.setRssi(rssi);
-//        r.setLastSeenLocal(localTime); // This is what flips the UI to "LIVE"
-//
-//        notifyNodeUpdated(mapToDto(nodeId, r));
-//    }
-
-//    @Override
-//    public void updateSignal(int nodeId, float snr, int rssi) {
-//        NodeRecord r = nodes.computeIfAbsent(nodeId, k -> new NodeRecord());
-//        r.setSnr(snr);
-//        r.setRssi(rssi);
-//        notifyNodeUpdated(mapToDto(nodeId, r));
-//    }
     @Override
     protected void performPurge(long cutoff) {
         // Use the most recent available timestamp for purge checks
@@ -181,7 +158,7 @@ public class InMemoryNodeDatabase extends AbstractNodeDatabase {
                 .rssi(r.getRssi())
                 .lastSeen(r.getLastSeenRemote())
                 .lastSeenLocal(r.getLastSeenLocal())
-                .isSelf(isLocalNode(id))
+                .isSelf(isSelfNode(id))
                 .build();
     }
 }

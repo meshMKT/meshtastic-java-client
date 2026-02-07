@@ -22,6 +22,8 @@ public class TelemetryUpdateEvent {
     float temperature;
     float relativeHumidity;
     float barometricPressure;
+    
+    int hopsAway;
 
     @Builder.Default
     Instant timestamp = Instant.now();

@@ -18,4 +18,5 @@ public class NodeDiscoveryEvent {
     @Builder.Default
     Instant timestamp = Instant.now();
     MeshProtos.User rawProto;
+    int hopsAway;
 }

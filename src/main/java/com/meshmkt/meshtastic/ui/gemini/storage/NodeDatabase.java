@@ -44,7 +44,12 @@ public interface NodeDatabase {
     /**
      * Registers the ID of the local radio node.
      */
-    void setLocalNodeId(int nodeId);
+    void setSelfNodeId(int nodeId);
+    
+    /**
+     * Get the local node
+     */
+    MeshNode getSelfNode();
 
     /**
      * Returns the display name of a node, or a hex string if unknown.
@@ -54,7 +59,7 @@ public interface NodeDatabase {
     /**
      * Returns true if the ID matches the local radio.
      */
-    boolean isLocalNode(int nodeId);
+    boolean isSelfNode(int nodeId);
 
     /**
      * Retrieves a snapshot of a specific node.

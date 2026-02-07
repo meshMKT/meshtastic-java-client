@@ -30,7 +30,7 @@ public class MyInfoHandler implements MeshtasticMessageHandler {
         int myId = myInfo.getMyNodeNum();
 
         // Register the local ID in the DB.
-        nodeDb.setLocalNodeId(myId);
+        nodeDb.setSelfNodeId(myId);
 
         log.info("Local Radio hardware identified as 0x{}", Integer.toHexString(myId));
         return false;

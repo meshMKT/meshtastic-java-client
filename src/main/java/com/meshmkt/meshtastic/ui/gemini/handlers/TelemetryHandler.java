@@ -10,6 +10,11 @@ import org.meshtastic.proto.TelemetryProtos;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+/**
+ * Handles incoming TELEMETRY_APP packets (Battery, Voltage, Environment). This
+ * version extracts Mesh Topology (Hops) from the packet header to maintain
+ * network health vitals in the UI.
+ */
 public class TelemetryHandler implements MeshtasticMessageHandler {
 
     private static final Logger log = LoggerFactory.getLogger(TelemetryHandler.class);
@@ -33,24 +38,40 @@ public class TelemetryHandler implements MeshtasticMessageHandler {
             MeshProtos.MeshPacket packet = message.getPacket();
             TelemetryProtos.Telemetry tele = TelemetryProtos.Telemetry.parseFrom(packet.getDecoded().getPayload());
 
+            // 1. Calculate Mesh Topology (Hops Traveled)
+            // Subtracting remaining limit from start limit tells us distance
+            int hopsAway = Math.max(0, packet.getHopStart() - packet.getHopLimit());
+
             var eventBuilder = TelemetryUpdateEvent.builder()
                     .nodeId(packet.getFrom())
-                    .nodeName(nodeDb.getDisplayName(packet.getFrom()));
+                    .nodeName(nodeDb.getDisplayName(packet.getFrom()))
+                    .hopsAway(hopsAway); 
 
             switch (tele.getVariantCase()) {
                 case DEVICE_METRICS:
+                    // Database update should capture packet header for SNR/RSSI/Hops
                     nodeDb.updateMetrics(packet, tele.getDeviceMetrics());
+
                     eventBuilder.batteryLevel(tele.getDeviceMetrics().getBatteryLevel())
                             .voltage(tele.getDeviceMetrics().getVoltage());
                     break;
 
                 case ENVIRONMENT_METRICS:
                     nodeDb.updateEnvMetrics(packet, tele.getEnvironmentMetrics());
+
                     eventBuilder.temperature(tele.getEnvironmentMetrics().getTemperature())
                             .relativeHumidity(tele.getEnvironmentMetrics().getRelativeHumidity());
                     break;
+
+                default:
+                    // Log other telemetry types (like PowerMetrics) if needed
+                    log.debug("Received unhandled telemetry variant: {}", tele.getVariantCase());
+                    break;
             }
+
+            // 2. Dispatch the event to the UI
             dispatcher.onTelemetryUpdate(eventBuilder.build());
+
         } catch (Exception e) {
             log.error("Failed to parse Telemetry: {}", e.getMessage());
         }

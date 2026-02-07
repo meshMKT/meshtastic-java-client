@@ -117,6 +117,16 @@ public abstract class AbstractNodeDatabase implements NodeDatabase {
         long localTime = isSyncComplete() ? System.currentTimeMillis() : 0;
         storeSignal(nodeId, snr, rssi, localTime);
     }
+    
+    @Override
+    public void setSelfNodeId(int nodeId) {
+        this.localNodeId = nodeId;
+    }
+
+    @Override
+    public boolean isSelfNode(int nodeId) {
+        return nodeId == localNodeId;
+    }
 
 // Add this to your Abstract Subclass Methods at the bottom
     protected abstract void storeSignal(int nodeId, float snr, int rssi, long localTime);

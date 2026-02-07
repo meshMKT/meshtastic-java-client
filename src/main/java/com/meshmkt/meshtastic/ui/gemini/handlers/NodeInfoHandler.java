@@ -11,7 +11,8 @@ import org.slf4j.LoggerFactory;
 
 /**
  * Handles NODEINFO data from both the initial radio handshake and over-the-air
- * broadcasts.
+ * broadcasts. This version extracts mesh topology (Hops) to identify direct
+ * neighbors immediately upon discovery.
  */
 public class NodeInfoHandler implements MeshtasticMessageHandler {
 
@@ -34,8 +35,10 @@ public class NodeInfoHandler implements MeshtasticMessageHandler {
     public boolean handle(MeshProtos.FromRadio message) {
         try {
             if (message.hasNodeInfo()) {
+                // Initial connection to local radio (USB/BLE)
                 handleHandshake(message.getNodeInfo());
             } else {
+                // Received a broadcast from another node in the mesh
                 handleOverTheAir(message.getPacket());
             }
         } catch (Exception e) {
@@ -45,29 +48,43 @@ public class NodeInfoHandler implements MeshtasticMessageHandler {
     }
 
     private void handleHandshake(MeshProtos.NodeInfo info) {
-        // Construct a synthetic packet for the database to maintain consistency
+        // Local hardware info is always 0 hops away
+        int hops = 0;
+
+        // Construct a synthetic packet so nodeDb can treat it as a standard update
         MeshProtos.MeshPacket dummy = MeshProtos.MeshPacket.newBuilder()
                 .setFrom(info.getNum())
                 .setRxTime((int) (System.currentTimeMillis() / 1000))
+                .setHopStart(3)
+                .setHopLimit(3) // Start == Limit means 0 hops
                 .build();
 
         nodeDb.updateUser(dummy, info.getUser());
-        dispatchDiscovery(info.getNum(), info.getUser());
+
+        dispatchDiscovery(info.getNum(), info.getUser(), hops);
     }
 
     private void handleOverTheAir(MeshProtos.MeshPacket packet) throws Exception {
         MeshProtos.User user = MeshProtos.User.parseFrom(packet.getDecoded().getPayload());
+
+        // Calculate Hops: How many repeaters did this pass through?
+        int hops = Math.max(0, packet.getHopStart() - packet.getHopLimit());
+
+        // Update DB with signal stats and user data
         nodeDb.updateUser(packet, user);
-        dispatchDiscovery(packet.getFrom(), user);
+
+        dispatchDiscovery(packet.getFrom(), user, hops);
     }
 
-    private void dispatchDiscovery(int nodeId, MeshProtos.User user) {
+    private void dispatchDiscovery(int nodeId, MeshProtos.User user, int hops) {
+        // NOTE: Ensure your NodeDiscoveryEvent.builder() accepts .hopsAway(hops)
         dispatcher.onNodeDiscovery(NodeDiscoveryEvent.builder()
                 .nodeId(nodeId)
                 .longName(user.getLongName())
                 .shortName(user.getShortName())
                 .hwModel(user.getHwModel())
                 .role(user.getRole())
+                .hopsAway(hops)
                 .build());
     }
 }

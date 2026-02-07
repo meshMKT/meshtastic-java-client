@@ -6,12 +6,8 @@ import javax.swing.*;
 import java.awt.*;
 
 /**
- * A high-contrast HTML renderer for Meshtastic nodes.
- * <p>
- * This renderer handles the visual distinction between the local device (Self),
- * live network traffic, and cached historical data. It applies
- * accessibility-minded colors for clear reading on white backgrounds.
- * </p>
+ * A high-contrast HTML renderer for Meshtastic nodes. Updated to display Mesh
+ * Topology (Hops) and Spatial Data (Distance).
  */
 public class NodeCellRenderer extends DefaultListCellRenderer {
 
@@ -20,21 +16,20 @@ public class NodeCellRenderer extends DefaultListCellRenderer {
         super.getListCellRendererComponent(list, value, index, isSelected, cellHasFocus);
 
         if (value instanceof MeshNode node) {
-            // 1. Identity Logic (The "Smart Name" update)
+            // 1. Identity Logic
             String hexId = String.format("!%08x", node.getNodeId());
             String name = (node.getLongName() != null && !node.getLongName().isEmpty())
                     ? node.getLongName()
-                    : "Node " + hexId; // No more "Unknown Node"
+                    : "Node " + hexId;
 
             if (node.isSelf()) {
                 name = "★ " + name + " (Self)";
             }
 
-            // 2. Freshness & Status Logic (Meshtastic Default Timeouts)
+            // 2. Freshness & Status Logic
             String statusText;
             String statusColor;
             float opacity = 1.0f;
-
             long lastLocal = node.getLastSeenLocal();
 
             if (node.isSelf()) {
@@ -46,11 +41,10 @@ public class NodeCellRenderer extends DefaultListCellRenderer {
                 opacity = 0.7f;
             } else {
                 long seconds = (System.currentTimeMillis() - lastLocal) / 1000;
-
-                if (seconds < 900) {        // 15 Minutes (Standard Mesh Heartbeat)
+                if (seconds < 900) {
                     statusText = "LIVE";
                     statusColor = "#008800";
-                } else if (seconds < 7200) { // 2 Hours (Standard Map Timeout)
+                } else if (seconds < 7200) {
                     statusText = "RECENT";
                     statusColor = "#D2691E";
                 } else {
@@ -59,24 +53,31 @@ public class NodeCellRenderer extends DefaultListCellRenderer {
                     opacity = 0.6f;
                 }
             }
-            
-            // 3. Data Preparation
+
+// 3. Data Preparation
             String hw = (node.getHwModel() != null) ? node.getHwModel().name().replace("HARDWARE_", "") : "GENERIC";
             String batt = (node.getDeviceMetrics() != null) ? (int) node.getDeviceMetrics().getBatteryLevel() + "%" : "--%";
             String roleIcon = getRoleEmoji(node.getRole());
-            // Use local time for the "s ago" display if available, otherwise show remote context
+
+// Distance and Hops String
+            String distStr = formatDistance(node.getDistanceKm());
+            String hopsStr = (node.getHopsAway() == 0) ? "Direct" : node.getHopsAway() + " hops";
+
+// Signal String (Combining SNR and RSSI for a technical look)
+            String signalStr = String.format("%.1f dB", node.getSnr());
+            if (node.getRssi() != 0) {
+                signalStr += String.format(" (%d dBm)", node.getRssi());
+            }
+
+            // Time Formatting
             String timeStr;
             if (node.getLastSeenLocal() > 0) {
                 timeStr = formatTime((System.currentTimeMillis() - node.getLastSeenLocal()) / 1000);
             } else if (node.getLastSeen() > 0) {
-                // If we only have radio time, it might be from hours/days ago
-                timeStr = "Radio cache (" + formatTime((System.currentTimeMillis() - node.getLastSeen()) / 1000) + ")";
+                timeStr = "Radio cache (" + formatTime((System.currentTimeMillis() - node.getLastSeen() * 1000) / 1000) + ")";
             } else {
                 timeStr = "Syncing...";
             }
-
-            // GPS Pin: Only show if there is a valid position fix (non-zero coordinate)
-            String gpsIcon = (node.getPosition() != null && node.getPosition().getLatitudeI() != 0) ? " 📍" : "";
 
             // Environment Data
             String envData = "";
@@ -88,12 +89,12 @@ public class NodeCellRenderer extends DefaultListCellRenderer {
             String html = String.format(
                     "<html><div style='padding:5px; opacity: %f;'>"
                     + "%s <b>%s</b> <font color='gray' size='2'>(!%08x)</font> &nbsp; <b><font color='%s' size='1'>[%s]</font></b><br>"
-                    + "<font color='#333333' size='2'>HW: %s%s</font><br>"
-                    + "<font color='#004488'><b>🔋 %s | 📶 %.1f dB%s</b></font><br>"
+                    + "<font color='#333333' size='2'>HW: %s | 👣 %s | 📍 %s</font><br>"
+                    + "<font color='#004488'><b>🔋 %s | 📶 %s%s</b></font><br>"
                     + "<font color='gray' size='2'>Last heard: <i>%s</i></font>"
                     + "</div></html>",
                     opacity, roleIcon, name, node.getNodeId(), statusColor, statusText,
-                    hw, gpsIcon, batt, node.getSnr(), envData, timeStr
+                    hw, hopsStr, distStr, batt, signalStr, envData, timeStr
             );
 
             setText(html);
@@ -104,6 +105,23 @@ public class NodeCellRenderer extends DefaultListCellRenderer {
             setBorder(BorderFactory.createMatteBorder(0, 0, 1, 0, new Color(230, 230, 230)));
         }
         return this;
+    }
+
+    /**
+     * Formats distance in a human-readable way. Switches to meters if less than
+     * 1km.
+     */
+    private String formatDistance(double km) {
+        if (km < 0) {
+            return "Unknown dist";
+        }
+        if (km < 1.0) {
+            return (int) (km * 1000) + "m";
+        }
+        if (km > 1000) {
+            return (int) km + " km"; // Don't need decimal precision for very long distances
+        }
+        return String.format("%.2f km", km);
     }
 
     private String getRoleEmoji(ConfigProtos.Config.DeviceConfig.Role role) {

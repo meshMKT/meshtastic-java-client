@@ -40,7 +40,7 @@ public class TextMessageHandler implements MeshtasticMessageHandler {
                 .senderName(nodeDb.getDisplayName(packet.getFrom()))
                 .destinationId(packet.getTo())
                 .channel(packet.getChannel())
-                .isDirect(nodeDb.isLocalNode(packet.getTo()))
+                .isDirect(nodeDb.isSelfNode(packet.getTo()))
                 .build());
 
         return false;

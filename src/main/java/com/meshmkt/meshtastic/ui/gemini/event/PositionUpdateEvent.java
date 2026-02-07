@@ -20,6 +20,8 @@ public class PositionUpdateEvent {
     double latitude;
     double longitude;
     int altitude;
+    double distanceKm;
+    int hopsAway;
     @Builder.Default Instant timestamp = Instant.now();
     MeshProtos.Position rawProto;
 }
