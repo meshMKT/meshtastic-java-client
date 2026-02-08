@@ -34,7 +34,7 @@ public class RoutingHandler extends BaseMeshHandler {
             MessageStatusEvent event = MessageStatusEvent.of(
                     packet,
                     ctx,
-                    nodeDb.getSelfNode().getNodeId(),
+                    nodeDb.getSelfNodeId(),
                     routing
             );
 

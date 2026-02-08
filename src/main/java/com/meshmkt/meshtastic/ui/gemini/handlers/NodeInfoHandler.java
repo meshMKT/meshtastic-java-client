@@ -44,7 +44,7 @@ public class NodeInfoHandler extends BaseMeshHandler {
 
             // Store in DB and notify UI
             nodeDb.updateUser(dummy, user, localCtx);
-            dispatcher.onNodeDiscovery(NodeDiscoveryEvent.of(dummy, localCtx, nodeDb.getSelfNode().getNodeId(), user));
+            dispatcher.onNodeDiscovery(NodeDiscoveryEvent.of(dummy, localCtx, nodeDb.getSelfNodeId(), user));
             
             return true;
         }
@@ -60,7 +60,7 @@ public class NodeInfoHandler extends BaseMeshHandler {
             MeshProtos.User user = MeshProtos.User.parseFrom(packet.getDecoded().getPayload());
             
             // Fluent factory handles shared radio metadata
-            NodeDiscoveryEvent event = NodeDiscoveryEvent.of(packet, ctx, nodeDb.getSelfNode().getNodeId(), user);
+            NodeDiscoveryEvent event = NodeDiscoveryEvent.of(packet, ctx, nodeDb.getSelfNodeId(), user);
 
             log.info("[DISCOVERY] Found !{} ({}) via {} hops", 
                     Integer.toHexString(event.getNodeId()), event.getLongName(), event.getHopsAway());

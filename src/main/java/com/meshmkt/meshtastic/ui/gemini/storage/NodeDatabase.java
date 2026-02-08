@@ -3,6 +3,7 @@ package com.meshmkt.meshtastic.ui.gemini.storage;
 import org.meshtastic.proto.MeshProtos;
 import org.meshtastic.proto.TelemetryProtos;
 import java.util.Collection;
+import java.util.Optional;
 
 /**
  * Central authority for managing the state of all discovered Meshtastic nodes.
@@ -67,14 +68,19 @@ public interface NodeDatabase {
     void setSelfNodeId(int nodeId);
 
     /**
+     * Return the self node id
+     */
+    int getSelfNodeId();
+    
+    /**
      * @return An immutable snapshot of the local node.
      */
-    MeshNode getSelfNode();
+    Optional<MeshNode> getSelfNode();
 
     /**
      * @return An immutable snapshot of a specific node, or null if unknown.
      */
-    MeshNode getNode(int nodeId);
+    Optional<MeshNode> getNode(int nodeId);
 
     /**
      * @return A collection of all known node snapshots in the database.
@@ -107,4 +113,9 @@ public interface NodeDatabase {
     void addObserver(NodeDatabaseObserver observer);
 
     void removeObserver(NodeDatabaseObserver observer);
+    
+    /**
+     * Clear data
+     */
+    void clear();
 }

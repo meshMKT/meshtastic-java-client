@@ -1,6 +1,5 @@
 package com.meshmkt.meshtastic.ui.gemini.storage;
 
-import com.meshmkt.meshtastic.ui.gemini.GeoUtils;
 import lombok.Data;
 import org.meshtastic.proto.MeshProtos;
 import org.meshtastic.proto.TelemetryProtos;
@@ -27,6 +26,14 @@ public class InMemoryNodeDatabase extends AbstractNodeDatabase {
     }
 
     private final ConcurrentHashMap<Integer, NodeRecord> nodes = new ConcurrentHashMap<>();
+
+    @Override
+    public void clear() {
+        log.info("Clearing node database for new connection session.");
+        nodes.clear();
+        // It's important to notify the UI that the list is now empty
+        notifyNodesPurged();
+    }
 
     private NodeRecord getOrUpdate(int id, MeshProtos.MeshPacket p, PacketContext ctx, long localTime) {
         NodeRecord r = nodes.computeIfAbsent(id, k -> {
@@ -163,9 +170,9 @@ public class InMemoryNodeDatabase extends AbstractNodeDatabase {
     }
 
     @Override
-    public MeshNode getNode(int id) {
+    public Optional<MeshNode> getNode(int id) {
         NodeRecord r = nodes.get(id);
-        return r != null ? mapToDto(id, r) : null;
+        return Optional.ofNullable(r != null ? mapToDto(id, r) : null);
     }
 
     @Override

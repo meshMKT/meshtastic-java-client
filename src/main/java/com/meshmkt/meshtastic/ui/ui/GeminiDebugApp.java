@@ -1,5 +1,6 @@
 package com.meshmkt.meshtastic.ui.ui;
 
+import com.meshmkt.meshtastic.ui.gemini.MeshUtils;
 import com.meshmkt.meshtastic.ui.gemini.MeshtasticClient;
 import com.meshmkt.meshtastic.ui.gemini.MessageRequest;
 import com.meshmkt.meshtastic.ui.gemini.transport.stream.serial.SerialConfig;
@@ -41,6 +42,7 @@ public class GeminiDebugApp implements MeshtasticEventListener, NodeDatabaseObse
     private final Timer refreshTimer;
     private MeshtasticClient client;
     private NodeDatabase nodeDb;
+    private MeshStatusBar statusBar;
 
     private int lastSentPacketId = -1;
 
@@ -108,7 +110,7 @@ public class GeminiDebugApp implements MeshtasticEventListener, NodeDatabaseObse
         JPanel footerStack = new JPanel();
         footerStack.setLayout(new BoxLayout(footerStack, BoxLayout.Y_AXIS));
 
-        MeshStatusBar statusBar = new MeshStatusBar(nodeDb);
+        statusBar = new MeshStatusBar(nodeDb);
 
         footerStack.add(dmPanel);
         footerStack.add(statusBar);
@@ -218,20 +220,54 @@ public class GeminiDebugApp implements MeshtasticEventListener, NodeDatabaseObse
             return;
         }
 
-        SerialConfig config = SerialConfig.builder()
-                .portName(portField.getText())
-                .baudRate(115200)
-                .build();
+        // 1. Immediate UI/DB Prep (EDT)
+        connectBtn.setEnabled(false);
+        nodeDb.clear();
+        append("[SYSTEM] Database cleared. Attempting connection...");
 
-        client = new MeshtasticClient(new SerialTransport(config), nodeDb);
-        client.addEventListener(this);
+        // 2. Background Task
+        SwingWorker<Void, String> worker = new SwingWorker<>() {
+            @Override
+            protected Void doInBackground() throws Exception {
+                publish("Initializing Serial link on " + portField.getText() + "...");
 
-        try {
-            client.connect();
-            append("[SYSTEM] Interface connected.");
-        } catch (Exception ex) {
-            append("[ERROR] " + ex.getMessage());
-        }
+                SerialConfig config = SerialConfig.builder()
+                        .portName(portField.getText())
+                        .baudRate(115200)
+                        .build();
+
+                // Setup client
+                client = new MeshtasticClient(new SerialTransport(config), nodeDb);
+                client.addEventListener(GeminiDebugApp.this);
+                client.addConnectionListener(statusBar);
+
+                // This is the blocking call that was freezing your UI
+                client.connect();
+                return null;
+            }
+
+            @Override
+            protected void process(java.util.List<String> chunks) {
+                // Update the UI log from the background thread safely
+                for (String message : chunks) {
+                    append("[SYSTEM] " + message);
+                }
+            }
+
+            @Override
+            protected void done() {
+                // Back on the EDT
+                try {
+                    get(); // Check for exceptions thrown in doInBackground
+                    append("[SYSTEM] Interface connected.");
+                } catch (Exception ex) {
+                    append("[ERROR] Connection failed: " + ex.getCause().getMessage());
+                    connectBtn.setEnabled(true);
+                }
+            }
+        };
+
+        worker.execute();
     }
 
     private void disconnect() {
@@ -241,48 +277,48 @@ public class GeminiDebugApp implements MeshtasticEventListener, NodeDatabaseObse
         append("[SYSTEM] Disconnected.");
     }
 
+    /**
+     * Processes and sends a direct message to a specific node ID. Uses
+     * MeshUtils to resolve the target's display name for the local log.
+     */
     private void sendDirectMessage() {
         if (client == null || !client.isConnected()) {
+            append("[ERROR] Radio not connected.");
             return;
         }
+
         try {
+            // Parse the target ID from the UI field
             int targetId = (int) Long.parseUnsignedLong(nodeField.getText().trim());
             String text = messageField.getText().trim();
+
             if (text.isEmpty()) {
                 return;
             }
 
+            // Send the message via the radio client
             this.lastSentPacketId = client.sendMessage(MessageRequest.builder()
                     .recipientId(targetId)
                     .text(text)
                     .build());
 
-            
-            append("[OUTGOING] To " + resolveName(targetId) + ": " + text);
+            // NAME RESOLUTION LOGIC:
+            // Since resolveName(MeshNode) requires a non-null object, we use the Optional
+            // from nodeDb to determine the best string for the UI log.
+            String displayName = nodeDb.getNode(targetId)
+                    .map(MeshUtils::resolveName)
+                    .orElseGet(() -> MeshUtils.formatId(targetId));
+
+            append("[OUTGOING] To " + displayName + ": " + text);
+
+            // UI Cleanup
             messageField.setText("");
+
+        } catch (NumberFormatException e) {
+            append("[ERROR] Invalid Node ID format. Please use decimal or hex.");
         } catch (Exception e) {
-            append("[ERROR] Invalid Node ID");
+            append("[ERROR] Failed to send message: " + e.getMessage());
         }
-    }
-    
-    /**
-     * Helper to resolve the best possible display name for logging. Checks
-     * LongName, then ShortName, then falls back to Hex ID.
-     */
-    protected String resolveName(int nodeId) {
-        var node = nodeDb.getNode(nodeId);
-        if (node == null) {
-            return "!" + Integer.toHexString(nodeId);
-        }
-
-        if (node.getLongName() != null && !node.getLongName().isEmpty()) {
-            return node.getLongName();
-        }
-        if (node.getShortName() != null && !node.getShortName().isEmpty()) {
-            return node.getShortName();
-        }
-
-        return "!" + Integer.toHexString(nodeId);
     }
 
     private void openMapForSelectedNode() {
@@ -300,11 +336,34 @@ public class GeminiDebugApp implements MeshtasticEventListener, NodeDatabaseObse
     }
 
     // --- MeshtasticEventListener ---
+    /**
+     * UI Callback: Handles incoming chat messages (both broadcast and direct).
+     * Uses MeshUtils to resolve names for a more readable log.
+     */
     @Override
     public void onTextMessage(ChatMessageEvent event) {
-        
-        
-        append("[CHAT] isDm: " + event.isDirect() + " From: " + resolveName(event.getNodeId()) + " To: " + resolveName(event.getDestinationId()) + ": " + event.getText());
+        // 1. Resolve Sender Name (From)
+        // We try to find the node in the DB; if not found, we fall back to hex.
+        String fromName = nodeDb.getNode(event.getNodeId())
+                .map(MeshUtils::resolveName)
+                .orElseGet(() -> MeshUtils.formatId(event.getNodeId()));
+
+        // 2. Resolve Destination Name (To)
+        // Meshtastic broadcast ID (0xFFFFFFFF) or specific node ID.
+        String toName = nodeDb.getNode(event.getDestinationId())
+                .map(MeshUtils::resolveName)
+                .orElseGet(() -> MeshUtils.formatId(event.getDestinationId()));
+
+        // 3. Construct the readable log line
+        // e.g., [CHAT] (DM) From: Bob To: !08x7f22: Hello!
+        // e.g., [CHAT] From: Bob To: Unknown: Hello! (if to broadcast)
+        String typeTag = event.isDirect() ? "(DM) " : "";
+
+        append(String.format("[CHAT] %sFrom: %s To: %s: %s",
+                typeTag,
+                fromName,
+                toName,
+                event.getText()));
     }
 
     @Override

@@ -44,12 +44,10 @@ public class MeshtasticClient {
 
     // The Event Bus: Single thread to preserve message sequence
     private final List<MeshtasticEventListener> listeners = new CopyOnWriteArrayList<>();
-    private final ExecutorService eventBus = Executors.newSingleThreadExecutor(r -> {
-        Thread t = new Thread(r, "Mesh-Event-Bus");
-        t.setDaemon(true);
-        t.setPriority(Thread.NORM_PRIORITY - 1);
-        return t;
-    });
+    private final List<ConnectionListener> connectionListeners = new CopyOnWriteArrayList<>();
+
+    private final ExecutorService eventBus;
+    private final ExecutorService connectionEventBus;
 
     /**
      * Initializes the client with a pluggable transport and database.
@@ -66,6 +64,18 @@ public class MeshtasticClient {
             t.setDaemon(true);
             return t;
         });
+        this.eventBus = Executors.newSingleThreadExecutor(r -> {
+            Thread t = new Thread(r, "Mesh-Event-Bus");
+            t.setDaemon(true);
+            t.setPriority(Thread.NORM_PRIORITY - 1);
+            return t;
+        });
+        this.connectionEventBus = Executors.newSingleThreadExecutor(r -> {
+            Thread t = new Thread(r, "Connection-Event-Bus");
+            t.setDaemon(true);
+            t.setPriority(Thread.NORM_PRIORITY - 1);
+            return t;
+        });
 
         initializeHandlers();
         setupPipeline();
@@ -73,22 +83,19 @@ public class MeshtasticClient {
 
     private void initializeHandlers() {
 
-        // This needs to be first
-//        dispatcher.registerHandler(new SignalHandler(nodeDb));
+        dispatcher.registerHandler(new MessageLoggingHandler(nodeDb));
+        dispatcher.registerHandler(new MeshEventLogger(nodeDb));
 
         // 1. Identity & Database Handlers
         dispatcher.registerHandler(new MyInfoHandler(nodeDb, internalDispatcher));
         dispatcher.registerHandler(new NodeInfoHandler(nodeDb, internalDispatcher));
 
         // 3. Functional Handlers (Logic)
-        dispatcher.registerHandler(new TextMessageHandler(nodeDb, internalDispatcher));
         dispatcher.registerHandler(new PositionHandler(nodeDb, internalDispatcher));
         dispatcher.registerHandler(new TelemetryHandler(nodeDb, internalDispatcher));
         dispatcher.registerHandler(new RoutingHandler(nodeDb, internalDispatcher));
+        dispatcher.registerHandler(new TextMessageHandler(nodeDb, internalDispatcher));
 
-        // 4. Logging Handlers
-        dispatcher.registerHandler(new MessageLoggingHandler(nodeDb));
-        dispatcher.registerHandler(new MeshEventLogger(nodeDb));
     }
 
     /**
@@ -133,7 +140,7 @@ public class MeshtasticClient {
                 int syncId = (int) (System.currentTimeMillis() / 1000);
                 sendToRadio(ToRadio.newBuilder().setWantConfigId(syncId).build());
 
-                notifyListeners(l -> l.onConnectionStatusChanged(true, "Connected to radio"));
+                notifyConnectionListeners(l -> l.onConnected("Connected"));
             }
 
             @Override
@@ -142,12 +149,13 @@ public class MeshtasticClient {
                 // Reset sync state for next connection
                 nodeDb.setSyncComplete(false);
                 log.warn(">>> Transport Disconnected: {}", reason);
-                notifyListeners(l -> l.onConnectionStatusChanged(false, reason));
+                notifyConnectionListeners(l -> l.onDisconnected());
             }
 
             @Override
             public void onError(Throwable t) {
                 log.error(">>> Transport Error: {}", t.getMessage());
+                notifyConnectionListeners(l -> onError(t));
             }
         });
     }
@@ -196,6 +204,18 @@ public class MeshtasticClient {
         }
     }
 
+    private void notifyConnectionListeners(Consumer<ConnectionListener> action) {
+        for (ConnectionListener l : connectionListeners) {
+            connectionEventBus.execute(() -> {
+                try {
+                    action.accept(l);
+                } catch (Exception e) {
+                    log.error("Error in listener callback", e);
+                }
+            });
+        }
+    }
+
     // --- Public API ---
     /**
      * Manually requests the radio to re-send or fetch the NodeInfo (User) data
@@ -205,25 +225,7 @@ public class MeshtasticClient {
      */
     public void refreshNodeInfo(int nodeId) {
         log.info(">>> Manually requesting SINGLE node refresh: !{:08x}", nodeId);
-
-        // 1. Create the DATA payload specifying this is a NodeInfo request
-        org.meshtastic.proto.MeshProtos.Data payload = org.meshtastic.proto.MeshProtos.Data.newBuilder()
-                .setPortnum(org.meshtastic.proto.Portnums.PortNum.NODEINFO_APP)
-                .build();
-
-        // 2. Wrap it in a MeshPacket targeted at the specific ID
-        org.meshtastic.proto.MeshProtos.MeshPacket pk = org.meshtastic.proto.MeshProtos.MeshPacket.newBuilder()
-                .setTo(nodeId)
-                .setDecoded(payload) // This is where the payload goes
-                .setWantAck(true)
-                .build();
-
-        // 3. Send via ToRadio
-        org.meshtastic.proto.MeshProtos.ToRadio request = org.meshtastic.proto.MeshProtos.ToRadio.newBuilder()
-                .setPacket(pk)
-                .build();
-
-        sendToRadio(request);
+         sendRequest(nodeId, org.meshtastic.proto.Portnums.PortNum.NODEINFO_APP);
     }
 
     /**
@@ -259,11 +261,11 @@ public class MeshtasticClient {
                 .build();
 
         // 3. Send to Radio
-         // 3. Send via ToRadio
+        // 3. Send via ToRadio
         org.meshtastic.proto.MeshProtos.ToRadio request = org.meshtastic.proto.MeshProtos.ToRadio.newBuilder()
                 .setPacket(pk)
                 .build();
-        
+
         sendToRadio(request);
     }
 
@@ -273,6 +275,14 @@ public class MeshtasticClient {
 
     public void removeEventListener(MeshtasticEventListener listener) {
         listeners.remove(listener);
+    }
+
+    public void addConnectionListener(ConnectionListener l) {
+        connectionListeners.add(l);
+    }
+
+    public void removeConnectionListener(ConnectionListener l) {
+        connectionListeners.remove(l);
     }
 
     public void connect() {
@@ -346,8 +356,15 @@ public class MeshtasticClient {
         return packetId; // Return the ID to the UI
     }
 
-    public void sendToRadio(ToRadio toRadio) {
-        if (!transport.isConnected()) {
+    /**
+     * Radios can only handle on thing at a time so this will help keeps things
+     * in organized
+     *
+     * @param toRadio
+     */
+    public synchronized void sendToRadio(ToRadio toRadio) {
+        if (!isConnected()) {
+            log.warn("Attempted to send packet while disconnected. Packet dropped.");
             return;
         }
         transport.write(toRadio.toByteArray());
@@ -360,8 +377,31 @@ public class MeshtasticClient {
     public void disconnect() {
         connected = false;
         transport.stop();
-        dispatcher.shutdown();
-        internalScheduler.shutdown();
+
+        // Shut down executors gracefully
         eventBus.shutdown();
+        connectionEventBus.shutdown();
+        internalScheduler.shutdown();
+
+        try {
+            if (!eventBus.awaitTermination(2, TimeUnit.SECONDS)) {
+                eventBus.shutdownNow();
+            }
+            
+            if (!connectionEventBus.awaitTermination(2, TimeUnit.SECONDS)) {
+                connectionEventBus.shutdownNow();
+            }
+            
+            if (!internalScheduler.awaitTermination(2, TimeUnit.SECONDS)) {
+                internalScheduler.shutdownNow();
+            }
+            
+        } catch (InterruptedException e) {
+            eventBus.shutdownNow();
+            connectionEventBus.shutdownNow();
+            internalScheduler.shutdownNow();
+        }
+
+        log.info("Client resources released.");
     }
 }

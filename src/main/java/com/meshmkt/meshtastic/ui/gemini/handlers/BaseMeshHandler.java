@@ -48,18 +48,21 @@ public abstract class BaseMeshHandler implements MeshtasticMessageHandler {
      * Helper to resolve display names for logging across all handlers.
      */
     protected String resolveName(int nodeId) {
-        var node = nodeDb.getNode(nodeId);
-        if (node == null) {
-            return "!" + Integer.toHexString(nodeId);
-        }
+        String hexId = "!" + Integer.toHexString(nodeId);
 
-        if (node.getLongName() != null && !node.getLongName().isEmpty()) {
-            return node.getLongName();
-        }
-        if (node.getShortName() != null && !node.getShortName().isEmpty()) {
-            return node.getShortName();
-        }
-
-        return "!" + Integer.toHexString(nodeId);
+        return nodeDb.getNode(nodeId)
+                .map(node -> {
+                    // Prioritize Long Name
+                    if (node.getLongName() != null && !node.getLongName().isEmpty()) {
+                        return node.getLongName();
+                    }
+                    // Fallback to Short Name
+                    if (node.getShortName() != null && !node.getShortName().isEmpty()) {
+                        return node.getShortName();
+                    }
+                    return null; // Trigger the orElse below
+                })
+                .filter(name -> name != null && !name.isEmpty()) // Final safety check
+                .orElse(hexId); // If node is missing or has no names, return hex ID
     }
 }

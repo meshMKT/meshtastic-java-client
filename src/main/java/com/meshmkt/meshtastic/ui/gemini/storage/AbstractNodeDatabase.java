@@ -1,9 +1,11 @@
 package com.meshmkt.meshtastic.ui.gemini.storage;
 
-import com.meshmkt.meshtastic.ui.gemini.GeoUtils;
+import com.meshmkt.meshtastic.ui.gemini.MeshConstants;
+import com.meshmkt.meshtastic.ui.gemini.MeshUtils;
 import org.meshtastic.proto.MeshProtos;
 import org.meshtastic.proto.TelemetryProtos;
 import java.util.List;
+import java.util.Optional;
 import java.util.concurrent.*;
 
 /**
@@ -78,7 +80,12 @@ public abstract class AbstractNodeDatabase implements NodeDatabase {
     }
 
     @Override
-    public MeshNode getSelfNode() {
+    public int getSelfNodeId() {
+        return localNodeId;
+    }
+
+    @Override
+    public Optional<MeshNode> getSelfNode() {
         return getNode(localNodeId);
     }
 
@@ -126,25 +133,25 @@ public abstract class AbstractNodeDatabase implements NodeDatabase {
      * distance cannot be calculated, or -2.0 if via MQTT.
      */
     protected double calculateDistance(int remoteId, MeshProtos.Position remotePos, PacketContext ctx) {
+
         // 1. Check if the message came via the Internet (MQTT)
         if (ctx != null && ctx.isViaMqtt()) {
-            return -2.0;
+            return MeshConstants.DISTANCE_MQTT;
         }
 
         // 2. Check if we are looking at our own node
         if (isSelfNode(remoteId)) {
-            return 0.0;
+            return MeshConstants.DISTANCE_SELF;
         }
 
-        // 3. Attempt math if both nodes have GPS fixes
-        MeshNode self = getSelfNode();
-        if (self != null && self.hasGpsFix() && remotePos != null && remotePos.getLatitudeI() != 0) {
-            return GeoUtils.calculateDistance(
-                    self.getPosition().getLatitudeI() / 1e7, self.getPosition().getLongitudeI() / 1e7,
-                    remotePos.getLatitudeI() / 1e7, remotePos.getLongitudeI() / 1e7
-            );
-        }
-
-        return -1.0; // Unknown/No Fix
+        // 3. Attempt math using Optional pipeline
+        return getSelfNode()
+                .filter(self -> self.hasGpsFix())
+                .filter(self -> remotePos != null && remotePos.getLatitudeI() != 0)
+                .map(self -> MeshUtils.calculateDistance(
+                self.getPosition().getLatitudeI() / 1e7, self.getPosition().getLongitudeI() / 1e7,
+                remotePos.getLatitudeI() / 1e7, remotePos.getLongitudeI() / 1e7
+        ))
+                .orElse(MeshConstants.DISTANCE_UNKNOWN);
     }
 }

@@ -35,7 +35,7 @@ public class TextMessageHandler extends BaseMeshHandler {
         ChatMessageEvent event = ChatMessageEvent.of(
                 packet,
                 ctx,
-                nodeDb.getSelfNode().getNodeId(),
+                nodeDb.getSelfNodeId(),
                 text
         );
 

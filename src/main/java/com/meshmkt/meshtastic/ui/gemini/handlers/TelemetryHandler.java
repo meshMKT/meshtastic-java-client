@@ -29,7 +29,7 @@ public class TelemetryHandler extends BaseMeshHandler {
     protected boolean handlePacket(MeshProtos.MeshPacket packet, PacketContext ctx) {
         try {
             TelemetryProtos.Telemetry tele = TelemetryProtos.Telemetry.parseFrom(packet.getDecoded().getPayload());
-            TelemetryUpdateEvent event = TelemetryUpdateEvent.of(packet, ctx, nodeDb.getSelfNode().getNodeId(), tele);
+            TelemetryUpdateEvent event = TelemetryUpdateEvent.of(packet, ctx, nodeDb.getSelfNodeId(), tele);
 
             String name = resolveName(event.getNodeId());
 
