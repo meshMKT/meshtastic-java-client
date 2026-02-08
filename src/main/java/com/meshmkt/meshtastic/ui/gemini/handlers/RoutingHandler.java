@@ -1,65 +1,60 @@
 package com.meshmkt.meshtastic.ui.gemini.handlers;
 
-import com.meshmkt.meshtastic.ui.gemini.MeshtasticMessageHandler;
 import com.meshmkt.meshtastic.ui.gemini.event.MeshEventDispatcher;
 import com.meshmkt.meshtastic.ui.gemini.event.MessageStatusEvent;
 import com.meshmkt.meshtastic.ui.gemini.storage.NodeDatabase;
+import com.meshmkt.meshtastic.ui.gemini.storage.PacketContext;
 import org.meshtastic.proto.MeshProtos;
-import org.meshtastic.proto.Portnums;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import lombok.extern.slf4j.Slf4j;
+import org.meshtastic.proto.Portnums.PortNum;
 
 /**
- * Handles ROUTING_APP packets to track the delivery status of sent messages.
+ * Monitors ROUTING_APP packets to track Delivery ACKs and NAKs.
  */
-public class RoutingHandler implements MeshtasticMessageHandler {
-
-    private static final Logger log = LoggerFactory.getLogger(RoutingHandler.class);
-    private final MeshEventDispatcher dispatcher;
-    private final NodeDatabase nodeDb;
+@Slf4j
+public class RoutingHandler extends BaseMeshHandler {
 
     public RoutingHandler(NodeDatabase nodeDb, MeshEventDispatcher dispatcher) {
-        this.nodeDb = nodeDb;
-        this.dispatcher = dispatcher;
+        super(nodeDb, dispatcher);
     }
 
     @Override
     public boolean canHandle(MeshProtos.FromRadio message) {
-        return message.hasPacket()
-                && message.getPacket().hasDecoded()
-                && message.getPacket().getDecoded().getPortnumValue() == Portnums.PortNum.ROUTING_APP_VALUE;
+        return message.hasPacket() && message.getPacket().hasDecoded()
+                && message.getPacket().getDecoded().getPortnum() == PortNum.ROUTING_APP;
     }
 
     @Override
-    public boolean handle(MeshProtos.FromRadio message) {
+    protected boolean handlePacket(MeshProtos.MeshPacket packet, PacketContext ctx) {
         try {
-            MeshProtos.MeshPacket packet = message.getPacket();
+            // 1. Parse the routing payload
+            MeshProtos.Routing routing = MeshProtos.Routing.parseFrom(packet.getDecoded().getPayload());
 
-            // The packet contains decoded data
-            MeshProtos.Data data = packet.getDecoded();
+            // 2. Create the fluent event
+            MessageStatusEvent event = MessageStatusEvent.of(
+                    packet,
+                    ctx,
+                    nodeDb.getSelfNode().getNodeId(),
+                    routing
+            );
 
-            // The Routing payload is inside the data's payload bytes
-            MeshProtos.Routing routing = MeshProtos.Routing.parseFrom(data.getPayload());
+            // 3. Keep your original logging style
+            log.info("Routing: Received {} from !{} for PacketID: {}",
+                    event.getError(),
+                    event.getNodeId(),
+                    event.getPacketId());
 
-            // Update database signal info
-            nodeDb.updateSignal(packet.getFrom(), packet.getRxSnr(), packet.getRxRssi());
+            // 4. Update signal health
+            nodeDb.updateSignal(event.getNodeId(), ctx);
 
-            // FIX: The ID of your original message is stored in the Data message's request_id field
-            int originalPacketId = data.getRequestId();
+            // 5. Dispatch
+            dispatcher.onMessageStatusUpdate(event);
 
-            if (originalPacketId != 0) {
-                MessageStatusEvent event = MessageStatusEvent.builder()
-                        .packetId(originalPacketId)
-                        .success(routing.getErrorReason() == MeshProtos.Routing.Error.NONE)
-                        .error(routing.getErrorReason())
-                        .rawProto(routing)
-                        .build();
+            return true; // Marked as handled
 
-                dispatcher.onMessageStatusUpdate(event);
-            }
         } catch (Exception e) {
-            log.error("Failed to parse Routing payload", e);
+            log.error("Failed to parse Routing packet", e);
+            return false;
         }
-        return false;
     }
 }

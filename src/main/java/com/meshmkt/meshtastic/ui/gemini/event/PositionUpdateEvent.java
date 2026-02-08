@@ -1,27 +1,28 @@
-/*
- * Click nbfs://nbhost/SystemFileSystem/Templates/Licenses/license-default.txt to change this license
- * Click nbfs://nbhost/SystemFileSystem/Templates/Classes/Class.java to edit this template
- */
 package com.meshmkt.meshtastic.ui.gemini.event;
 
-import java.time.Instant;
-import lombok.Builder;
-import lombok.Value;
+import com.meshmkt.meshtastic.ui.gemini.storage.PacketContext;
+import lombok.AccessLevel;
+import lombok.AllArgsConstructor;
+import lombok.Getter;
 import org.meshtastic.proto.MeshProtos;
 
-/**
- *
- * @author tmulle
- */
-@Value @Builder
-public class PositionUpdateEvent {
-    int nodeId;
-    String nodeName;
-    double latitude;
-    double longitude;
-    int altitude;
-    double distanceKm;
-    int hopsAway;
-    @Builder.Default Instant timestamp = Instant.now();
-    MeshProtos.Position rawProto;
+@Getter
+@AllArgsConstructor(access = AccessLevel.PRIVATE)
+public class PositionUpdateEvent extends MeshEvent {
+
+    private final double latitude;
+    private final double longitude;
+    private final float altitude;
+    private final double distanceKm;
+    /**
+     * The raw protobuf for accessing DOP, timestamp, or precision bits.
+     */
+    private final MeshProtos.Position rawPosition;
+
+    public static PositionUpdateEvent of(MeshProtos.MeshPacket p, PacketContext ctx, int selfId,
+            double lat, double lon, float alt, double dist,
+            MeshProtos.Position raw) {
+        return new PositionUpdateEvent(lat, lon, alt, dist, raw)
+                .applyMetadata(p, ctx, selfId);
+    }
 }

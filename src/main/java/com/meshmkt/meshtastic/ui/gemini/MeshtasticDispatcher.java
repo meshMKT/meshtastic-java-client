@@ -1,5 +1,6 @@
 package com.meshmkt.meshtastic.ui.gemini;
 
+import com.meshmkt.meshtastic.ui.gemini.handlers.MeshtasticMessageHandler;
 import org.meshtastic.proto.MeshProtos;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;

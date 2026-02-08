@@ -17,9 +17,6 @@ import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.concurrent.*;
 import java.util.function.Consumer;
-import org.meshtastic.proto.MeshProtos.Data;
-import org.meshtastic.proto.MeshProtos.MeshPacket;
-import org.meshtastic.proto.Portnums.PortNum;
 
 /**
  * <h2>Meshtastic Client</h2>
@@ -77,10 +74,10 @@ public class MeshtasticClient {
     private void initializeHandlers() {
 
         // This needs to be first
-        dispatcher.registerHandler(new SignalHandler(nodeDb));
+//        dispatcher.registerHandler(new SignalHandler(nodeDb));
 
         // 1. Identity & Database Handlers
-        dispatcher.registerHandler(new MyInfoHandler(nodeDb));
+        dispatcher.registerHandler(new MyInfoHandler(nodeDb, internalDispatcher));
         dispatcher.registerHandler(new NodeInfoHandler(nodeDb, internalDispatcher));
 
         // 3. Functional Handlers (Logic)

@@ -257,11 +257,32 @@ public class GeminiDebugApp implements MeshtasticEventListener, NodeDatabaseObse
                     .text(text)
                     .build());
 
-            append("[OUTGOING] To " + nodeDb.getDisplayName(targetId) + ": " + text);
+            
+            append("[OUTGOING] To " + resolveName(targetId) + ": " + text);
             messageField.setText("");
         } catch (Exception e) {
             append("[ERROR] Invalid Node ID");
         }
+    }
+    
+    /**
+     * Helper to resolve the best possible display name for logging. Checks
+     * LongName, then ShortName, then falls back to Hex ID.
+     */
+    protected String resolveName(int nodeId) {
+        var node = nodeDb.getNode(nodeId);
+        if (node == null) {
+            return "!" + Integer.toHexString(nodeId);
+        }
+
+        if (node.getLongName() != null && !node.getLongName().isEmpty()) {
+            return node.getLongName();
+        }
+        if (node.getShortName() != null && !node.getShortName().isEmpty()) {
+            return node.getShortName();
+        }
+
+        return "!" + Integer.toHexString(nodeId);
     }
 
     private void openMapForSelectedNode() {
@@ -281,7 +302,9 @@ public class GeminiDebugApp implements MeshtasticEventListener, NodeDatabaseObse
     // --- MeshtasticEventListener ---
     @Override
     public void onTextMessage(ChatMessageEvent event) {
-        append("[CHAT] " + event.getSenderName() + ": " + event.getText());
+        
+        
+        append("[CHAT] isDm: " + event.isDirect() + " From: " + resolveName(event.getNodeId()) + " To: " + resolveName(event.getDestinationId()) + ": " + event.getText());
     }
 
     @Override

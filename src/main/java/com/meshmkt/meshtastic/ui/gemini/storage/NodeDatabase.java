@@ -5,83 +5,106 @@ import org.meshtastic.proto.TelemetryProtos;
 import java.util.Collection;
 
 /**
- * Core interface for managing the state of discovered mesh nodes.
+ * Central authority for managing the state of all discovered Meshtastic nodes.
  * <p>
- * Implementations handle the extraction of metadata from
- * {@link MeshProtos.MeshPacket} and provide thread-safe access to node
- * snapshots.
+ * This interface provides a high-level API for updating node information from
+ * various protobuf payloads while maintaining consistent radio metadata via
+ * {@link PacketContext}.
  * </p>
  */
 public interface NodeDatabase {
 
     /**
-     * Updates node identity using the provided User packet and packet context.
+     * Updates node identity (Long Name, Short Name, Role) and signal context.
+     *
+     * @param packet The raw mesh packet.
+     * @param user The decoded User payload.
+     * @param ctx The radio metadata context.
      */
-    void updateUser(MeshProtos.MeshPacket packet, MeshProtos.User user);
+    void updateUser(MeshProtos.MeshPacket packet, MeshProtos.User user, PacketContext ctx);
 
     /**
-     * Updates node location using the provided Position packet and packet
-     * context.
+     * Updates node location and triggers relative distance recalculation.
+     *
+     * @param packet The raw mesh packet.
+     * @param position The decoded Position payload.
+     * @param ctx The radio metadata context.
      */
-    void updatePosition(MeshProtos.MeshPacket packet, MeshProtos.Position position);
+    void updatePosition(MeshProtos.MeshPacket packet, MeshProtos.Position position, PacketContext ctx);
 
     /**
-     * Updates node health using the provided DeviceMetrics and packet context.
+     * Updates device metrics (Battery, Voltage).
+     *
+     * @param packet The raw mesh packet.
+     * @param metrics The decoded DeviceMetrics payload.
+     * @param ctx The radio metadata context.
      */
-    void updateMetrics(MeshProtos.MeshPacket packet, TelemetryProtos.DeviceMetrics metrics);
+    void updateMetrics(MeshProtos.MeshPacket packet, TelemetryProtos.DeviceMetrics metrics, PacketContext ctx);
 
     /**
-     * Updates node sensor data using the provided EnvironmentMetrics and packet
-     * context.
+     * Updates environmental metrics (Temp, Humidity).
+     *
+     * @param packet The raw mesh packet.
+     * @param env The decoded EnvironmentMetrics payload.
+     * @param ctx The radio metadata context.
      */
-    void updateEnvMetrics(MeshProtos.MeshPacket packet, TelemetryProtos.EnvironmentMetrics env);
+    void updateEnvMetrics(MeshProtos.MeshPacket packet, TelemetryProtos.EnvironmentMetrics env, PacketContext ctx);
 
     /**
-     * Manually updates signal metadata for a specific node ID.
+     * Updates the signal vitals and 'last seen' timestamps for a node. Useful
+     * for packets that don't have specialized storage (e.g. Chat or ACKs).
+     *
+     * @param nodeId The ID of the sender.
+     * @param ctx The radio metadata (SNR, RSSI, Hops).
      */
-    void updateSignal(int nodeId, float snr, int rssi);
+    void updateSignal(int nodeId, PacketContext ctx);
 
     /**
-     * Registers the ID of the local radio node.
+     * Registers the NodeID of the local radio to enable "Self" identification.
+     *
+     * @param nodeId The 32-bit integer NodeID.
      */
     void setSelfNodeId(int nodeId);
-    
+
     /**
-     * Get the local node
+     * @return An immutable snapshot of the local node.
      */
     MeshNode getSelfNode();
 
     /**
-     * Returns the display name of a node, or a hex string if unknown.
-     */
-    String getDisplayName(int nodeId);
-
-    /**
-     * Returns true if the ID matches the local radio.
-     */
-    boolean isSelfNode(int nodeId);
-
-    /**
-     * Retrieves a snapshot of a specific node.
+     * @return An immutable snapshot of a specific node, or null if unknown.
      */
     MeshNode getNode(int nodeId);
 
     /**
-     * Retrieves a collection of all known nodes.
+     * @return A collection of all known node snapshots in the database.
      */
     Collection<MeshNode> getAllNodes();
 
     /**
-     * Starts a background task to remove nodes not seen within the timeout
-     * period.
+     * Determines if a specific NodeID belongs to the local radio.
+     *
+     * @param nodeId The ID to check.
+     * @return true if it is the local node.
+     */
+    boolean isSelfNode(int nodeId);
+
+    /**
+     * Starts a background task to purge nodes that haven't been seen for a
+     * while.
+     *
+     * @param timeoutMins The inactivity threshold in minutes.
      */
     void startCleanupTask(int timeoutMins);
 
-    
-    void addObserver(NodeDatabaseObserver observer);
-    void removeObserver(NodeDatabaseObserver observer);
-    
+    /**
+     * Indicates if the radio has finished dumping its initial internal memory.
+     */
     void setSyncComplete(boolean complete);
+
     boolean isSyncComplete();
 
+    void addObserver(NodeDatabaseObserver observer);
+
+    void removeObserver(NodeDatabaseObserver observer);
 }

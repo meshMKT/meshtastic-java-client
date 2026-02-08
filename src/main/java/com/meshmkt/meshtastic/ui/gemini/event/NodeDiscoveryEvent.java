@@ -1,22 +1,33 @@
 package com.meshmkt.meshtastic.ui.gemini.event;
 
-import java.time.Instant;
-import lombok.Builder;
-import lombok.Value;
-import org.meshtastic.proto.ConfigProtos;
+import com.meshmkt.meshtastic.ui.gemini.storage.PacketContext;
+import lombok.AccessLevel;
+import lombok.AllArgsConstructor;
+import lombok.Getter;
 import org.meshtastic.proto.MeshProtos;
 
-@Value
-@Builder
-public class NodeDiscoveryEvent {
+/**
+ * Triggered when a node announces its identity (Name and Hardware).
+ */
+@Getter
+@AllArgsConstructor(access = AccessLevel.PRIVATE)
+public class NodeDiscoveryEvent extends MeshEvent {
 
-    int nodeId;
-    String longName;
-    String shortName;
-    MeshProtos.HardwareModel hwModel;
-    ConfigProtos.Config.DeviceConfig.Role role;
-    @Builder.Default
-    Instant timestamp = Instant.now();
-    MeshProtos.User rawProto;
-    int hopsAway;
+    /**
+     * The full name of the user (e.g., "John Doe").
+     */
+    private final String longName;
+    /**
+     * The short identifier (e.g., "JD").
+     */
+    private final String shortName;
+    /**
+     * The hardware model (e.g., HELTEC_V3).
+     */
+    private final MeshProtos.HardwareModel hwModel;
+
+    public static NodeDiscoveryEvent of(MeshProtos.MeshPacket p, PacketContext ctx, int selfId, MeshProtos.User user) {
+        return new NodeDiscoveryEvent(user.getLongName(), user.getShortName(), user.getHwModel())
+                .applyMetadata(p, ctx, selfId);
+    }
 }

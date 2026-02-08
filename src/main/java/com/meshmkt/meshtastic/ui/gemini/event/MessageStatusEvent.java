@@ -1,18 +1,47 @@
 package com.meshmkt.meshtastic.ui.gemini.event;
 
-import lombok.Builder;
-import lombok.Value;
+import com.meshmkt.meshtastic.ui.gemini.storage.PacketContext;
+import lombok.AccessLevel;
+import lombok.AllArgsConstructor;
+import lombok.Getter;
 import org.meshtastic.proto.MeshProtos;
-import java.time.Instant;
 
-@Value
-@Builder
-public class MessageStatusEvent {
+/**
+ * Monitors delivery status (ACK/NAK).
+ */
+@Getter
+@AllArgsConstructor(access = AccessLevel.PRIVATE)
+public class MessageStatusEvent extends MeshEvent {
 
-    int packetId;      // The ID of the message being acknowledged
-    boolean success;   // True if Error.NONE
-    MeshProtos.Routing.Error error;
-    @Builder.Default
-    Instant timestamp = Instant.now();
-    MeshProtos.Routing rawProto;
+    /**
+     * The ID of the message being acknowledged.
+     */
+    private final int packetId;
+
+    /**
+     * True if delivery was successful.
+     */
+    private final boolean success;
+
+    /**
+     * The specific routing error/reason.
+     */
+    private final MeshProtos.Routing.Error error;
+
+    /**
+     * The raw routing payload.
+     */
+    private final MeshProtos.Routing rawRouting;
+
+    public static MessageStatusEvent of(MeshProtos.MeshPacket p, PacketContext ctx, int selfId, MeshProtos.Routing routing) {
+        // We pull the RequestId from the Data payload as per your working logic
+        int requestId = p.getDecoded().getRequestId();
+
+        return new MessageStatusEvent(
+                requestId,
+                routing.getErrorReason() == MeshProtos.Routing.Error.NONE,
+                routing.getErrorReason(),
+                routing
+        ).applyMetadata(p, ctx, selfId);
+    }
 }

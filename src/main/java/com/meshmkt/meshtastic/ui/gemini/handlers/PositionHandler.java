@@ -1,73 +1,63 @@
 package com.meshmkt.meshtastic.ui.gemini.handlers;
 
-import com.meshmkt.meshtastic.ui.gemini.GeoUtils;
-import com.meshmkt.meshtastic.ui.gemini.MeshtasticMessageHandler;
 import com.meshmkt.meshtastic.ui.gemini.event.MeshEventDispatcher;
 import com.meshmkt.meshtastic.ui.gemini.event.PositionUpdateEvent;
 import com.meshmkt.meshtastic.ui.gemini.storage.NodeDatabase;
+import com.meshmkt.meshtastic.ui.gemini.storage.PacketContext;
 import org.meshtastic.proto.MeshProtos;
-import org.meshtastic.proto.Portnums;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import lombok.extern.slf4j.Slf4j;
+import org.meshtastic.proto.Portnums.PortNum;
 
 /**
- * Handles incoming POSITION_APP packets. This refactored version delegates
- * timing and signal logic to the Core Database.
+ * Processes incoming POSITION_APP packets. Recalculates distances and
+ * dispatches coordinate updates to the UI.
  */
-public class PositionHandler implements MeshtasticMessageHandler {
-
-    private static final Logger log = LoggerFactory.getLogger(PositionHandler.class);
-    private final NodeDatabase nodeDb;
-    private final MeshEventDispatcher dispatcher;
+@Slf4j
+public class PositionHandler extends BaseMeshHandler {
 
     public PositionHandler(NodeDatabase nodeDb, MeshEventDispatcher dispatcher) {
-        this.nodeDb = nodeDb;
-        this.dispatcher = dispatcher;
+        super(nodeDb, dispatcher);
     }
 
     @Override
     public boolean canHandle(MeshProtos.FromRadio message) {
-        return message.hasPacket()
-                && message.getPacket().hasDecoded()
-                && message.getPacket().getDecoded().getPortnumValue() == Portnums.PortNum.POSITION_APP_VALUE;
+        return message.hasPacket() && message.getPacket().hasDecoded()
+                && message.getPacket().getDecoded().getPortnum() == PortNum.POSITION_APP;
     }
 
     @Override
-    public boolean handle(MeshProtos.FromRadio message) {
+    protected boolean handlePacket(MeshProtos.MeshPacket packet, PacketContext ctx) {
         try {
-            MeshProtos.MeshPacket packet = message.getPacket();
             MeshProtos.Position pos = MeshProtos.Position.parseFrom(packet.getDecoded().getPayload());
 
-            // 1. Update the database first
-            nodeDb.updatePosition(packet, pos);
+            // Database update performs coordinate storage and distance math
+            nodeDb.updatePosition(packet, pos, ctx);
 
-            // 2. Calculate distance relative to "Self"
-            double distance = -1.0;
-            var selfNode = nodeDb.getSelfNode(); // Assuming your DB has this helper
+            // Fetch calculated distance from updated node
+            var node = nodeDb.getNode(packet.getFrom());
+            double dist = (node != null) ? node.getDistanceKm() : -1.0;
 
-            if (selfNode != null && selfNode.hasGpsFix() && pos.getLatitudeI() != 0) {
-                distance = GeoUtils.calculateDistance(
-                        selfNode.getPosition().getLatitudeI() / 1e7,
-                        selfNode.getPosition().getLongitudeI() / 1e7,
-                        pos.getLatitudeI() / 1e7,
-                        pos.getLongitudeI() / 1e7
-                );
-            }
+            // Fluent creation including the raw Position proto
+            PositionUpdateEvent event = PositionUpdateEvent.of(
+                    packet, ctx, nodeDb.getSelfNode().getNodeId(),
+                    pos.getLatitudeI() / 1e7,
+                    pos.getLongitudeI() / 1e7,
+                    pos.getAltitude(),
+                    dist,
+                    pos
+            );
 
-            // 3. Dispatch with the new calculated distance
-            dispatcher.onPositionUpdate(PositionUpdateEvent.builder()
-                    .nodeId(packet.getFrom())
-                    .nodeName(nodeDb.getDisplayName(packet.getFrom()))
-                    .latitude(pos.getLatitudeI() / 1e7)
-                    .longitude(pos.getLongitudeI() / 1e7)
-                    .altitude(pos.getAltitude())
-                    .distanceKm(distance) // Added to your event DTO
-                    .rawProto(pos)
-                    .build());
+            log.info("[POS] {} (!{}) is {}km away | SNR: {}",
+                    resolveName(event.getNodeId()),
+                    Integer.toHexString(event.getNodeId()),
+                    String.format("%.2f", dist),
+                    event.getSnr());
 
+            dispatcher.onPositionUpdate(event);
+            return true;
         } catch (Exception e) {
-            log.error("Failed to parse Position payload: {}", e.getMessage());
+            log.error("Position processing failed", e);
+            return false;
         }
-        return false;
     }
 }

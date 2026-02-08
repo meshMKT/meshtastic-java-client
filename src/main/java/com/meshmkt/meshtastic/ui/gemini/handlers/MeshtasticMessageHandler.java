@@ -1,4 +1,4 @@
-package com.meshmkt.meshtastic.ui.gemini;
+package com.meshmkt.meshtastic.ui.gemini.handlers;
 
 import org.meshtastic.proto.MeshProtos;
 

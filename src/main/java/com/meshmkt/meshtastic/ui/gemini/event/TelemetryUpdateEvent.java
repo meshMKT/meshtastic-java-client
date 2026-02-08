@@ -1,31 +1,36 @@
 package com.meshmkt.meshtastic.ui.gemini.event;
 
-import java.time.Instant;
-import lombok.Builder;
-import lombok.Value;
+import com.meshmkt.meshtastic.ui.gemini.storage.PacketContext;
+import lombok.AccessLevel;
+import lombok.AllArgsConstructor;
+import lombok.Getter;
+import org.meshtastic.proto.MeshProtos;
 import org.meshtastic.proto.TelemetryProtos;
 
-@Value
-@Builder
-public class TelemetryUpdateEvent {
+/**
+ * Represents environmental or device health data.
+ */
+@Getter
+@AllArgsConstructor(access = AccessLevel.PRIVATE)
+public class TelemetryUpdateEvent extends MeshEvent {
 
-    int nodeId;
-    String nodeName;
+    /**
+     * Battery percentage (0-100).
+     */
+    private final float batteryLevel;
+    /**
+     * Current voltage from the node's battery/USB.
+     */
+    private final float voltage;
+    /**
+     * The raw telemetry protobuf for specialized sensor data.
+     */
+    private final TelemetryProtos.Telemetry rawTelemetry;
 
-    // Device Metrics
-    float batteryLevel;
-    float voltage;
-    float channelUtilization;
-    float airUtilTx;
-
-    // Environment Metrics
-    float temperature;
-    float relativeHumidity;
-    float barometricPressure;
-    
-    int hopsAway;
-
-    @Builder.Default
-    Instant timestamp = Instant.now();
-    TelemetryProtos.Telemetry rawProto;
+    public static TelemetryUpdateEvent of(MeshProtos.MeshPacket p, PacketContext ctx, int selfId,
+            TelemetryProtos.Telemetry tele) {
+        var metrics = tele.getDeviceMetrics();
+        return new TelemetryUpdateEvent(metrics.getBatteryLevel(), metrics.getVoltage(), tele)
+                .applyMetadata(p, ctx, selfId);
+    }
 }

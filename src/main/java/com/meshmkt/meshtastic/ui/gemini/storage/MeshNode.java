@@ -37,6 +37,11 @@ public class MeshNode {
      * Last channel 
      */
     int lastChannel;
+    
+    /**
+     * Did we get this via Mqtt
+     */
+    boolean isMqtt;
 
     /**
      * The hardware model detected from the User packet.
@@ -100,7 +105,12 @@ public class MeshNode {
     /**
      * Is this node ourself
      */
-    boolean isSelf;
+    boolean self;
+    
+    /**
+     * Do we think the node is online
+     */
+    boolean online;
 
     /**
      * Determines if the node has provided valid GPS coordinates.

@@ -1,22 +1,14 @@
 package com.meshmkt.meshtastic.ui.gemini.handlers;
 
-import com.meshmkt.meshtastic.ui.gemini.MeshtasticMessageHandler;
+import com.meshmkt.meshtastic.ui.gemini.event.MeshEventDispatcher;
 import com.meshmkt.meshtastic.ui.gemini.storage.NodeDatabase;
+import com.meshmkt.meshtastic.ui.gemini.storage.PacketContext;
 import org.meshtastic.proto.MeshProtos;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
-/**
- * Handles local MY_INFO packets. This identifies the local radio and marks its ID in
- * the NodeDatabase as the "Primary" local user.
- */
-public class MyInfoHandler implements MeshtasticMessageHandler {
+public class MyInfoHandler extends BaseMeshHandler {
 
-    private static final Logger log = LoggerFactory.getLogger(MyInfoHandler.class);
-    private final NodeDatabase nodeDb;
-
-    public MyInfoHandler(NodeDatabase nodeDb) {
-        this.nodeDb = nodeDb;
+    public MyInfoHandler(NodeDatabase nodeDb, MeshEventDispatcher dispatcher) {
+        super(nodeDb, dispatcher);
     }
 
     @Override
@@ -25,14 +17,13 @@ public class MyInfoHandler implements MeshtasticMessageHandler {
     }
 
     @Override
-    public boolean handle(MeshProtos.FromRadio message) {
-        MeshProtos.MyNodeInfo myInfo = message.getMyInfo();
-        int myId = myInfo.getMyNodeNum();
+    protected boolean handleNonPacketMessage(MeshProtos.FromRadio message) {
+        nodeDb.setSelfNodeId(message.getMyInfo().getMyNodeNum());
+        return false;
+    }
 
-        // Register the local ID in the DB.
-        nodeDb.setSelfNodeId(myId);
-
-        log.info("Local Radio hardware identified as 0x{}", Integer.toHexString(myId));
+    @Override
+    protected boolean handlePacket(MeshProtos.MeshPacket packet, PacketContext ctx) {
         return false;
     }
 }

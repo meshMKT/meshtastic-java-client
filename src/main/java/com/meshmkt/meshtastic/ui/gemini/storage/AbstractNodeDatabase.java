@@ -1,109 +1,85 @@
 package com.meshmkt.meshtastic.ui.gemini.storage;
 
-import java.util.List;
+import com.meshmkt.meshtastic.ui.gemini.GeoUtils;
 import org.meshtastic.proto.MeshProtos;
 import org.meshtastic.proto.TelemetryProtos;
+import java.util.List;
 import java.util.concurrent.*;
-import java.util.function.BiConsumer;
 
 /**
- * Base implementation of the NodeDatabase that centralizes packet processing
- * logic.
+ * Abstract base for NodeDatabase implementations.
  * <p>
- * This class eliminates the need for arbitrary timers by using a logical
- * {@code syncComplete} flag. It distinguishes between historical radio memory
- * (Cached) and real-time mesh traffic (Live) by applying local system
- * timestamps only after the initial handshake is finished.
+ * Handles observer management, cleanup scheduling, and the logic that
+ * distinguishes between "Cached" (initial sync) and "Live" (real-time) packets.
  * </p>
  */
 public abstract class AbstractNodeDatabase implements NodeDatabase {
 
-    /**
-     * * Indicates if the initial radio memory dump has finished. When false,
-     * incoming data is treated as historical (Cached).
-     */
     private boolean syncComplete = false;
-
     protected int localNodeId;
     private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor();
     protected final List<NodeDatabaseObserver> observers = new CopyOnWriteArrayList<>();
 
     @Override
-    public void addObserver(NodeDatabaseObserver observer) {
-        if (!observers.contains(observer)) {
-            observers.add(observer);
-        }
+    public final void updateUser(MeshProtos.MeshPacket p, MeshProtos.User u, PacketContext ctx) {
+        storeUser(u, p, ctx, getArrivalTimestamp());
     }
 
     @Override
-    public void removeObserver(NodeDatabaseObserver observer) {
-        observers.remove(observer);
+    public final void updatePosition(MeshProtos.MeshPacket p, MeshProtos.Position pos, PacketContext ctx) {
+        storePosition(pos, p, ctx, getArrivalTimestamp());
     }
 
     @Override
-    public void setSyncComplete(boolean complete) {
-        this.syncComplete = complete;
-        // Trigger a notification so UI can transition nodes from CACHED to LIVE status
-        notifyNodesPurged();
+    public final void updateMetrics(MeshProtos.MeshPacket p, TelemetryProtos.DeviceMetrics m, PacketContext ctx) {
+        storeMetrics(m, p, ctx, getArrivalTimestamp());
     }
 
-    protected void notifyNodeUpdated(MeshNode node) {
-        observers.forEach(o -> o.onNodeUpdated(node));
+    @Override
+    public final void updateEnvMetrics(MeshProtos.MeshPacket p, TelemetryProtos.EnvironmentMetrics e, PacketContext ctx) {
+        storeEnvMetrics(e, p, ctx, getArrivalTimestamp());
     }
 
-    protected void notifyNodesPurged() {
-        observers.forEach(NodeDatabaseObserver::onNodesPurged);
+    @Override
+    public final void updateSignal(int nodeId, PacketContext ctx) {
+        storeSignal(nodeId, ctx, getArrivalTimestamp());
     }
 
     /**
-     * Standardized packet processor that extracts common metadata and applies
-     * timing.
+     * Logic for local timestamping.
      *
-     * @param packet The raw mesh packet received from the radio.
-     * @param storageAction A consumer that receives the full packet and a local
-     * arrival timestamp. The local timestamp is 0 if the radio is still
-     * syncing.
+     * @return Current time if sync is complete, otherwise 0 to flag as
+     * 'Historical'.
      */
-    protected void process(MeshProtos.MeshPacket packet, BiConsumer<MeshProtos.MeshPacket, Long> storageAction) {
-        int id = packet.getFrom();
+    private long getArrivalTimestamp() {
+        return isSyncComplete() ? System.currentTimeMillis() : 0;
+    }
 
-        // 1. Determine if this arrival counts as "Live" for this session
-        long localArrival = isSyncComplete() ? System.currentTimeMillis() : 0;
+    protected abstract void storeSignal(int nodeId, PacketContext ctx, long time);
 
-        // 2. Update hardware signal stats WITH the local arrival time
-        // We call a protected internal method so the implementation can save the time
-        storeSignal(id, packet.getRxSnr(), packet.getRxRssi(), localArrival);
+    protected abstract void storeUser(MeshProtos.User u, MeshProtos.MeshPacket p, PacketContext ctx, long time);
 
-        // 3. Perform the specific storage (User, Position, etc.)
-        storageAction.accept(packet, localArrival);
+    protected abstract void storePosition(MeshProtos.Position pos, MeshProtos.MeshPacket p, PacketContext ctx, long time);
+
+    protected abstract void storeMetrics(TelemetryProtos.DeviceMetrics m, MeshProtos.MeshPacket p, PacketContext ctx, long time);
+
+    protected abstract void storeEnvMetrics(TelemetryProtos.EnvironmentMetrics e, MeshProtos.MeshPacket p, PacketContext ctx, long time);
+
+    protected abstract void performPurge(long cutoff);
+
+    @Override
+    public void setSelfNodeId(int id) {
+        this.localNodeId = id;
     }
 
     @Override
-    public final void updateUser(MeshProtos.MeshPacket p, MeshProtos.User u) {
-        process(p, (packet, localTime) -> storeUser(u, packet, localTime));
+    public boolean isSelfNode(int id) {
+        return id == localNodeId;
     }
 
     @Override
-    public final void updatePosition(MeshProtos.MeshPacket p, MeshProtos.Position pos) {
-        process(p, (packet, localTime) -> storePosition(pos, packet, localTime));
-    }
-
-    @Override
-    public final void updateMetrics(MeshProtos.MeshPacket p, TelemetryProtos.DeviceMetrics m) {
-        process(p, (packet, localTime) -> storeMetrics(m, packet, localTime));
-    }
-
-    @Override
-    public final void updateEnvMetrics(MeshProtos.MeshPacket p, TelemetryProtos.EnvironmentMetrics e) {
-        process(p, (packet, localTime) -> storeEnvMetrics(e, packet, localTime));
-    }
-
-    @Override
-    public void startCleanupTask(int timeoutMins) {
-        scheduler.scheduleAtFixedRate(() -> {
-            long cutoff = System.currentTimeMillis() - ((long) timeoutMins * 60 * 1000);
-            performPurge(cutoff);
-        }, 1, 1, TimeUnit.MINUTES);
+    public MeshNode getSelfNode() {
+        return getNode(localNodeId);
     }
 
     @Override
@@ -112,33 +88,63 @@ public abstract class AbstractNodeDatabase implements NodeDatabase {
     }
 
     @Override
-    public final void updateSignal(int nodeId, float snr, int rssi) {
-        // If a handler calls this manually, we still apply the Live/Sync logic
-        long localTime = isSyncComplete() ? System.currentTimeMillis() : 0;
-        storeSignal(nodeId, snr, rssi, localTime);
-    }
-    
-    @Override
-    public void setSelfNodeId(int nodeId) {
-        this.localNodeId = nodeId;
+    public void setSyncComplete(boolean c) {
+        this.syncComplete = c;
+        notifyNodesPurged();
     }
 
     @Override
-    public boolean isSelfNode(int nodeId) {
-        return nodeId == localNodeId;
+    public void addObserver(NodeDatabaseObserver o) {
+        observers.add(o);
     }
 
-// Add this to your Abstract Subclass Methods at the bottom
-    protected abstract void storeSignal(int nodeId, float snr, int rssi, long localTime);
+    @Override
+    public void removeObserver(NodeDatabaseObserver o) {
+        observers.remove(o);
+    }
 
-    // --- Subclass Storage Methods ---
-    protected abstract void storeUser(MeshProtos.User u, MeshProtos.MeshPacket p, long localTime);
+    protected void notifyNodeUpdated(MeshNode n) {
+        observers.forEach(o -> o.onNodeUpdated(n));
+    }
 
-    protected abstract void storePosition(MeshProtos.Position pos, MeshProtos.MeshPacket p, long localTime);
+    protected void notifyNodesPurged() {
+        observers.forEach(NodeDatabaseObserver::onNodesPurged);
+    }
 
-    protected abstract void storeMetrics(TelemetryProtos.DeviceMetrics m, MeshProtos.MeshPacket p, long localTime);
+    @Override
+    public void startCleanupTask(int timeoutMins) {
+        scheduler.scheduleAtFixedRate(() -> {
+            // Parent calculates the timestamp cutoff
+            long cutoff = System.currentTimeMillis() - (timeoutMins * 60 * 1000L);
+            // Parent tells the child: "Clean up anything older than this"
+            performPurge(cutoff);
+        }, 1, 1, TimeUnit.MINUTES);
+    }
 
-    protected abstract void storeEnvMetrics(TelemetryProtos.EnvironmentMetrics e, MeshProtos.MeshPacket p, long localTime);
+    /**
+     * Calculates distance from the local node to a remote node. Returns -1.0 if
+     * distance cannot be calculated, or -2.0 if via MQTT.
+     */
+    protected double calculateDistance(int remoteId, MeshProtos.Position remotePos, PacketContext ctx) {
+        // 1. Check if the message came via the Internet (MQTT)
+        if (ctx != null && ctx.isViaMqtt()) {
+            return -2.0;
+        }
 
-    protected abstract void performPurge(long cutoff);
+        // 2. Check if we are looking at our own node
+        if (isSelfNode(remoteId)) {
+            return 0.0;
+        }
+
+        // 3. Attempt math if both nodes have GPS fixes
+        MeshNode self = getSelfNode();
+        if (self != null && self.hasGpsFix() && remotePos != null && remotePos.getLatitudeI() != 0) {
+            return GeoUtils.calculateDistance(
+                    self.getPosition().getLatitudeI() / 1e7, self.getPosition().getLongitudeI() / 1e7,
+                    remotePos.getLatitudeI() / 1e7, remotePos.getLongitudeI() / 1e7
+            );
+        }
+
+        return -1.0; // Unknown/No Fix
+    }
 }

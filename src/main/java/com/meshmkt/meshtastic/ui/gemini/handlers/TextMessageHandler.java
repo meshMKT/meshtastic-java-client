@@ -1,48 +1,59 @@
 package com.meshmkt.meshtastic.ui.gemini.handlers;
 
-import com.google.protobuf.ByteString;
-import com.meshmkt.meshtastic.ui.gemini.MeshtasticMessageHandler;
 import com.meshmkt.meshtastic.ui.gemini.event.ChatMessageEvent;
 import com.meshmkt.meshtastic.ui.gemini.event.MeshEventDispatcher;
 import com.meshmkt.meshtastic.ui.gemini.storage.NodeDatabase;
+import com.meshmkt.meshtastic.ui.gemini.storage.PacketContext;
 import org.meshtastic.proto.MeshProtos;
-import org.meshtastic.proto.Portnums;
+import lombok.extern.slf4j.Slf4j;
 import java.nio.charset.StandardCharsets;
+import org.meshtastic.proto.Portnums.PortNum;
 
-public class TextMessageHandler implements MeshtasticMessageHandler {
-
-    private final NodeDatabase nodeDb;
-    private final MeshEventDispatcher dispatcher;
+/**
+ * Handles incoming plaintext chat messages using the fluent event pattern.
+ */
+@Slf4j
+public class TextMessageHandler extends BaseMeshHandler {
 
     public TextMessageHandler(NodeDatabase nodeDb, MeshEventDispatcher dispatcher) {
-        this.nodeDb = nodeDb;
-        this.dispatcher = dispatcher;
+        super(nodeDb, dispatcher);
     }
 
     @Override
     public boolean canHandle(MeshProtos.FromRadio message) {
         return message.hasPacket() && message.getPacket().hasDecoded()
-                && message.getPacket().getDecoded().getPortnumValue() == Portnums.PortNum.TEXT_MESSAGE_APP_VALUE;
+                && message.getPacket().getDecoded().getPortnum() == PortNum.TEXT_MESSAGE_APP;
     }
 
     @Override
-    public boolean handle(MeshProtos.FromRadio message) {
-        MeshProtos.MeshPacket packet = message.getPacket();
+    protected boolean handlePacket(MeshProtos.MeshPacket packet, PacketContext ctx) {
+        // 1. Extract the specific payload
         String text = packet.getDecoded().getPayload().toString(StandardCharsets.UTF_8);
 
-        // Signal is updated via a manual call here because Text doesn't have a 
-        // dedicated 'storeText' method in NodeDatabase (it's volatile data)
-        nodeDb.updateSignal(packet.getFrom(), packet.getRxSnr(), packet.getRxRssi());
+        // 2. Create the fully-stamped immutable event
+        // The .of() method handles metadata, requestId, channel, and isDirect checks
+        ChatMessageEvent event = ChatMessageEvent.of(
+                packet,
+                ctx,
+                nodeDb.getSelfNode().getNodeId(),
+                text
+        );
 
-        dispatcher.onChatMessage(ChatMessageEvent.builder()
-                .text(text)
-                .senderId(packet.getFrom())
-                .senderName(nodeDb.getDisplayName(packet.getFrom()))
-                .destinationId(packet.getTo())
-                .channel(packet.getChannel())
-                .isDirect(nodeDb.isSelfNode(packet.getTo()))
-                .build());
+        // 3. Logging - now more descriptive using event fields
+        log.info("[CHAT] Ch:{} From:!{} To:{} | Text: \"{}\" | SNR:{} Hops:{}",
+                event.getChannel(),
+                event.getNodeId(),
+                event.isDirect() ? "SELF" : String.format("!%08x", event.getDestinationId()),
+                event.getText(),
+                event.getSnr(),
+                event.getHopsAway());
 
-        return false;
+        // 4. Update sender's signal health in the database
+        nodeDb.updateSignal(event.getNodeId(), ctx);
+
+        // 5. Dispatch to UI listeners
+        dispatcher.onChatMessage(event);
+
+        return true; // Marked as handled
     }
 }
