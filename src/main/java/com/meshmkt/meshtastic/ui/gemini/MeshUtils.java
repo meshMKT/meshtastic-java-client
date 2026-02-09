@@ -3,6 +3,7 @@ package com.meshmkt.meshtastic.ui.gemini;
 import com.meshmkt.meshtastic.ui.gemini.storage.MeshNode;
 import org.meshtastic.proto.ConfigProtos;
 import java.util.Objects;
+import org.meshtastic.proto.MeshProtos;
 
 /**
  * <h2>MeshUtils</h2>
@@ -35,6 +36,12 @@ public final class MeshUtils {
      * Conversion factor: 1 hectopascal (hPa) to millimeters of mercury (mmHg).
      */
     private static final float HPA_TO_MMHG = 0.750062f;
+
+    /**
+     * Meshtastic coordinates are sent as scaled integers (10^-7 degrees).
+     * Dividing by this constant converts them to standard decimal degrees.
+     */
+    public static final double COORD_SCALE = 1e7;
 
     /**
      * Private constructor to prevent instantiation of this utility class.
@@ -75,6 +82,35 @@ public final class MeshUtils {
             return node.getShortName();
         }
         return formatId(node.getNodeId());
+    }
+
+    /**
+     * Resolves a name using raw components. Useful for database mapping before
+     * a MeshNode object is fully built.
+     */
+    public static String resolveName(int nodeId, MeshProtos.User user) {
+        if (user != null) {
+            if (user.getLongName() != null && !user.getLongName().isEmpty()) {
+                return user.getLongName();
+            }
+            if (user.getShortName() != null && !user.getShortName().isEmpty()) {
+                return user.getShortName();
+            }
+        }
+        return formatId(nodeId);
+    }
+
+    /**
+     * Converts a Meshtastic scaled integer coordinate to a decimal double.
+     *
+     * * @param scaledInt The integer from the protobuf (e.g., 341234567).
+     * @return The decimal representation (e.g., 34.1234567).
+     */
+    public static double toDecimal(int scaledInt) {
+        if (scaledInt == 0) {
+            return 0.0;
+        }
+        return scaledInt / COORD_SCALE;
     }
 
     // --- Geographic Mathematics ---

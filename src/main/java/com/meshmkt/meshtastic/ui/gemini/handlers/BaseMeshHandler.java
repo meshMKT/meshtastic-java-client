@@ -3,11 +3,12 @@ package com.meshmkt.meshtastic.ui.gemini.handlers;
 import com.meshmkt.meshtastic.ui.gemini.event.MeshEventDispatcher;
 import com.meshmkt.meshtastic.ui.gemini.storage.NodeDatabase;
 import com.meshmkt.meshtastic.ui.gemini.storage.PacketContext;
+import com.meshmkt.meshtastic.ui.gemini.MeshUtils;
 import org.meshtastic.proto.MeshProtos;
 
 /**
- * Abstract base for all Mesh handlers. Standardizes radio metadata extraction
- * and centralized signal health updates.
+ * The traffic controller for all incoming radio data. It distinguishes between
+ * "Live" mesh packets and "Local" status messages.
  */
 public abstract class BaseMeshHandler implements MeshtasticMessageHandler {
 
@@ -21,48 +22,44 @@ public abstract class BaseMeshHandler implements MeshtasticMessageHandler {
 
     @Override
     public final boolean handle(MeshProtos.FromRadio message) {
-        // 1. Handle messages without packets (Handshakes, MyInfo)
+        // SCENARIO A: LOCAL HANDSHAKE / STATUS
+        // If the message does NOT have a packet, it is the local radio 
+        // talking about itself or syncing its internal memory with us.
         if (!message.hasPacket()) {
             return handleNonPacketMessage(message);
         }
 
-        // 2. Extract packet and radio-layer context
+        // SCENARIO B: OVER-THE-AIR (OTA) PACKET
+        // If it has a packet, it was heard on the mesh. It has signal 
+        // quality metadata (RSSI/SNR) which we extract into the PacketContext.
         MeshProtos.MeshPacket packet = message.getPacket();
         PacketContext ctx = PacketContext.from(message);
 
-        // 3. Centralized Signal Update: Every packet processed updates the sender's health
-        if (packet != null && packet.getFrom() != 0) {
-            nodeDb.updateSignal(packet.getFrom(), ctx);
+        // Record the fact that this node is alive and update signal health
+        if (packet.getFrom() != 0) {
+            nodeDb.updateSignal(ctx);
         }
 
         return handlePacket(packet, ctx);
     }
 
+    /**
+     * Override this to handle local radio events like NodeInfo syncs or MyInfo.
+     * These do NOT contain signal metadata (SNR/RSSI).
+     */
     protected boolean handleNonPacketMessage(MeshProtos.FromRadio message) {
         return false;
     }
 
+    /**
+     * Override this to handle live data heard over the mesh frequency. These
+     * ALWAYS contain signal metadata.
+     */
     protected abstract boolean handlePacket(MeshProtos.MeshPacket packet, PacketContext ctx);
 
-    /**
-     * Helper to resolve display names for logging across all handlers.
-     */
     protected String resolveName(int nodeId) {
-        String hexId = "!" + Integer.toHexString(nodeId);
-
         return nodeDb.getNode(nodeId)
-                .map(node -> {
-                    // Prioritize Long Name
-                    if (node.getLongName() != null && !node.getLongName().isEmpty()) {
-                        return node.getLongName();
-                    }
-                    // Fallback to Short Name
-                    if (node.getShortName() != null && !node.getShortName().isEmpty()) {
-                        return node.getShortName();
-                    }
-                    return null; // Trigger the orElse below
-                })
-                .filter(name -> name != null && !name.isEmpty()) // Final safety check
-                .orElse(hexId); // If node is missing or has no names, return hex ID
+                .map(MeshUtils::resolveName)
+                .orElse(MeshUtils.formatId(nodeId));
     }
 }

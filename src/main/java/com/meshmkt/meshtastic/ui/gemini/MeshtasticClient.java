@@ -168,7 +168,6 @@ public class MeshtasticClient {
                 if (fromRadio.hasConfigCompleteId() || fromRadio.getConfigCompleteId() != 0) {
                     if (fromRadio.getConfigCompleteId() == currentSyncId) {
                         log.info(">>> Received Config Complete (ID: {}). Initial dump finished.", currentSyncId);
-                        nodeDb.setSyncComplete(true);
 //                        nodeDb.startCleanupTask(15);
 
                         // Database is now fully populated with the radio's cached state
@@ -186,7 +185,6 @@ public class MeshtasticClient {
             @Override
             public void onConnected() {
                 connected = true;
-                nodeDb.setSyncComplete(false);
                 requestLocalConfig(); // Standard initial handshake
                 notifyConnectionListeners(l -> l.onConnected("HIYA"));
             }
@@ -194,14 +192,12 @@ public class MeshtasticClient {
             @Override
             public void onDisconnected(String reason) {
                 connected = false;
-                nodeDb.setSyncComplete(false);
                 notifyConnectionListeners(l -> l.onDisconnected());
             }
 
             @Override
             public void onError(Throwable err) {
                 connected = false;
-                nodeDb.setSyncComplete(false);
                 notifyConnectionListeners(l -> l.onError(err));
             }
         });

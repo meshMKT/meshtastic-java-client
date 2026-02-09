@@ -9,7 +9,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.meshtastic.proto.Portnums.PortNum;
 
 /**
- * Monitors ROUTING_APP packets to track Delivery ACKs and NAKs.
+ * Monitors ROUTING_APP packets to track if messages were successfully
+ * delivered.
  */
 @Slf4j
 public class RoutingHandler extends BaseMeshHandler {
@@ -27,31 +28,20 @@ public class RoutingHandler extends BaseMeshHandler {
     @Override
     protected boolean handlePacket(MeshProtos.MeshPacket packet, PacketContext ctx) {
         try {
-            // 1. Parse the routing payload
             MeshProtos.Routing routing = MeshProtos.Routing.parseFrom(packet.getDecoded().getPayload());
 
-            // 2. Create the fluent event
-            MessageStatusEvent event = MessageStatusEvent.of(
-                    packet,
-                    ctx,
-                    nodeDb.getSelfNodeId(),
-                    routing
-            );
+            // Even routing packets help us know a node is "Online"
+            nodeDb.updateSignal(ctx);
 
-            // 3. Keep your original logging style
-            log.info("Routing: Received {} from !{} for PacketID: {}",
-                    event.getError(),
-                    event.getNodeId(),
-                    event.getPacketId());
+            MessageStatusEvent event = MessageStatusEvent.of(packet, ctx, nodeDb.getSelfNodeId(), routing);
 
-            // 4. Update signal health
-            nodeDb.updateSignal(event.getNodeId(), ctx);
+            log.info("[ROUTING] Status: {} from !{} for Packet: {}",
+                    routing.getErrorReason(),
+                    Integer.toHexString(packet.getFrom()),
+                    packet.getId());
 
-            // 5. Dispatch
             dispatcher.onMessageStatusUpdate(event);
-
-            return true; // Marked as handled
-
+            return true;
         } catch (Exception e) {
             log.error("Failed to parse Routing packet", e);
             return false;

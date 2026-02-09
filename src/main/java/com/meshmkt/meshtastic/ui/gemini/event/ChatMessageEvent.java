@@ -8,40 +8,42 @@ import org.meshtastic.proto.MeshProtos;
 import org.meshtastic.proto.Portnums.PortNum;
 
 /**
- * Represents a chat-specific mesh event. Optimized for quick access to fields
- * needed for message threading and UI display.
+ * Represents a text-based chat message. Provides quick access to content and
+ * destination logic for UI threading.
  */
 @Getter
 @AllArgsConstructor(access = AccessLevel.PRIVATE)
 public class ChatMessageEvent extends MeshEvent {
 
     /**
-     * The decoded text content of the message.
+     * The plaintext content of the message.
      */
     private final String text;
 
     /**
-     * Unique ID for this specific message (used for ACKs and replies).
+     * Unique ID used to correlate this message with future ACKs (Routing).
      */
     private final int requestId;
 
     /**
-     * The application port (usually TEXT_MESSAGE_APP).
+     * The PortNum identifying the app (usually TEXT_MESSAGE_APP).
      */
     private final PortNum portNum;
 
     /**
-     * True if sent specifically to our node ID.
+     * True if the message was sent to our specific ID rather than a broadcast.
      */
     private final boolean isDirect;
 
     /**
-     * The full decoded data payload for advanced use cases.
+     * The raw data payload for advanced parsing.
      */
     private final MeshProtos.Data rawData;
 
     /**
-     * Factory method to create a fully-stamped ChatMessageEvent.
+     * Factory to create a Chat event.
+     *
+     * @param text The decoded UTF-8 string.
      */
     public static ChatMessageEvent of(MeshProtos.MeshPacket p, PacketContext ctx, int selfId, String text) {
         MeshProtos.Data data = p.getDecoded();

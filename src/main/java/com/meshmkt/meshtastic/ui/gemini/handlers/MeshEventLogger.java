@@ -3,14 +3,17 @@ package com.meshmkt.meshtastic.ui.gemini.handlers;
 import com.meshmkt.meshtastic.ui.gemini.storage.NodeDatabase;
 import com.meshmkt.meshtastic.ui.gemini.storage.PacketContext;
 import org.meshtastic.proto.MeshProtos;
+import org.meshtastic.proto.Portnums.PortNum;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 
 /**
- * Diagnostic logger that provides visibility into all mesh traffic.
+ * Diagnostic logger that provides a deep-dive into mesh traffic. Standardized
+ * to show radio metrics and decoded application payloads.
  */
 public class MeshEventLogger extends BaseMeshHandler {
 
@@ -27,36 +30,92 @@ public class MeshEventLogger extends BaseMeshHandler {
         return message.hasPacket() || message.hasNodeInfo() || message.hasMyInfo();
     }
 
+    /**
+     * Handles local serial/BLE handshake messages.
+     */
     @Override
     protected boolean handleNonPacketMessage(MeshProtos.FromRadio message) {
         String pcTime = TIME_FORMAT.format(Instant.now());
 
         if (message.hasMyInfo()) {
-            eventLog.info("[{}] MY_INFO: Local ID is !{}",
-                    pcTime, Integer.toHexString(message.getMyInfo().getMyNodeNum()));
+            // Local radio identifying itself
+            eventLog.info("[{}] 📟 MY_INFO: Local Node is !{}",
+                    pcTime,
+                    Integer.toHexString(message.getMyInfo().getMyNodeNum()));
         } else if (message.hasNodeInfo()) {
+            // Part of the initial node-list download
             MeshProtos.NodeInfo info = message.getNodeInfo();
-            eventLog.info("[{}] NODE_SYNC: !{} ({}) [Sync: {}]",
-                    pcTime, Integer.toHexString(info.getNum()), resolveName(info.getNum()),
-                    nodeDb.isSyncComplete() ? "LIVE" : "SYNCING");
+            eventLog.info("[{}] 🔄 NODE_LIST: !{} ({})",
+                    pcTime, Integer.toHexString(info.getNum()), resolveName(info.getNum()));
         }
         return false;
     }
 
+    /**
+     * Handles live Over-The-Air traffic.
+     */
     @Override
     protected boolean handlePacket(MeshProtos.MeshPacket packet, PacketContext ctx) {
         String pcTime = TIME_FORMAT.format(Instant.now());
-        String name = resolveName(packet.getFrom());
+        String senderName = resolveName(packet.getFrom());
+        String destName = (packet.getTo() == 0xFFFFFFFF) ? "BROADCAST" : resolveName(packet.getTo());
 
-        String radioTime = (packet.getRxTime() == 0) ? "NONE"
-                : TIME_FORMAT.format(Instant.ofEpochSecond(packet.getRxTime()));
+        PortNum port = packet.getDecoded().getPortnum();
 
-        eventLog.info("[{}] PACKET: From={} Port={} | RadioTime={} | SyncComplete={}",
-                pcTime, name, packet.getDecoded().getPortnum(), radioTime, nodeDb.isSyncComplete());
+        // Line 1: Basic Routing Info
+        eventLog.info("[{}] 📦 PACKET: {} -> {} | Port: {} | ID: {}",
+                pcTime, senderName, destName, port, packet.getId());
 
-        eventLog.debug("  └─ [Signal] SNR: {}dB, RSSI: {}dBm | [Network] Hops: {}, MQTT: {}",
+        // Line 2: Signal Metadata
+        eventLog.info("  └─ [Signal] SNR: {}dB | RSSI: {}dBm | Hops: {} | MQTT: {}",
                 ctx.getSnr(), ctx.getRssi(), ctx.getHopsAway(), ctx.isViaMqtt());
 
+        // Line 3: Payload Decoding (Attempting to show what's inside)
+        String payloadSummary = decodePayload(packet);
+        if (!payloadSummary.isEmpty()) {
+            eventLog.info("  └─ [Data] {}", payloadSummary);
+        }
+
         return false;
+    }
+
+    /**
+     * Provides a human-readable summary of the payload based on the App Port.
+     */
+    private String decodePayload(MeshProtos.MeshPacket packet) {
+        try {
+            PortNum port = packet.getDecoded().getPortnum();
+            byte[] data = packet.getDecoded().getPayload().toByteArray();
+
+            switch (port) {
+                case TEXT_MESSAGE_APP:
+                    return "Text: \"" + new String(data, StandardCharsets.UTF_8) + "\"";
+
+                case POSITION_APP:
+                    var pos = MeshProtos.Position.parseFrom(data);
+                    // Standard 1e7 conversion for logging
+                    return String.format("GPS: %.6f, %.6f | Alt: %dm",
+                            pos.getLatitudeI() / 1e7, pos.getLongitudeI() / 1e7, pos.getAltitude());
+
+                case NODEINFO_APP:
+                    var user = MeshProtos.User.parseFrom(data);
+                    return String.format("Identity: %s (%s) | HW: %s",
+                            user.getLongName(), user.getShortName(), user.getHwModel());
+
+                case TELEMETRY_APP:
+                    // Telemetry is complex (unions), so we just note its presence here.
+                    // The TelemetryHandler will log the specific metrics.
+                    return "Telemetry Data Packet";
+
+                case ROUTING_APP:
+                    var routing = MeshProtos.Routing.parseFrom(data);
+                    return "Routing Status: " + routing.getErrorReason();
+
+                default:
+                    return "Raw Payload: " + data.length + " bytes";
+            }
+        } catch (Exception e) {
+            return "Payload Decryption/Parse Error";
+        }
     }
 }

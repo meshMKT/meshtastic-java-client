@@ -10,7 +10,7 @@ import java.nio.charset.StandardCharsets;
 import org.meshtastic.proto.Portnums.PortNum;
 
 /**
- * Handles incoming plaintext chat messages using the fluent event pattern.
+ * Handles incoming plaintext chat messages.
  */
 @Slf4j
 public class TextMessageHandler extends BaseMeshHandler {
@@ -27,33 +27,16 @@ public class TextMessageHandler extends BaseMeshHandler {
 
     @Override
     protected boolean handlePacket(MeshProtos.MeshPacket packet, PacketContext ctx) {
-        // 1. Extract the specific payload
         String text = packet.getDecoded().getPayload().toString(StandardCharsets.UTF_8);
 
-        // 2. Create the fully-stamped immutable event
-        // The .of() method handles metadata, requestId, channel, and isDirect checks
-        ChatMessageEvent event = ChatMessageEvent.of(
-                packet,
-                ctx,
-                nodeDb.getSelfNodeId(),
-                text
-        );
+        ChatMessageEvent event = ChatMessageEvent.of(packet, ctx, nodeDb.getSelfNodeId(), text);
 
-        // 3. Logging - now more descriptive using event fields
-        log.info("[CHAT] Ch:{} From:!{} To:{} | Text: \"{}\" | SNR:{} Hops:{}",
-                event.getChannel(),
-                event.getNodeId(),
-                event.isDirect() ? "SELF" : String.format("!%08x", event.getDestinationId()),
-                event.getText(),
-                event.getSnr(),
-                event.getHopsAway());
+        log.info("[CHAT] From: {} | Text: \"{}\" | SNR: {}dB",
+                resolveName(event.getNodeId()),
+                text,
+                ctx.getSnr());
 
-        // 4. Update sender's signal health in the database
-        nodeDb.updateSignal(event.getNodeId(), ctx);
-
-        // 5. Dispatch to UI listeners
         dispatcher.onChatMessage(event);
-
-        return true; // Marked as handled
+        return true;
     }
 }

@@ -1,12 +1,14 @@
 package com.meshmkt.meshtastic.ui.gemini.storage;
 
+import com.meshmkt.meshtastic.ui.gemini.MeshUtils;
 import lombok.Data;
+import lombok.extern.slf4j.Slf4j;
 import org.meshtastic.proto.MeshProtos;
 import org.meshtastic.proto.TelemetryProtos;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.Consumer;
 import java.util.stream.Collectors;
-import lombok.extern.slf4j.Slf4j;
 
 @Slf4j
 public class InMemoryNodeDatabase extends AbstractNodeDatabase {
@@ -22,131 +24,112 @@ public class InMemoryNodeDatabase extends AbstractNodeDatabase {
         private double distanceKm = -1.0;
         private long lastSeenRemote;
         private long lastSeenLocal;
-        private boolean online = true; // New status field
+        private boolean online = true;
     }
 
     private final ConcurrentHashMap<Integer, NodeRecord> nodes = new ConcurrentHashMap<>();
 
-    @Override
-    public void clear() {
-        log.info("Clearing node database for new connection session.");
-        nodes.clear();
-        // It's important to notify the UI that the list is now empty
-        notifyNodesPurged();
-    }
-
-    private NodeRecord getOrUpdate(int id, MeshProtos.MeshPacket p, PacketContext ctx, long localTime) {
-        NodeRecord r = nodes.computeIfAbsent(id, k -> {
-            log.debug("New node discovered: !{}", Integer.toHexString(id));
-            return new NodeRecord();
-        });
-
-        // RESURRECTION: If a node was offline and we just heard from it, mark it online
-        if (!r.isOnline()) {
-            r.setOnline(true);
-            log.info("Node !{} is back ONLINE", Integer.toHexString(id));
-        }
-
-        if (ctx != null) {
-            r.setLastContext(ctx);
-        }
-
-        if (p != null && p.getRxTime() != 0) {
-            r.setLastSeenRemote(p.getRxTime() * 1000L);
-        }
-
-        if (localTime > 0) {
-            r.setLastSeenLocal(localTime);
-        }
-
-        return r;
-    }
-
     /**
-     * SOFT PURGE: Instead of removing from the map, we mark as offline. This
-     * preserves Name/HW info so UI stays pretty even when nodes are quiet.
+     * THE SHARED CORE: Standardizes the Fetch-Update-Notify workflow. This
+     * eliminates redundant code and ensures metadata is always updated.
      */
-    @Override
-    protected void performPurge(long cutoff) {
-        nodes.forEach((id, record) -> {
-            long lastSeen = Math.max(record.getLastSeenLocal(), record.getLastSeenRemote());
-
-            if (lastSeen < cutoff && record.isOnline()) {
-                record.setOnline(false);
-                log.info("Node !{} marked OFFLINE due to inactivity", Integer.toHexString(id));
-                notifyNodeUpdated(mapToDto(id, record));
-            }
-        });
-
-        // We still call this to let UI refresh any global 'count' labels
-        notifyNodesPurged();
-    }
-
-    @Override
-    protected void storePosition(MeshProtos.Position pos, MeshProtos.MeshPacket p, PacketContext ctx, long time) {
-        int senderId = p.getFrom();
-        NodeRecord r = getOrUpdate(senderId, p, ctx, time);
-        r.setPosition(pos);
-
-        // Use the PARENT'S logic to calculate this specific node's distance
-        r.setDistanceKm(calculateDistance(senderId, pos, ctx));
-
-        // Notify UI of this specific node update
-        notifyNodeUpdated(mapToDto(senderId, r));
-
-        // 2. CRITICAL: If WE are the one who just moved, 
-        // we must update the distance for everyone else in the list.
-        if (isSelfNode(senderId)) {
-            log.debug("Self-Position updated. Recalculating distances for all nodes.");
-            nodes.forEach((id, record) -> {
-                if (id != senderId) {
-                    // Calculate relative to our new position
-                    record.setDistanceKm(calculateDistance(id, record.getPosition(), record.getLastContext()));
-                    // If you want the UI to refresh immediately for all nodes:
-                    notifyNodeUpdated(mapToDto(id, record));
-                }
-            });
-        }
-    }
-
-    @Override
-    protected void storeUser(MeshProtos.User u, MeshProtos.MeshPacket p, PacketContext ctx, long time) {
-        int id = (p != null) ? p.getFrom() : (u != null ? localNodeId : 0);
+    private void updateNodeRecord(PacketContext ctx, Consumer<NodeRecord> updater) {
+        int id = (ctx != null && ctx.getFrom() != 0) ? ctx.getFrom() : getSelfNodeId();
         if (id == 0) {
             return;
         }
 
-        NodeRecord r = getOrUpdate(id, p, ctx, time);
-        r.setUser(u);
+        NodeRecord r = nodes.computeIfAbsent(id, k -> new NodeRecord());
+
+        if (ctx != null) {
+            r.setLastContext(ctx);
+            r.setLastSeenRemote(ctx.getTimestamp());
+            r.setLastSeenLocal(System.currentTimeMillis());
+        }
+
+        updater.accept(r);
+
+        // If this update was for US, trigger the global refresh in the base class
+        if (isSelfNode(id)) {
+            handleSelfLocationUpdate(id);
+        }
+
         notifyNodeUpdated(mapToDto(id, r));
     }
 
     @Override
-    protected void storeMetrics(TelemetryProtos.DeviceMetrics m, MeshProtos.MeshPacket p, PacketContext ctx, long time) {
-        NodeRecord r = getOrUpdate(p.getFrom(), p, ctx, time);
-        r.setMetrics(m);
-        notifyNodeUpdated(mapToDto(p.getFrom(), r));
+    protected void refreshDistancesRelativeto(int selfId) {
+        nodes.forEach((id, record) -> {
+            if (id != selfId && record.getPosition() != null) {
+                // Perform the math
+                double newDist = calculateDistance(id, record.getPosition(), record.getLastContext());
+                record.setDistanceKm(newDist);
+
+                // Notify the UI for every node that just "moved" relative to us
+                notifyNodeUpdated(mapToDto(id, record));
+            }
+        });
     }
 
     @Override
-    protected void storeEnvMetrics(TelemetryProtos.EnvironmentMetrics e, MeshProtos.MeshPacket p, PacketContext ctx, long time) {
-        NodeRecord r = getOrUpdate(p.getFrom(), p, ctx, time);
-        r.setEnvMetrics(e);
-        notifyNodeUpdated(mapToDto(p.getFrom(), r));
+    public void updateUser(MeshProtos.User u, PacketContext ctx) {
+        updateNodeRecord(ctx, r -> r.setUser(u));
     }
 
     @Override
-    protected void storeSignal(int nodeId, PacketContext ctx, long time) {
-        NodeRecord r = getOrUpdate(nodeId, null, ctx, time);
-        notifyNodeUpdated(mapToDto(nodeId, r));
+    public void updatePosition(MeshProtos.Position pos, PacketContext ctx) {
+        updateNodeRecord(ctx, r -> {
+            r.setPosition(pos);
+            r.setDistanceKm(calculateDistance(ctx.getFrom(), pos, ctx));
+        });
+    }
+
+    @Override
+    public void updateSignal(PacketContext ctx) {
+        updateNodeRecord(ctx, r -> {
+        }); // Just updates metadata/online status
+    }
+
+    @Override
+    public void updateMetrics(TelemetryProtos.DeviceMetrics m, PacketContext ctx) {
+        updateNodeRecord(ctx, r -> r.setMetrics(m));
+    }
+
+    @Override
+    public void updateEnvMetrics(TelemetryProtos.EnvironmentMetrics e, PacketContext ctx) {
+        updateNodeRecord(ctx, r -> r.setEnvMetrics(e));
+    }
+
+    @Override
+    public void clear() {
+        nodes.clear();
+        notifyNodesPurged();
+    }
+
+    @Override
+    protected void performPurge(long cutoff) {
+        nodes.entrySet().removeIf(entry -> entry.getValue().getLastSeenLocal() < cutoff);
+        notifyNodesPurged();
+    }
+
+    @Override
+    public Collection<MeshNode> getAllNodes() {
+        return nodes.entrySet().stream()
+                .map(e -> mapToDto(e.getKey(), e.getValue()))
+                .collect(Collectors.toList());
+    }
+
+    @Override
+    public Optional<MeshNode> getNode(int id) {
+        NodeRecord r = nodes.get(id);
+        return r != null ? Optional.of(mapToDto(id, r)) : Optional.empty();
     }
 
     private MeshNode mapToDto(int id, NodeRecord r) {
-        String bestName = (r.getUser() != null && r.getUser().getLongName() != null && !r.getUser().getLongName().isEmpty())
-                ? r.getUser().getLongName()
-                : String.format("!%08x", id);
-
+        // Delegate naming logic to MeshUtils for consistency
+        String bestName = MeshUtils.resolveName(id, r.getUser());
         PacketContext ctx = r.getLastContext();
+
         return MeshNode.builder()
                 .nodeId(id)
                 .longName(bestName)
@@ -165,20 +148,7 @@ public class InMemoryNodeDatabase extends AbstractNodeDatabase {
                 .lastSeen(r.getLastSeenRemote())
                 .lastSeenLocal(r.getLastSeenLocal())
                 .self(isSelfNode(id))
-                .online(r.isOnline()) // Added to DTO
+                .online(r.isOnline())
                 .build();
-    }
-
-    @Override
-    public Optional<MeshNode> getNode(int id) {
-        NodeRecord r = nodes.get(id);
-        return Optional.ofNullable(r != null ? mapToDto(id, r) : null);
-    }
-
-    @Override
-    public Collection<MeshNode> getAllNodes() {
-        return nodes.entrySet().stream()
-                .map(e -> mapToDto(e.getKey(), e.getValue()))
-                .collect(Collectors.toList());
     }
 }

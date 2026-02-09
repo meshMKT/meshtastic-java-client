@@ -440,13 +440,13 @@ public class GeminiDebugApp implements MeshtasticEventListener, NodeDatabaseObse
                     for (int i = 0; i < sortedNodes.size(); i++) {
                         MeshNode freshNode = sortedNodes.get(i);
                         if (i < nodeListModel.size()) {
-                            MeshNode existing = nodeListModel.get(i);
-
-                            // FIX: Check if the data is actually different (ID or timestamp)
-                            if (existing.getNodeId() != freshNode.getNodeId()
-                                    || existing.getLastSeenLocal() != freshNode.getLastSeenLocal()) {
+//                            MeshNode existing = nodeListModel.get(i);
                                 nodeListModel.set(i, freshNode);
-                            }
+
+//                            // FIX: Check if the data is actually different (ID or timestamp)
+//                            if (existing.getNodeId() != freshNode.getNodeId()
+//                                    || existing.getLastSeenLocal() != freshNode.getLastSeenLocal()) {
+//                            }
                         } else {
                             nodeListModel.addElement(freshNode);
                         }

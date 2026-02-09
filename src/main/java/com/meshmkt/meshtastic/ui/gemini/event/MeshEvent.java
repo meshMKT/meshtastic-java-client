@@ -7,28 +7,29 @@ import java.time.Instant;
 
 /**
  * The "Smart Envelope" for all mesh traffic. Centralizes the extraction of
- * radio metrics and routing data.
+ * radio metrics, network routing data, and timing information for both live
+ * mesh packets and local radio handshakes.
  */
 @Getter
 public abstract class MeshEvent {
 
     /**
-     * The Mesh ID of the sender (e.g., !a1b2c3d4).
+     * The 32-bit unsigned Mesh ID of the sender.
      */
     private int nodeId;
 
     /**
-     * The Mesh ID of the recipient (could be Broadcast ID 0xFFFFFFFF).
+     * The 32-bit unsigned Mesh ID of the recipient (Broadcast is 0xFFFFFFFF).
      */
     private int destinationId;
 
     /**
-     * The channel index this packet arrived on (0=Primary, 1-7=Secondary).
+     * The channel index (0=Primary, 1-7=Secondary).
      */
     private int channel;
 
     /**
-     * Number of hops the packet took to reach this node.
+     * Estimated distance in hops from the sender to this node.
      */
     private int hopsAway;
 
@@ -38,45 +39,46 @@ public abstract class MeshEvent {
     private float rssi;
 
     /**
-     * Signal-to-noise ratio in dB.
+     * Signal-to-noise ratio in dB. Higher is better.
      */
     private float snr;
 
     /**
-     * Indicates if the packet was received via an MQTT gateway.
+     * Flag indicating if the packet originated from an MQTT gateway.
      */
     private boolean isViaMqtt;
 
     /**
-     * The original Protobuf packet for deep data inspection if needed.
+     * The raw Protobuf packet for deep inspection of specific flags or headers.
      */
     private MeshProtos.MeshPacket rawPacket;
 
     /**
-     * Local timestamp of when the event was processed by the app.
+     * System timestamp of when this event was instantiated in the application.
      */
     private final Instant timestamp = Instant.now();
 
     /**
-     * Fluent "Stamper" method to populate shared metadata.
+     * Extracts and populates shared metadata from available sources. handles
+     * cases where the MeshPacket might be null (e.g., local serial sync).
      *
-     * * @param p The raw MeshPacket from the radio.
-     * @param ctx The packet context containing hop info.
-     * @param selfId Our own Node ID to detect MQTT origin.
-     * @return This instance, cast to the specific subclass type.
+     * @param p The raw MeshPacket (may be null for local handshake).
+     * @param ctx The context containing decoded radio metrics.
+     * @param selfId The local node's ID for distance/self-check logic.
+     * @param <T> The specific subclass type.
+     * @return The current instance for fluent chaining.
      */
     @SuppressWarnings("unchecked")
     protected <T extends MeshEvent> T applyMetadata(MeshProtos.MeshPacket p, PacketContext ctx, int selfId) {
-        this.nodeId = p.getFrom();
-        this.destinationId = p.getTo();
-        this.channel = p.getChannel();
-        this.rssi = p.getRxRssi();
-        this.snr = p.getRxSnr();
+        // Fallback logic: Use PacketContext if the raw MeshPacket is missing
+        this.nodeId = (p != null) ? p.getFrom() : ctx.getFrom();
+        this.destinationId = (p != null) ? p.getTo() : ctx.getTo();
+        this.channel = (p != null) ? p.getChannel() : ctx.getChannel();
+        this.rssi = (p != null) ? p.getRxRssi() : ctx.getRssi();
+        this.snr = (p != null) ? p.getRxSnr() : ctx.getSnr();
         this.rawPacket = p;
         this.hopsAway = (ctx != null) ? ctx.getHopsAway() : 0;
-
-        // MQTT Detection: No hops remaining and not sent by ourselves.
-        this.isViaMqtt = (p.getHopLimit() == 0 && p.getFrom() != selfId);
+        this.isViaMqtt = (ctx != null) && ctx.isViaMqtt();
 
         return (T) this;
     }

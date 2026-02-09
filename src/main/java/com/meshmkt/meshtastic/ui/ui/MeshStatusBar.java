@@ -88,11 +88,6 @@ public class MeshStatusBar extends JPanel implements NodeDatabaseObserver, Conne
             }
         }
 
-        // Determine Sync Indicator visibility
-        String syncIndicator = (isConnected && !nodeDb.isSyncComplete())
-                ? " <font color='#666666'>[SYNCING...]</font>"
-                : "";
-
         // Determine Connection Status text
         String radioStatus = isConnected
                 ? "<font color='#006600'>CONNECTED</font>"
@@ -100,12 +95,12 @@ public class MeshStatusBar extends JPanel implements NodeDatabaseObserver, Conne
 
         // Construct HTML presentation string
         String stats = String.format(
-                "<html>RADIO: %s%s | "
+                "<html>RADIO: %s | "
                 + "MESH: <font color='#008800'>%d LIVE</font> | "
                 + "<font color='#444444'>%d OFFLINE</font> | "
                 + "<font color='#777777'>%d CACHED</font> | "
                 + "TOTAL: %d</html>",
-                radioStatus, syncIndicator, live, offline, cached, allNodes.size()
+                radioStatus, live, offline, cached, allNodes.size()
         );
 
         SwingUtilities.invokeLater(() -> statusLabel.setText(stats));

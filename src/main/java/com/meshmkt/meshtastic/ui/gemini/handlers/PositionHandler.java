@@ -1,9 +1,7 @@
 package com.meshmkt.meshtastic.ui.gemini.handlers;
 
-import com.meshmkt.meshtastic.ui.gemini.MeshConstants;
 import com.meshmkt.meshtastic.ui.gemini.event.MeshEventDispatcher;
 import com.meshmkt.meshtastic.ui.gemini.event.PositionUpdateEvent;
-import com.meshmkt.meshtastic.ui.gemini.storage.MeshNode;
 import com.meshmkt.meshtastic.ui.gemini.storage.NodeDatabase;
 import com.meshmkt.meshtastic.ui.gemini.storage.PacketContext;
 import org.meshtastic.proto.MeshProtos;
@@ -11,8 +9,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.meshtastic.proto.Portnums.PortNum;
 
 /**
- * Processes incoming POSITION_APP packets. Recalculates distances and
- * dispatches coordinate updates to the UI.
+ * Processes incoming POSITION_APP packets. Updates the database and notifies UI
+ * listeners of coordinate changes.
  */
 @Slf4j
 public class PositionHandler extends BaseMeshHandler {
@@ -32,41 +30,23 @@ public class PositionHandler extends BaseMeshHandler {
         try {
             MeshProtos.Position pos = MeshProtos.Position.parseFrom(packet.getDecoded().getPayload());
 
-            // 1. Update database (internally performs coordinate storage and distance math)
-            nodeDb.updatePosition(packet, pos, ctx);
+            // 1. Update DB: The DB now handles the math and global distance refresh internally
+            nodeDb.updatePosition(pos, ctx);
 
-            // 2. Fetch the calculated distance using the new Optional pipeline.
-            // This is safer than a null check because it cleanly defaults to -1.0 
-            // if the node record hasn't been initialized yet.
-            double dist = nodeDb.getNode(packet.getFrom())
-                    .map(MeshNode::getDistanceKm)
-                    .orElse(MeshConstants.DISTANCE_UNKNOWN);
+            // 2. Fetch the updated node to get the new distance for logging
+            nodeDb.getNode(packet.getFrom()).ifPresent(node -> {
+                log.info("[POS] {} is {}km away | SNR: {}dB",
+                        resolveName(node.getNodeId()),
+                        String.format("%.2f", node.getDistanceKm()),
+                        ctx.getSnr());
+            });
 
-            // 3. Create the event using the primitive getSelfNodeId()
-            // This ensures we never hit a NullPointerException if the handshake isn't finished.
-            PositionUpdateEvent event = PositionUpdateEvent.of(
-                    packet,
-                    ctx,
-                    nodeDb.getSelfNodeId(),
-                    pos.getLatitudeI() / 1e7,
-                    pos.getLongitudeI() / 1e7,
-                    pos.getAltitude(),
-                    dist,
-                    pos
-            );
+            // 3. Dispatch Event: The Event class will handle coordinate conversion for the UI
+            dispatcher.onPositionUpdate(PositionUpdateEvent.of(packet, ctx, nodeDb.getSelfNodeId(), pos));
 
-            log.info("[POS] {} (!{}) is {}km away | SNR: {}",
-                    resolveName(event.getNodeId()),
-                    Integer.toHexString(event.getNodeId()),
-                    dist >= 0 ? String.format("%.2f", dist) : "unknown",
-                    event.getSnr());
-
-            // 4. Dispatch to UI
-            dispatcher.onPositionUpdate(event);
             return true;
-
         } catch (Exception e) {
-            log.error("Position processing failed", e);
+            log.error("Failed to process Position packet", e);
             return false;
         }
     }

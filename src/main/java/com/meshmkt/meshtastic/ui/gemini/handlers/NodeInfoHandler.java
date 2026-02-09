@@ -9,8 +9,9 @@ import lombok.extern.slf4j.Slf4j;
 import org.meshtastic.proto.Portnums.PortNum;
 
 /**
- * Handles the identification of users and nodes on the network. Processes both
- * Over-The-Air (OTA) broadcasts and local handshakes.
+ * Handles identity discovery. Bridges the gap between "Nodes I'm learning about
+ * from local memory" (Non-Packet) and "Nodes I just heard shouting their name"
+ * (Packet).
  */
 @Slf4j
 public class NodeInfoHandler extends BaseMeshHandler {
@@ -26,8 +27,9 @@ public class NodeInfoHandler extends BaseMeshHandler {
     }
 
     /**
-     * Handles initial handshake NodeInfo (Local/Serial connection). Since this
-     * isn't a "Packet" from the mesh, we generate a synthetic event.
+     * LOCAL HANDSHAKE (Non-Packet): The radio is dumping its internal list of
+     * nodes to us via Serial/Bluetooth. These represent "Cached" nodes and do
+     * not have current signal (SNR/RSSI) data.
      */
     @Override
     protected boolean handleNonPacketMessage(MeshProtos.FromRadio message) {
@@ -35,56 +37,55 @@ public class NodeInfoHandler extends BaseMeshHandler {
             MeshProtos.NodeInfo info = message.getNodeInfo();
             MeshProtos.User user = info.getUser();
 
-            
-            log.info("[LOCAL] Handshake from !{} ({})",
-                    Integer.toHexString(info.getNum()), user.getLongName());
+            // Create a synthetic context. Since this came from the local radio cache,
+            // it doesn't have SNR or RSSI, but it does have the NodeID and Timestamp.
+            PacketContext localCtx = PacketContext.builder()
+                    .from(info.getNum())
+                    .timestamp(System.currentTimeMillis())
+                    .build();
 
-            // 1. Update User info (Your existing code)
-            PacketContext localCtx = PacketContext.builder().hopStart(0).hopLimit(0).build();
-           
-            MeshProtos.MeshPacket dummy = MeshProtos.MeshPacket.newBuilder().setFrom(info.getNum()).build();
-            nodeDb.updateUser(dummy, user, localCtx);
+            // 1. Update User Identity (Names/Hardware)
+            nodeDb.updateUser(user, localCtx);
 
-            // 2. NEW: Update Position if present in the NodeInfo
+            // 2. Update cached Position if available
             if (info.hasPosition()) {
-                log.info("  |-- Including cached Position for !{}", Integer.toHexString(info.getNum()));
-                nodeDb.updatePosition(dummy, info.getPosition(), localCtx);
+                nodeDb.updatePosition(info.getPosition(), localCtx);
             }
 
-            // 3. NEW: Update Telemetry/Metrics if present in the NodeInfo
+            // 3. Update cached Device Metrics (Battery/Voltage)
+            // This is the part I missed - the radio often caches how much battery 
+            // your friends had the last time it heard from them.
             if (info.hasDeviceMetrics()) {
-                log.info("  |-- Including cached Metrics for !{}", Integer.toHexString(info.getNum()));
-                nodeDb.updateMetrics(dummy, info.getDeviceMetrics(), localCtx);
+                nodeDb.updateMetrics(info.getDeviceMetrics(), localCtx);
             }
 
-            dispatcher.onNodeDiscovery(NodeDiscoveryEvent.of(dummy, localCtx, nodeDb.getSelfNodeId(), user));
-
+            // Fire discovery event to populate the UI list
+            dispatcher.onNodeDiscovery(NodeDiscoveryEvent.of(null, localCtx, nodeDb.getSelfNodeId(), user));
             return true;
         }
         return false;
     }
 
     /**
-     * Handles Over-The-Air (OTA) discovery broadcasts.
+     * OVER-THE-AIR BROADCAST (Packet): A node just broadcast its User info to
+     * the whole mesh. This IS a live radio event and includes signal metadata
+     * (SNR/RSSI).
      */
     @Override
     protected boolean handlePacket(MeshProtos.MeshPacket packet, PacketContext ctx) {
         try {
             MeshProtos.User user = MeshProtos.User.parseFrom(packet.getDecoded().getPayload());
 
-            // Fluent factory handles shared radio metadata
-            NodeDiscoveryEvent event = NodeDiscoveryEvent.of(packet, ctx, nodeDb.getSelfNodeId(), user);
+            log.info("[OTA DISCOVERY] Learned about !{} ({}) | Signal: {}dB",
+                    Integer.toHexString(packet.getFrom()), user.getLongName(), ctx.getSnr());
 
-            log.info("[DISCOVERY] Found !{} ({}) via {} hops",
-                    Integer.toHexString(event.getNodeId()), event.getLongName(), event.getHopsAway());
+            // Simple update: We pass the User and the PacketContext (which contains SNR/RSSI)
+            nodeDb.updateUser(user, ctx);
 
-            // Update database with specific User profile data
-            nodeDb.updateUser(packet, user, ctx);
-
-            dispatcher.onNodeDiscovery(event);
+            dispatcher.onNodeDiscovery(NodeDiscoveryEvent.of(packet, ctx, nodeDb.getSelfNodeId(), user));
             return true;
         } catch (Exception e) {
-            log.error("Failed to parse NodeInfo packet", e);
+            log.error("Failed to parse live NodeInfo payload", e);
             return false;
         }
     }

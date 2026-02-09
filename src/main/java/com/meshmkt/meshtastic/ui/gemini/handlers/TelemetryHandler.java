@@ -10,7 +10,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.meshtastic.proto.Portnums.PortNum;
 
 /**
- * Processes TELEMETRY_APP packets containing device and environment metrics.
+ * Processes TELEMETRY_APP packets containing device vitals and environmental
+ * sensors.
  */
 @Slf4j
 public class TelemetryHandler extends BaseMeshHandler {
@@ -29,31 +30,25 @@ public class TelemetryHandler extends BaseMeshHandler {
     protected boolean handlePacket(MeshProtos.MeshPacket packet, PacketContext ctx) {
         try {
             TelemetryProtos.Telemetry tele = TelemetryProtos.Telemetry.parseFrom(packet.getDecoded().getPayload());
-            TelemetryUpdateEvent event = TelemetryUpdateEvent.of(packet, ctx, nodeDb.getSelfNodeId(), tele);
+            String name = resolveName(packet.getFrom());
 
-            String name = resolveName(event.getNodeId());
-
+            // Routes data to the correct database update point based on Telemetry type
             switch (tele.getVariantCase()) {
                 case DEVICE_METRICS:
-                    var m = tele.getDeviceMetrics();
-                    log.info("[TELEMETRY] {} (!{}): {}% Battery ({}V)",
-                            name, Integer.toHexString(event.getNodeId()), m.getBatteryLevel(), m.getVoltage());
-                    nodeDb.updateMetrics(packet, m, ctx);
+                    nodeDb.updateMetrics(tele.getDeviceMetrics(), ctx);
+                    log.info("[TELE] {} Battery: {}%", name, tele.getDeviceMetrics().getBatteryLevel());
                     break;
 
                 case ENVIRONMENT_METRICS:
-                    var e = tele.getEnvironmentMetrics();
-                    log.info("[TELEMETRY] {} (!{}): Sensor {}°C",
-                            name, Integer.toHexString(event.getNodeId()), e.getTemperature());
-                    nodeDb.updateEnvMetrics(packet, e, ctx);
+                    nodeDb.updateEnvMetrics(tele.getEnvironmentMetrics(), ctx);
+                    log.info("[TELE] {} Sensor: {}°C", name, tele.getEnvironmentMetrics().getTemperature());
                     break;
 
                 default:
-                    log.debug("Telemetry: Unhandled variant from !{}", Integer.toHexString(event.getNodeId()));
                     break;
             }
 
-            dispatcher.onTelemetryUpdate(event);
+            dispatcher.onTelemetryUpdate(TelemetryUpdateEvent.of(packet, ctx, nodeDb.getSelfNodeId(), tele));
             return true;
         } catch (Exception e) {
             log.error("Telemetry parse failed", e);
