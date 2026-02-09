@@ -1,4 +1,4 @@
-package com.meshmkt.meshtastic.ui.gemini;
+package com.meshmkt.meshtastic.ui.gemini.transport;
 
 /**
  * Interface for receiving updates regarding the transport's connectivity state.

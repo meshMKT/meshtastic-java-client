@@ -1,5 +1,7 @@
 package com.meshmkt.meshtastic.ui.gemini;
 
+import com.meshmkt.meshtastic.ui.gemini.transport.TransportActivityListener;
+import com.meshmkt.meshtastic.ui.gemini.transport.TransportConnectionListener;
 import com.meshmkt.meshtastic.ui.gemini.transport.MeshtasticTransport;
 import com.google.protobuf.ByteString;
 import com.google.protobuf.InvalidProtocolBufferException;
@@ -76,6 +78,11 @@ public class MeshtasticClient {
      * Public connection listeners
      */
     private final List<ConnectionListener> connectionListeners = new CopyOnWriteArrayList<>();
+    
+    /**
+     * Public activity listeners
+     */
+    private final List<TransportActivityListener> actvityListeners = new CopyOnWriteArrayList<>();
 
     /**
      * Dedicated thread for mesh data events
@@ -86,6 +93,13 @@ public class MeshtasticClient {
      * Dedicated thread for connection state events
      */
     private final ExecutorService connectionEventBus;
+    
+    /**
+     * Dedicated thread for activity state events
+     */
+    private final ExecutorService activityEventBus;
+    
+    
     private int currentSyncId;
 
     /**
@@ -110,6 +124,12 @@ public class MeshtasticClient {
         });
         this.connectionEventBus = Executors.newSingleThreadExecutor(r -> {
             Thread t = new Thread(r, "Connection-Event-Bus");
+            t.setDaemon(true);
+            t.setPriority(Thread.NORM_PRIORITY - 1);
+            return t;
+        });
+        this.activityEventBus = Executors.newSingleThreadExecutor(r -> {
+            Thread t = new Thread(r, "Activity-Event-Bus");
             t.setDaemon(true);
             t.setPriority(Thread.NORM_PRIORITY - 1);
             return t;
@@ -174,7 +194,12 @@ public class MeshtasticClient {
                         dumpDatabaseToLog();
                     }
                 }
-
+                
+                
+                //notify listeners of activity
+                notifyActivityListeners(l -> l.onTrafficReceived());
+                
+                // Dispatch to the handlers
                 dispatcher.enqueue(fromRadio);
             } catch (InvalidProtocolBufferException ex) {
                 log.error("Protobuf parsing error", ex);
@@ -304,6 +329,18 @@ public class MeshtasticClient {
             });
         }
     }
+    
+    private void notifyActivityListeners(Consumer<TransportActivityListener> action) {
+        for (TransportActivityListener l : actvityListeners) {
+            activityEventBus.execute(() -> {
+                try {
+                    action.accept(l);
+                } catch (Exception e) {
+                    log.error("Error in listener callback", e);
+                }
+            });
+        }
+    }
 
     // --- Public API ---
     /**
@@ -386,6 +423,14 @@ public class MeshtasticClient {
 
     public void removeConnectionListener(ConnectionListener l) {
         connectionListeners.remove(l);
+    }
+    
+     public void addActivityListener(TransportActivityListener l) {
+        actvityListeners.add(l);
+    }
+
+    public void removeActivityListener(TransportActivityListener l) {
+        actvityListeners.remove(l);
     }
 
     /**

@@ -152,6 +152,7 @@ public class GeminiDebugApp implements MeshtasticEventListener, NodeDatabaseObse
         statusBar = new MeshStatusBar(nodeDb);
         client.addEventListener(this);
         client.addConnectionListener(statusBar);
+        client.addActivityListener(statusBar);
         client.addConnectionListener(this);
 
         JPanel footerStack = new JPanel();

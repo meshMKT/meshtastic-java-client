@@ -1,6 +1,5 @@
 package com.meshmkt.meshtastic.ui.gemini.transport;
 
-import com.meshmkt.meshtastic.ui.gemini.TransportConnectionListener;
 import java.util.function.Consumer;
 
 /**
