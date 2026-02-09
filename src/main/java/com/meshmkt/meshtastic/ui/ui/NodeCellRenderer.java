@@ -26,7 +26,7 @@ public class NodeCellRenderer extends DefaultListCellRenderer {
                 name = "★ " + name + " (Self)";
             }
 
-            // 2. Freshness & Status Logic (Leveraging the new 'online' flag)
+            // 2. Freshness & Status Logic
             String statusText;
             String statusColor;
             float opacity = 1.0f;
@@ -34,17 +34,24 @@ public class NodeCellRenderer extends DefaultListCellRenderer {
             if (node.isSelf()) {
                 statusText = "LOCAL";
                 statusColor = "#004488";
-            } else if (!node.isOnline()) { // Use the DB-managed online status
+            } else if (node.isMqtt()) {
+                // Check MQTT FIRST so the blue tag shows up even if the node is "offline"
+                statusText = "MQTT";
+                statusColor = "#0066CC";
+                if (!node.isOnline()) {
+                    opacity = 0.6f; // Dim it slightly if we haven't heard from the broker lately
+                }
+            } else if (!node.isOnline()) {
                 statusText = "OFFLINE";
                 statusColor = "#666666";
-                opacity = 0.5f; // Dim more aggressively for offline nodes
-            } else if (node.getLastSeenLocal() <= 0) {
+                opacity = 0.5f;
+            } else if (node.getSnr() == 0 && node.getRssi() == 0 || node.getLastSeenLocal() <= 0) {
                 statusText = "CACHED";
                 statusColor = "#777777";
                 opacity = 0.8f;
             } else {
-                statusText = node.isMqtt() ? "MQTT" : "LIVE";
-                statusColor = node.isMqtt() ? "#0066CC" : "#008800";
+                statusText = "LIVE";
+                statusColor = "#008800";
             }
 
             // 3. Data Preparation

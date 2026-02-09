@@ -18,7 +18,21 @@ public class MyInfoHandler extends BaseMeshHandler {
 
     @Override
     protected boolean handleNonPacketMessage(MeshProtos.FromRadio message) {
-        nodeDb.setSelfNodeId(message.getMyInfo().getMyNodeNum());
+
+        int selfId = message.getMyInfo().getMyNodeNum();
+        nodeDb.setSelfNodeId(selfId);
+
+        // Even though this isn't a "Packet", it's coming from the 
+        // hardware we are physically attached to. Mark it live.
+        PacketContext selfCtx = PacketContext.builder()
+                .from(selfId)
+                .live(true)
+                .timestamp(System.currentTimeMillis())
+                .build();
+
+        // This triggers the DB to set lastSeenLocal for YOUR node ID
+        nodeDb.updateSignal(selfCtx);
+        
         return false;
     }
 

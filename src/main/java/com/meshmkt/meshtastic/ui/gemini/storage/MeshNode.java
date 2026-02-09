@@ -108,11 +108,6 @@ public class MeshNode {
     boolean self;
     
     /**
-     * Do we think the node is online
-     */
-    boolean online;
-
-    /**
      * Determines if the node has provided valid GPS coordinates.
      *
      * @return true if latitude and longitude are non-zero.
@@ -142,5 +137,17 @@ public class MeshNode {
      */
     public String getHexId() {
         return String.format("!%08x", nodeId);
+    }
+    
+    /**
+     * Dynamically calculates if the node is online based on the CURRENT system time.
+     * A node is online if we have heard a LIVE packet in the last 15 minutes.
+     */
+    public boolean isOnline() {
+        // If we've never heard a live packet, lastSeenLocal is 0.
+        if (lastSeenLocal <= 0) return false;
+
+        long ageMs = System.currentTimeMillis() - lastSeenLocal;
+        return ageMs < (15 * 60 * 1000); // 15 minutes
     }
 }

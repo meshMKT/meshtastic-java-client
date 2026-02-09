@@ -41,7 +41,8 @@ public class NodeInfoHandler extends BaseMeshHandler {
             // it doesn't have SNR or RSSI, but it does have the NodeID and Timestamp.
             PacketContext localCtx = PacketContext.builder()
                     .from(info.getNum())
-                    .timestamp(System.currentTimeMillis())
+                    .timestamp(info.getLastHeard() != 0 ? info.getLastHeard() * 1000L : 0)
+                    .live(false)
                     .build();
 
             // 1. Update User Identity (Names/Hardware)

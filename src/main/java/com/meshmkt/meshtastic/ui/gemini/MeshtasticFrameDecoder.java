@@ -3,6 +3,7 @@ package com.meshmkt.meshtastic.ui.gemini;
 import com.google.protobuf.InvalidProtocolBufferException;
 import org.meshtastic.proto.MeshProtos;
 import java.util.function.Consumer;
+import lombok.extern.slf4j.Slf4j;
 
 /**
  * <h2>Meshtastic Frame Decoder</h2>
@@ -19,9 +20,8 @@ import java.util.function.Consumer;
  * <li><b>Payload:</b> Protobuf-encoded FromRadio message</li>
  * </ul>
  *
- * @author YourName
- * @version 1.0
  */
+@Slf4j
 public class MeshtasticFrameDecoder {
 
     private static final int MAX_PAYLOAD_SIZE = 512;
@@ -47,6 +47,7 @@ public class MeshtasticFrameDecoder {
     private int lengthPos = 0;
     private int payloadPos = 0;
     private int expectedLength = 0;
+    private long lastByteTime = 0;
 
     /**
      * @param packetConsumer Receives a fully validated and decoded FromRadio
@@ -64,6 +65,14 @@ public class MeshtasticFrameDecoder {
      */
     public void processByte(byte b) {
 
+        long now = System.currentTimeMillis();
+        
+        // if we were mid-packet but the radio went quite, we are out of sync
+        if (state != State.LOOKING_FOR_START1 && (now - lastByteTime > 200)) {
+            state = State.LOOKING_FOR_START1;
+        }
+        lastByteTime = now;
+        
         // Convert to unsigned int (0-255) for clean comparison and math
         int ub = Byte.toUnsignedInt(b);
 
@@ -124,10 +133,17 @@ public class MeshtasticFrameDecoder {
      * consumer.
      */
     private void dispatchPacket() {
-        byte[] payload = new byte[expectedLength];
-        System.arraycopy(payloadBuffer, 0, payload, 0, expectedLength);
+        try {
+            byte[] payload = new byte[expectedLength];
+            System.arraycopy(payloadBuffer, 0, payload, 0, expectedLength);
 
-        // This is now purely a byte-level handoff.
-        packetConsumer.accept(payload);
+            // This is now purely a byte-level handoff.
+            packetConsumer.accept(payload);
+        } catch (Exception e) {
+            // If parsing fails in the handler, we MUST force
+            // a new search
+            log.error("Desync deteced, resetting decoder", e);
+            this.state = State.LOOKING_FOR_START1;
+        }
     }
 }

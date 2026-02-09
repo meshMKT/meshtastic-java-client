@@ -26,7 +26,7 @@ import java.util.function.Consumer;
  */
 public abstract class AbstractFramedTransport implements MeshtasticTransport {
 
-    private final BlockingQueue<byte[]> dataQueue = new LinkedBlockingQueue<>(100);
+    protected final BlockingQueue<byte[]> dataQueue = new LinkedBlockingQueue<>(1000);
     private ExecutorService consumerExecutor;
 
     protected Consumer<byte[]> packetConsumer = (data) -> {
@@ -167,8 +167,13 @@ public abstract class AbstractFramedTransport implements MeshtasticTransport {
      */
     protected void enqueueData(byte[] data) {
         if (data != null && data.length > 0) {
-            // offer() is used to avoid blocking the IO thread if the queue is full
-            dataQueue.offer(data);
+            try {
+                // put() will block the IO thread until there is room.
+                // This acts as "Backpressure" to prevent data loss.
+                dataQueue.put(data);
+            } catch (InterruptedException ex) {
+                Thread.currentThread().interrupt();
+            }
         }
     }
 

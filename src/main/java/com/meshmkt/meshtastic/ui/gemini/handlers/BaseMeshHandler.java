@@ -34,6 +34,8 @@ public abstract class BaseMeshHandler implements MeshtasticMessageHandler {
         // quality metadata (RSSI/SNR) which we extract into the PacketContext.
         MeshProtos.MeshPacket packet = message.getPacket();
         PacketContext ctx = PacketContext.from(message);
+        
+                
 
         // Record the fact that this node is alive and update signal health
         if (packet.getFrom() != 0) {

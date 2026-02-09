@@ -1,6 +1,8 @@
 package com.meshmkt.meshtastic.ui.gemini;
 
 import com.meshmkt.meshtastic.ui.gemini.storage.MeshNode;
+import java.text.SimpleDateFormat;
+import java.util.Date;
 import org.meshtastic.proto.ConfigProtos;
 import java.util.Objects;
 import org.meshtastic.proto.MeshProtos;
@@ -15,6 +17,8 @@ import org.meshtastic.proto.MeshProtos;
  * </p>
  */
 public final class MeshUtils {
+
+    private static final SimpleDateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
 
     /**
      * The approximate radius of the Earth in kilometers. Used for Haversine
@@ -314,5 +318,79 @@ public final class MeshUtils {
             return 0;
         }
         return 1;
+    }
+
+    /**
+     * Formats seconds into a nice string
+     */
+    public static String formatUptime(int totalSeconds) {
+        if (totalSeconds <= 0) {
+            return "0s";
+        }
+
+        long years = totalSeconds / 31536000L;
+        int remainder = (int) (totalSeconds % 31536000L);
+
+        long days = remainder / 86400;
+        remainder %= 86400;
+
+        long hours = remainder / 3600;
+        remainder %= 3600;
+
+        long minutes = remainder / 60;
+        long seconds = remainder % 60;
+
+        StringBuilder sb = new StringBuilder();
+        if (years > 0) {
+            sb.append(years).append("y ");
+        }
+        if (days > 0) {
+            sb.append(days).append("d ");
+        }
+        if (hours > 0) {
+            sb.append(hours).append("h ");
+        }
+        if (minutes > 0) {
+            sb.append(minutes).append("m ");
+        }
+        if (seconds > 0 || sb.length() == 0) {
+            sb.append(seconds).append("s");
+        }
+
+        return sb.toString().trim();
+    }
+
+    /**
+     * @param millis The timestamp from node.getLastSeenLocal()
+     * @param relative If true, returns "13m ago". If false, returns "2024-02-09
+     * 14:20:01"
+     */
+    public static  String formatTimestamp(long millis, boolean relative) {
+        if (millis <= 0) {
+            return "Never";
+        }
+
+        if (!relative) {
+            return dateFormat.format(new Date(millis));
+        }
+
+        // Relative Logic (Reuse your uptime logic math)
+        long diffSeconds = (System.currentTimeMillis() - millis) / 1000;
+        if (diffSeconds < 60) {
+            return diffSeconds + "s ago";
+        }
+
+        long mins = diffSeconds / 60;
+        if (mins < 60) {
+            return mins + "m ago";
+        }
+
+        long hours = mins / 60;
+        if (hours < 24) {
+            return hours + "h ago";
+        }
+
+        long days = hours / 24;
+        return days + "d ago";
     }
 }

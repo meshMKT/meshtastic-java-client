@@ -40,6 +40,15 @@ public class SerialTransport extends StreamTransport {
             throw new IOException("Failed to open serial port: " + config.getPortName());
         }
 
+        // Flush any previous buffers
+        port.flushIOBuffers();
+        
+        // Flush any backlog in the listener pipeline
+        port.flushDataListener();
+     
+        // Clear our buffer as well
+        dataQueue.clear();
+        
         port.addDataListener(new SerialPortDataListener() {
             @Override
             public int getListeningEvents() {

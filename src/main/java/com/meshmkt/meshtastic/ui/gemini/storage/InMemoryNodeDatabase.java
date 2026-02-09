@@ -24,7 +24,7 @@ public class InMemoryNodeDatabase extends AbstractNodeDatabase {
         private double distanceKm = -1.0;
         private long lastSeenRemote;
         private long lastSeenLocal;
-        private boolean online = true;
+        private boolean online = false;
     }
 
     private final ConcurrentHashMap<Integer, NodeRecord> nodes = new ConcurrentHashMap<>();
@@ -43,16 +43,18 @@ public class InMemoryNodeDatabase extends AbstractNodeDatabase {
 
         if (ctx != null) {
             r.setLastContext(ctx);
-            r.setLastSeenRemote(ctx.getTimestamp());
-            r.setLastSeenLocal(System.currentTimeMillis());
+
+            if (ctx.getTimestamp() != 0) {
+                r.setLastSeenRemote(ctx.getTimestamp());
+            }
+
+            // Only update the local time if the packet is considered LIVE
+            if (ctx.isLive()) {
+                r.setLastSeenLocal(System.currentTimeMillis());
+            }
         }
 
         updater.accept(r);
-
-        // If this update was for US, trigger the global refresh in the base class
-        if (isSelfNode(id)) {
-            handleSelfLocationUpdate(id);
-        }
 
         notifyNodeUpdated(mapToDto(id, r));
     }
@@ -78,9 +80,26 @@ public class InMemoryNodeDatabase extends AbstractNodeDatabase {
 
     @Override
     public void updatePosition(MeshProtos.Position pos, PacketContext ctx) {
+        
+        // GATEKEEPER: Don't overwrite good data with "no fix" (0,0)
+        if (pos.getLatitudeI() == 0 && pos.getLongitudeI() == 0) {
+            log.info("Skipping position update: No valid GPS fix from !{}",
+                    Integer.toHexString(ctx.getFrom()));
+            return;
+        }
+
         updateNodeRecord(ctx, r -> {
+            
+            // Store the raw object - this is our "Sticky" storage
             r.setPosition(pos);
-            r.setDistanceKm(calculateDistance(ctx.getFrom(), pos, ctx));
+
+            // If this is ME, trigger the refresh for everyone else
+            if (isSelfNode(ctx.getFrom())) {
+                handleSelfLocationUpdate(getSelfNodeId());
+            } else {
+                // If this is someone else, calculate their distance from our current self-position
+                r.setDistanceKm(calculateDistance(ctx.getFrom(), pos, ctx));
+            }
         });
     }
 
@@ -148,7 +167,6 @@ public class InMemoryNodeDatabase extends AbstractNodeDatabase {
                 .lastSeen(r.getLastSeenRemote())
                 .lastSeenLocal(r.getLastSeenLocal())
                 .self(isSelfNode(id))
-                .online(r.isOnline())
                 .build();
     }
 }

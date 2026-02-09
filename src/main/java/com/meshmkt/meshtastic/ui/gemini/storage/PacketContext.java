@@ -28,6 +28,10 @@ public class PacketContext {
     int from;
     int to;
     
+    // Is this a live packet from the mesh or a dummy one
+    // created during the initial radio sync
+    boolean live;
+    
     MeshProtos.MeshPacket rawProto;
 
     public static PacketContext from(MeshProtos.FromRadio message) {
@@ -44,11 +48,10 @@ public class PacketContext {
                 .requestId(p.getId())
                 .from(p.getFrom())
                 .to(p.getTo())
-                // Use radio time if available, otherwise current local time
-                .timestamp(p.getRxTime() != 0 ? p.getRxTime() * 1000L : System.currentTimeMillis())
-                // Check if the decoded payload exists (if not, it was likely encrypted with a different key)
+                .timestamp(p.getRxTime() != 0 ? p.getRxTime() * 1000L : 0)
                 .encrypted(p.hasEncrypted())
                 .rawProto(p)
+                .live(true)
                 .build();
     }
 
