@@ -15,13 +15,15 @@ import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.net.URI;
 import java.util.stream.Collectors;
+import lombok.extern.slf4j.Slf4j;
 
 /**
  * The primary Debug Dashboard for Meshtastic Gemini. Integrated with
  * NodeDatabaseObserver for reactive list updates and MeshStatusBar for network
  * health visualization.
  */
-public class GeminiDebugApp implements MeshtasticEventListener, NodeDatabaseObserver {
+@Slf4j
+public class GeminiDebugApp implements MeshtasticEventListener, NodeDatabaseObserver, ConnectionListener {
 
     private final JTextField portField = new JTextField("/dev/cu.usbserial-0001", 15);
     private final JTextField nodeField = new JTextField(10);
@@ -50,7 +52,8 @@ public class GeminiDebugApp implements MeshtasticEventListener, NodeDatabaseObse
         // 1. Storage Setup
         this.nodeDb = new InMemoryNodeDatabase();
         this.nodeDb.addObserver(this);
-        this.nodeDb.startCleanupTask(15);
+
+        this.client = new MeshtasticClient(nodeDb);
 
         // 2. Main Frame Setup
         JFrame frame = new JFrame("Gemini Meshtastic Dashboard");
@@ -111,6 +114,16 @@ public class GeminiDebugApp implements MeshtasticEventListener, NodeDatabaseObse
         footerStack.setLayout(new BoxLayout(footerStack, BoxLayout.Y_AXIS));
 
         statusBar = new MeshStatusBar(nodeDb);
+
+        client.addEventListener(this);
+        client.addConnectionListener(statusBar);
+        client.addConnectionListener(this);
+
+        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+            if (client != null) {
+                client.shutdown();
+            }
+        }));
 
         footerStack.add(dmPanel);
         footerStack.add(statusBar);
@@ -236,13 +249,8 @@ public class GeminiDebugApp implements MeshtasticEventListener, NodeDatabaseObse
                         .baudRate(115200)
                         .build();
 
-                // Setup client
-                client = new MeshtasticClient(new SerialTransport(config), nodeDb);
-                client.addEventListener(GeminiDebugApp.this);
-                client.addConnectionListener(statusBar);
-
                 // This is the blocking call that was freezing your UI
-                client.connect();
+                client.connect(new SerialTransport(config));
                 return null;
             }
 
@@ -376,26 +384,20 @@ public class GeminiDebugApp implements MeshtasticEventListener, NodeDatabaseObse
 
     @Override
     public void onPositionUpdate(PositionUpdateEvent event) {
+        // Tell the UI that we need to redraw because coordinates changed
+        refreshNodeList();
     }
 
     @Override
     public void onTelemetryUpdate(TelemetryUpdateEvent event) {
+        // Tell the UI that battery/environment data changed
+        refreshNodeList();
     }
 
     @Override
     public void onNodeDiscovery(NodeDiscoveryEvent event) {
         append("[NODE] Found: " + event.getLongName());
-    }
-
-    @Override
-    public void onConnectionStatusChanged(boolean connected, String message) {
-        append("[STATE] " + (connected ? "CONNECTED" : "DISCONNECTED") + " - " + message);
-        SwingUtilities.invokeLater(() -> {
-            connectBtn.setEnabled(!connected);
-            disconnectBtn.setEnabled(connected);
-            nodeListView.setBackground(connected ? Color.WHITE : new Color(245, 240, 240));
-            updateSelectionDependentButtons();
-        });
+        refreshNodeList();
     }
 
     // --- UI Synchronizer ---
@@ -404,53 +406,73 @@ public class GeminiDebugApp implements MeshtasticEventListener, NodeDatabaseObse
             return;
         }
 
-        var sortedNodes = nodeDb.getAllNodes().stream()
-                .sorted((n1, n2) -> {
-                    // 1. Calculate Priority (Lower number = Higher in list)
-                    int p1 = getSortPriority(n1);
-                    int p2 = getSortPriority(n2);
+        // Capture the current selection ID before we start
+        MeshNode selected = nodeListView.getSelectedValue();
+        final int selectedId = (selected != null) ? selected.getNodeId() : -1;
 
-                    if (p1 != p2) {
-                        return Integer.compare(p1, p2);
+        new SwingWorker<java.util.List<MeshNode>, Void>() {
+            @Override
+            protected java.util.List<MeshNode> doInBackground() {
+                // 1. Heavy lifting: Stream, Sort, and Map to a fresh list copy
+                // This happens on a background thread.
+                return nodeDb.getAllNodes().stream()
+                        .sorted((n1, n2) -> {
+                            int p1 = getSortPriority(n1);
+                            int p2 = getSortPriority(n2);
+                            if (p1 != p2) {
+                                return Integer.compare(p1, p2);
+                            }
+
+                            String name1 = n1.getLongName() != null ? n1.getLongName() : "!" + Integer.toHexString(n1.getNodeId());
+                            String name2 = n2.getLongName() != null ? n2.getLongName() : "!" + Integer.toHexString(n2.getNodeId());
+                            return name1.compareToIgnoreCase(name2);
+                        })
+                        .toList();
+            }
+
+            @Override
+            protected void done() {
+                try {
+                    java.util.List<MeshNode> sortedNodes = get();
+
+                    // 2. Reconciliation: This happens on the EDT
+                    // We update the model only where necessary
+                    for (int i = 0; i < sortedNodes.size(); i++) {
+                        MeshNode freshNode = sortedNodes.get(i);
+                        if (i < nodeListModel.size()) {
+                            MeshNode existing = nodeListModel.get(i);
+
+                            // FIX: Check if the data is actually different (ID or timestamp)
+                            if (existing.getNodeId() != freshNode.getNodeId()
+                                    || existing.getLastSeenLocal() != freshNode.getLastSeenLocal()) {
+                                nodeListModel.set(i, freshNode);
+                            }
+                        } else {
+                            nodeListModel.addElement(freshNode);
+                        }
                     }
 
-                    // 2. Fallback to Alphabetical if priority is the same
-                    String name1 = n1.getLongName() != null ? n1.getLongName() : "!" + Integer.toHexString(n1.getNodeId());
-                    String name2 = n2.getLongName() != null ? n2.getLongName() : "!" + Integer.toHexString(n2.getNodeId());
-                    return name1.compareToIgnoreCase(name2);
-                })
-                .collect(Collectors.toList());
-
-        SwingUtilities.invokeLater(() -> {
-            MeshNode selected = nodeListView.getSelectedValue();
-            int selectedId = (selected != null) ? selected.getNodeId() : -1;
-
-            // Simple reconcile logic for ListModel
-            for (int i = 0; i < sortedNodes.size(); i++) {
-                MeshNode node = sortedNodes.get(i);
-                if (i < nodeListModel.size()) {
-                    if (!nodeListModel.get(i).equals(node)) {
-                        nodeListModel.set(i, node);
+                    // Remove trailing nodes if the DB shrunk
+                    while (nodeListModel.size() > sortedNodes.size()) {
+                        nodeListModel.remove(nodeListModel.size() - 1);
                     }
-                } else {
-                    nodeListModel.addElement(node);
+
+                    // 3. Restore selection
+                    if (selectedId != -1) {
+                        for (int i = 0; i < nodeListModel.size(); i++) {
+                            if (nodeListModel.get(i).getNodeId() == selectedId) {
+                                nodeListView.setSelectedIndex(i);
+                                break;
+                            }
+                        }
+                    }
+                    updateSelectionDependentButtons();
+
+                } catch (Exception e) {
+                    log.error("Failed to update UI node list", e);
                 }
             }
-            while (nodeListModel.size() > sortedNodes.size()) {
-                nodeListModel.remove(nodeListModel.size() - 1);
-            }
-
-            // Restore selection
-            if (selectedId != -1) {
-                for (int i = 0; i < nodeListModel.size(); i++) {
-                    if (nodeListModel.get(i).getNodeId() == selectedId) {
-                        nodeListView.setSelectedIndex(i);
-                        break;
-                    }
-                }
-            }
-            updateSelectionDependentButtons();
-        });
+        }.execute();
     }
 
     /**
@@ -495,5 +517,38 @@ public class GeminiDebugApp implements MeshtasticEventListener, NodeDatabaseObse
         } catch (Exception ignored) {
         }
         SwingUtilities.invokeLater(GeminiDebugApp::new);
+    }
+
+    @Override
+    public void onConnected(String destination) {
+
+        append("[STATE] " + (client.isConnected() ? "CONNECTED" : "DISCONNECTED") + " - " + destination);
+        SwingUtilities.invokeLater(() -> {
+            connectBtn.setEnabled(!client.isConnected());
+            disconnectBtn.setEnabled(client.isConnected());
+            nodeListView.setBackground(Color.WHITE);
+            updateSelectionDependentButtons();
+        });
+    }
+
+    @Override
+    public void onDisconnected() {
+        append("[STATE] " + (client.isConnected() ? "CONNECTED" : "DISCONNECTED"));
+        SwingUtilities.invokeLater(() -> {
+            connectBtn.setEnabled(true);
+            disconnectBtn.setEnabled(false);
+            nodeListView.setBackground(new Color(245, 240, 240));
+            updateSelectionDependentButtons();
+        });
+    }
+
+    @Override
+    public void onError(Throwable error) {
+        SwingUtilities.invokeLater(() -> {
+            connectBtn.setEnabled(true);
+            disconnectBtn.setEnabled(false);
+            nodeListView.setBackground(new Color(245, 240, 240));
+            updateSelectionDependentButtons();
+        });
     }
 }

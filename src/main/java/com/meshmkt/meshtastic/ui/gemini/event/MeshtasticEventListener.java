@@ -31,8 +31,4 @@ public interface MeshtasticEventListener {
      */
     void onMessageStatusUpdate(MessageStatusEvent event);
 
-    /**
-     * Fired when the radio connection status changes.
-     */
-    void onConnectionStatusChanged(boolean connected, String message);
 }

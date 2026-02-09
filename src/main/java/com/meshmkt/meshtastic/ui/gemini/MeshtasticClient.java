@@ -5,6 +5,7 @@ import com.google.protobuf.ByteString;
 import com.google.protobuf.InvalidProtocolBufferException;
 import com.meshmkt.meshtastic.ui.gemini.event.*;
 import com.meshmkt.meshtastic.ui.gemini.handlers.*;
+import com.meshmkt.meshtastic.ui.gemini.storage.MeshNode;
 import com.meshmkt.meshtastic.ui.gemini.storage.NodeDatabase;
 import org.meshtastic.proto.MeshProtos;
 import org.meshtastic.proto.MeshProtos.FromRadio;
@@ -14,9 +15,13 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.nio.charset.StandardCharsets;
+import java.util.Collection;
 import java.util.List;
 import java.util.concurrent.*;
 import java.util.function.Consumer;
+import org.meshtastic.proto.MeshProtos.Data;
+import org.meshtastic.proto.MeshProtos.MeshPacket;
+import org.meshtastic.proto.Portnums.PortNum;
 
 /**
  * <h2>Meshtastic Client</h2>
@@ -32,31 +37,64 @@ public class MeshtasticClient {
 
     private final static Logger log = LoggerFactory.getLogger(MeshtasticClient.class);
 
-    private final MeshtasticTransport transport;
-    private final MeshtasticDispatcher dispatcher;
-    private final ScheduledExecutorService internalScheduler;
-    private final NodeDatabase nodeDb;
-
-    // The "Secret Door": Only Handlers get a reference to this
-    private final InternalDispatcher internalDispatcher = new InternalDispatcher();
-
-    private volatile boolean connected = false;
-
-    // The Event Bus: Single thread to preserve message sequence
-    private final List<MeshtasticEventListener> listeners = new CopyOnWriteArrayList<>();
-    private final List<ConnectionListener> connectionListeners = new CopyOnWriteArrayList<>();
-
-    private final ExecutorService eventBus;
-    private final ExecutorService connectionEventBus;
+    /**
+     * The physical communication medium (Serial, TCP, etc.)
+     */
+    private volatile MeshtasticTransport transport;
 
     /**
-     * Initializes the client with a pluggable transport and database.
-     *
-     * @param transport The physical transport layer.
-     * @param database The storage implementation for node data.
+     * The engine that routes incoming Protobufs to Handlers
      */
-    public MeshtasticClient(MeshtasticTransport transport, NodeDatabase database) {
-        this.transport = transport;
+    private final MeshtasticDispatcher dispatcher;
+
+    /**
+     * Scheduler for heartbeats and background tasks
+     */
+    private final ScheduledExecutorService internalScheduler;
+
+    /**
+     * Shared repository for mesh node data
+     */
+    private final NodeDatabase nodeDb;
+
+    /**
+     * Internal bridge to fire events from handlers to public listeners
+     */
+    private final InternalDispatcher internalDispatcher = new InternalDispatcher();
+
+    /**
+     * High-level connection state
+     */
+    private volatile boolean connected = false;
+
+    /**
+     * Public event listeners
+     */
+    private final List<MeshtasticEventListener> listeners = new CopyOnWriteArrayList<>();
+
+    /**
+     * Public connection listeners
+     */
+    private final List<ConnectionListener> connectionListeners = new CopyOnWriteArrayList<>();
+
+    /**
+     * Dedicated thread for mesh data events
+     */
+    private final ExecutorService eventBus;
+
+    /**
+     * Dedicated thread for connection state events
+     */
+    private final ExecutorService connectionEventBus;
+    private int currentSyncId;
+
+    /**
+     * Initializes the client service. Executors are started once and persist
+     * across transport reconnections.
+     *
+     * * @param database The shared NodeDatabase instance.
+     */
+    public MeshtasticClient(NodeDatabase database) {
         this.nodeDb = database;
         this.dispatcher = new MeshtasticDispatcher();
         this.internalScheduler = Executors.newSingleThreadScheduledExecutor(r -> {
@@ -78,9 +116,26 @@ public class MeshtasticClient {
         });
 
         initializeHandlers();
-        setupPipeline();
+        startHeartbeatTask();
     }
 
+    /**
+     * Connects to the mesh using the provided transport medium.
+     *
+     * @param newTransport The transport implementation to use.
+     */
+    public synchronized void connect(MeshtasticTransport newTransport) {
+        if (this.transport != null) {
+            disconnect();
+        }
+        this.transport = newTransport;
+        setupPipeline(this.transport);
+        this.transport.start();
+    }
+
+    /**
+     * Registers the logic handlers that process incoming radio packets.
+     */
     private void initializeHandlers() {
 
         dispatcher.registerHandler(new MessageLoggingHandler(nodeDb));
@@ -99,65 +154,103 @@ public class MeshtasticClient {
     }
 
     /**
-     * Configures the data pipeline from the transport layer to the dispatcher.
-     * <p>
-     * This refactored version monitors the incoming Protobuf stream for
-     * Metadata or MyInfo packets, which signal the end of the initial radio
-     * memory dump.
-     * </p>
+     * Configures the transport to feed data into the client's dispatcher.
      */
-    private void setupPipeline() {
-        /*
-         * PIPELINE: Transport -> Raw Bytes -> Protobuf Parser -> Dispatcher
-         */
-        transport.addParsedPacketConsumer((byte[] packet) -> {
+    private void setupPipeline(MeshtasticTransport t) {
+        t.addParsedPacketConsumer((byte[] packet) -> {
             try {
-                FromRadio parsedProto = FromRadio.parseFrom(packet);
+                FromRadio fromRadio = FromRadio.parseFrom(packet);
 
-                // Only flip to LIVE once we see an actual packet (traffic)
-                // FromRadio.hasPacket() is FALSE for NodeInfo (the database dump)
-                if (!nodeDb.isSyncComplete() && parsedProto.hasPacket()) {
-                    log.info(">>> Real-time traffic detected. Ending sync and switching to LIVE mode.");
-                    nodeDb.setSyncComplete(true);
+                /* * According to documentation: 
+                 * The integer written into want_config_id will be reported back 
+                 * in the config_complete_id response.
+                 */
+                if (fromRadio.hasConfigCompleteId() || fromRadio.getConfigCompleteId() != 0) {
+                    if (fromRadio.getConfigCompleteId() == currentSyncId) {
+                        log.info(">>> Received Config Complete (ID: {}). Initial dump finished.", currentSyncId);
+                        nodeDb.setSyncComplete(true);
+//                        nodeDb.startCleanupTask(15);
+
+                        // Database is now fully populated with the radio's cached state
+                        dumpDatabaseToLog();
+                    }
                 }
 
-                dispatcher.enqueue(parsedProto);
+                dispatcher.enqueue(fromRadio);
             } catch (InvalidProtocolBufferException ex) {
-                log.error("Failed to parse FromRadio Protobuf", ex);
+                log.error("Protobuf parsing error", ex);
             }
         });
 
-        transport.addConnectionListener(new TransportConnectionListener() {
+        t.addConnectionListener(new TransportConnectionListener() {
             @Override
             public void onConnected() {
                 connected = true;
-                log.info(">>> Transport Connected. Synchronizing with Radio...");
-
-                // Start in SYNC mode (historical data)
                 nodeDb.setSyncComplete(false);
-
-                // Handshake: Request full config
-                int syncId = (int) (System.currentTimeMillis() / 1000);
-                sendToRadio(ToRadio.newBuilder().setWantConfigId(syncId).build());
-
-                notifyConnectionListeners(l -> l.onConnected("Connected"));
+                requestLocalConfig(); // Standard initial handshake
+                notifyConnectionListeners(l -> l.onConnected("HIYA"));
             }
 
             @Override
             public void onDisconnected(String reason) {
                 connected = false;
-                // Reset sync state for next connection
                 nodeDb.setSyncComplete(false);
-                log.warn(">>> Transport Disconnected: {}", reason);
                 notifyConnectionListeners(l -> l.onDisconnected());
             }
 
             @Override
-            public void onError(Throwable t) {
-                log.error(">>> Transport Error: {}", t.getMessage());
-                notifyConnectionListeners(l -> onError(t));
+            public void onError(Throwable err) {
+                connected = false;
+                nodeDb.setSyncComplete(false);
+                notifyConnectionListeners(l -> l.onError(err));
             }
         });
+    }
+
+    public void dumpDatabaseToLog() {
+        Collection<MeshNode> nodes = nodeDb.getAllNodes();
+        log.info("======= INITIAL SYNC DUMP COMPLETE ({} Nodes) =======", nodes.size());
+
+        for (MeshNode node : nodes) {
+            try {
+                String id = String.format("!%08x", node.getNodeId());
+                String name = (node.getLongName() != null) ? node.getLongName() : "Unknown";
+
+                // Safe checks for nested Protobuf objects
+                String lat = "N/A";
+                String lon = "N/A";
+                if (node.getPosition() != null) {
+                    lat = String.valueOf(node.getPosition().getLatitudeI());
+                    lon = String.valueOf(node.getPosition().getLongitudeI());
+                }
+
+                String batt = "N/A";
+                if (node.getDeviceMetrics() != null) {
+                    batt = node.getDeviceMetrics().getBatteryLevel() + "%";
+                }
+
+                log.info("Node: {} | Name: {} | Lat/Lon: {},{} | Batt: {}",
+                        id, name, lat, lon, batt);
+
+            } catch (Exception e) {
+                log.error("Error printing node details for ID: " + node.getNodeId(), e);
+            }
+        }
+        log.info("======================================================");
+    }
+
+    /**
+     * Persistent heartbeat task that sends a packet every 30 seconds if
+     * connected.
+     */
+    private void startHeartbeatTask() {
+        internalScheduler.scheduleAtFixedRate(() -> {
+            if (isConnected()) {
+                sendToRadio(ToRadio.newBuilder()
+                        .setHeartbeat(MeshProtos.Heartbeat.newBuilder().build())
+                        .build());
+            }
+        }, 10, 30, TimeUnit.SECONDS);
     }
 
     /**
@@ -218,43 +311,57 @@ public class MeshtasticClient {
 
     // --- Public API ---
     /**
+     * Sends the config request and stores the ID so we can listen for the echo
+     * when the radio is finished.
+     */
+    public void requestLocalConfig() {
+        this.currentSyncId = (int) (System.currentTimeMillis() / 1000);
+        log.info(">>> Requesting Local Config with Sync ID: {}", currentSyncId);
+
+        sendToRadio(ToRadio.newBuilder()
+                .setWantConfigId(currentSyncId)
+                .build());
+    }
+
+    /**
      * Manually requests the radio to re-send or fetch the NodeInfo (User) data
      * for a specific node ID.
      *
      * * @param nodeId The 32-bit unsigned integer ID of the node to refresh.
      */
     public void refreshNodeInfo(int nodeId) {
-        log.info(">>> Manually requesting SINGLE node refresh: !{:08x}", nodeId);
-         sendRequest(nodeId, org.meshtastic.proto.Portnums.PortNum.NODEINFO_APP);
+        log.info(">>> Manually requesting SINGLE node refresh: !{}", MeshUtils.formatId(nodeId));
+        sendRequest(nodeId, PortNum.NODEINFO_APP);
     }
 
     /**
      * Requests the latest Position (GPS) from a specific node.
      */
     public void requestPosition(int nodeId) {
-        log.info(">>> Requesting POSITION from node: !{:08x}", nodeId);
-        sendRequest(nodeId, org.meshtastic.proto.Portnums.PortNum.POSITION_APP);
+        log.info(">>> Requesting POSITION from node: !{}", MeshUtils.formatId(nodeId));
+        sendRequest(nodeId, PortNum.POSITION_APP);
     }
 
     /**
      * Requests Telemetry (Battery, Voltage, etc.) from a specific node.
      */
     public void requestTelemetry(int nodeId) {
-        log.info(">>> Requesting TELEMETRY from node: !{:08x}", nodeId);
-        sendRequest(nodeId, org.meshtastic.proto.Portnums.PortNum.TELEMETRY_APP);
+        log.info(">>> Requesting TELEMETRY from node: !{}", MeshUtils.formatId(nodeId));
+        sendRequest(nodeId, PortNum.TELEMETRY_APP);
     }
 
     /**
      * Private helper to wrap the logic for targeted requests.
      */
-    private void sendRequest(int nodeId, org.meshtastic.proto.Portnums.PortNum port) {
+    private void sendRequest(int nodeId, PortNum port) {
+
         // 1. Create empty data payload for the specific port
-        org.meshtastic.proto.MeshProtos.Data payload = org.meshtastic.proto.MeshProtos.Data.newBuilder()
+        Data payload = Data.newBuilder()
                 .setPortnum(port)
                 .build();
 
         // 2. Wrap in MeshPacket
-        org.meshtastic.proto.MeshProtos.MeshPacket pk = org.meshtastic.proto.MeshProtos.MeshPacket.newBuilder()
+        MeshPacket pk = MeshPacket.newBuilder()
                 .setTo(nodeId)
                 .setDecoded(payload)
                 .setWantAck(true)
@@ -262,7 +369,7 @@ public class MeshtasticClient {
 
         // 3. Send to Radio
         // 3. Send via ToRadio
-        org.meshtastic.proto.MeshProtos.ToRadio request = org.meshtastic.proto.MeshProtos.ToRadio.newBuilder()
+        ToRadio request = ToRadio.newBuilder()
                 .setPacket(pk)
                 .build();
 
@@ -283,24 +390,6 @@ public class MeshtasticClient {
 
     public void removeConnectionListener(ConnectionListener l) {
         connectionListeners.remove(l);
-    }
-
-    public void connect() {
-        if (connected) {
-            return;
-        }
-
-        transport.start();
-
-        // Start official Heartbeat (every 30s)
-        internalScheduler.scheduleAtFixedRate(() -> {
-            if (connected && transport.isConnected()) {
-                sendToRadio(ToRadio.newBuilder()
-                        .setHeartbeat(MeshProtos.Heartbeat.newBuilder().build()).build());
-            }
-        }, 10, 30, TimeUnit.SECONDS);
-
-        Runtime.getRuntime().addShutdownHook(new Thread(this::disconnect));
     }
 
     /**
@@ -357,8 +446,8 @@ public class MeshtasticClient {
     }
 
     /**
-     * Radios can only handle on thing at a time so this will help keeps things
-     * in organized
+     * Routes a ToRadio packet to the current transport. Synchronized to prevent
+     * overlapping writes.
      *
      * @param toRadio
      */
@@ -371,14 +460,27 @@ public class MeshtasticClient {
     }
 
     public boolean isConnected() {
-        return connected && transport.isConnected();
+        return connected && transport != null && transport.isConnected();
     }
 
-    public void disconnect() {
+    /**
+     * Stops the current transport but keeps executors alive for future
+     * connections.
+     */
+    public synchronized void disconnect() {
+        if (transport != null) {
+            transport.stop();
+            transport = null;
+        }
         connected = false;
-        transport.stop();
+    }
 
-        // Shut down executors gracefully
+    /**
+     * Permanently shuts down the client and releases all thread resources.
+     */
+    public void shutdown() {
+        disconnect();
+
         eventBus.shutdown();
         connectionEventBus.shutdown();
         internalScheduler.shutdown();
@@ -387,21 +489,15 @@ public class MeshtasticClient {
             if (!eventBus.awaitTermination(2, TimeUnit.SECONDS)) {
                 eventBus.shutdownNow();
             }
-            
             if (!connectionEventBus.awaitTermination(2, TimeUnit.SECONDS)) {
                 connectionEventBus.shutdownNow();
             }
-            
             if (!internalScheduler.awaitTermination(2, TimeUnit.SECONDS)) {
                 internalScheduler.shutdownNow();
             }
-            
         } catch (InterruptedException e) {
-            eventBus.shutdownNow();
-            connectionEventBus.shutdownNow();
-            internalScheduler.shutdownNow();
+            Thread.currentThread().interrupt();
         }
-
         log.info("Client resources released.");
     }
 }

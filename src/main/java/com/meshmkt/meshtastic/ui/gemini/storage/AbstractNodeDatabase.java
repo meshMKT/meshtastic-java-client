@@ -24,27 +24,27 @@ public abstract class AbstractNodeDatabase implements NodeDatabase {
 
     @Override
     public final void updateUser(MeshProtos.MeshPacket p, MeshProtos.User u, PacketContext ctx) {
-        storeUser(u, p, ctx, getArrivalTimestamp());
+        storeUser(u, p, ctx, getArrivalTimestamp(p));
     }
 
     @Override
     public final void updatePosition(MeshProtos.MeshPacket p, MeshProtos.Position pos, PacketContext ctx) {
-        storePosition(pos, p, ctx, getArrivalTimestamp());
+        storePosition(pos, p, ctx, getArrivalTimestamp(p));
     }
 
     @Override
     public final void updateMetrics(MeshProtos.MeshPacket p, TelemetryProtos.DeviceMetrics m, PacketContext ctx) {
-        storeMetrics(m, p, ctx, getArrivalTimestamp());
+        storeMetrics(m, p, ctx, ctx.getTimestamp());
     }
 
     @Override
     public final void updateEnvMetrics(MeshProtos.MeshPacket p, TelemetryProtos.EnvironmentMetrics e, PacketContext ctx) {
-        storeEnvMetrics(e, p, ctx, getArrivalTimestamp());
+        storeEnvMetrics(e, p, ctx, ctx.getTimestamp());
     }
 
     @Override
     public final void updateSignal(int nodeId, PacketContext ctx) {
-        storeSignal(nodeId, ctx, getArrivalTimestamp());
+        storeSignal(nodeId, ctx, ctx.getTimestamp());
     }
 
     /**
@@ -53,8 +53,11 @@ public abstract class AbstractNodeDatabase implements NodeDatabase {
      * @return Current time if sync is complete, otherwise 0 to flag as
      * 'Historical'.
      */
-    private long getArrivalTimestamp() {
-        return isSyncComplete() ? System.currentTimeMillis() : 0;
+    private long getArrivalTimestamp(MeshProtos.MeshPacket p) {
+        if (p != null && p.getRxTime() != 0) {
+            return p.getRxTime() * 1000L; // Convert Protobuf seconds to Java millis
+        }
+        return System.currentTimeMillis(); // Fallback for local messages
     }
 
     protected abstract void storeSignal(int nodeId, PacketContext ctx, long time);
@@ -125,7 +128,7 @@ public abstract class AbstractNodeDatabase implements NodeDatabase {
             long cutoff = System.currentTimeMillis() - (timeoutMins * 60 * 1000L);
             // Parent tells the child: "Clean up anything older than this"
             performPurge(cutoff);
-        }, 1, 1, TimeUnit.MINUTES);
+        }, 5, 1, TimeUnit.MINUTES);
     }
 
     /**
