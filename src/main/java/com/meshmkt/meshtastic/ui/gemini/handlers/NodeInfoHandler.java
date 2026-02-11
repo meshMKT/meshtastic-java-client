@@ -1,5 +1,6 @@
 package com.meshmkt.meshtastic.ui.gemini.handlers;
 
+import com.meshmkt.meshtastic.ui.gemini.MeshConstants;
 import com.meshmkt.meshtastic.ui.gemini.event.MeshEventDispatcher;
 import com.meshmkt.meshtastic.ui.gemini.event.NodeDiscoveryEvent;
 import com.meshmkt.meshtastic.ui.gemini.storage.NodeDatabase;
@@ -37,11 +38,12 @@ public class NodeInfoHandler extends BaseMeshHandler {
             MeshProtos.NodeInfo info = message.getNodeInfo();
             MeshProtos.User user = info.getUser();
 
-            // Create a synthetic context. Since this came from the local radio cache,
-            // it doesn't have SNR or RSSI, but it does have the NodeID and Timestamp.
+            // We are just updating the 'Device' timestamp from the sync.
+            // The MeshNode's getCalculatedStatus() will see this and 
+            // return CACHED or OFFLINE based on how old that 'lastHeard' is.
             PacketContext localCtx = PacketContext.builder()
                     .from(info.getNum())
-                    .timestamp(info.getLastHeard() != 0 ? info.getLastHeard() * 1000L : 0)
+                    .timestamp(info.getLastHeard() * 1000L)
                     .live(false)
                     .build();
 

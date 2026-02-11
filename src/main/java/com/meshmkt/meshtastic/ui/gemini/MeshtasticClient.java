@@ -1,6 +1,5 @@
 package com.meshmkt.meshtastic.ui.gemini;
 
-import com.meshmkt.meshtastic.ui.gemini.transport.TransportActivityListener;
 import com.meshmkt.meshtastic.ui.gemini.transport.TransportConnectionListener;
 import com.meshmkt.meshtastic.ui.gemini.transport.MeshtasticTransport;
 import com.google.protobuf.ByteString;
@@ -75,31 +74,10 @@ public class MeshtasticClient {
     private final List<MeshtasticEventListener> listeners = new CopyOnWriteArrayList<>();
 
     /**
-     * Public connection listeners
-     */
-    private final List<ConnectionListener> connectionListeners = new CopyOnWriteArrayList<>();
-    
-    /**
-     * Public activity listeners
-     */
-    private final List<TransportActivityListener> actvityListeners = new CopyOnWriteArrayList<>();
-
-    /**
      * Dedicated thread for mesh data events
      */
     private final ExecutorService eventBus;
 
-    /**
-     * Dedicated thread for connection state events
-     */
-    private final ExecutorService connectionEventBus;
-    
-    /**
-     * Dedicated thread for activity state events
-     */
-    private final ExecutorService activityEventBus;
-    
-    
     private int currentSyncId;
 
     /**
@@ -118,18 +96,6 @@ public class MeshtasticClient {
         });
         this.eventBus = Executors.newSingleThreadExecutor(r -> {
             Thread t = new Thread(r, "Mesh-Event-Bus");
-            t.setDaemon(true);
-            t.setPriority(Thread.NORM_PRIORITY - 1);
-            return t;
-        });
-        this.connectionEventBus = Executors.newSingleThreadExecutor(r -> {
-            Thread t = new Thread(r, "Connection-Event-Bus");
-            t.setDaemon(true);
-            t.setPriority(Thread.NORM_PRIORITY - 1);
-            return t;
-        });
-        this.activityEventBus = Executors.newSingleThreadExecutor(r -> {
-            Thread t = new Thread(r, "Activity-Event-Bus");
             t.setDaemon(true);
             t.setPriority(Thread.NORM_PRIORITY - 1);
             return t;
@@ -189,16 +155,9 @@ public class MeshtasticClient {
                     if (fromRadio.getConfigCompleteId() == currentSyncId) {
                         log.info(">>> Received Config Complete (ID: {}). Initial dump finished.", currentSyncId);
 //                        nodeDb.startCleanupTask(15);
-
-                        // Database is now fully populated with the radio's cached state
-                        dumpDatabaseToLog();
                     }
                 }
-                
-                
-                //notify listeners of activity
-                notifyActivityListeners(l -> l.onTrafficReceived());
-                
+
                 // Dispatch to the handlers
                 dispatcher.enqueue(fromRadio);
             } catch (InvalidProtocolBufferException ex) {
@@ -211,53 +170,18 @@ public class MeshtasticClient {
             public void onConnected() {
                 connected = true;
                 requestLocalConfig(); // Standard initial handshake
-                notifyConnectionListeners(l -> l.onConnected("HIYA"));
             }
 
             @Override
-            public void onDisconnected(String reason) {
+            public void onDisconnected() {
                 connected = false;
-                notifyConnectionListeners(l -> l.onDisconnected());
             }
 
             @Override
             public void onError(Throwable err) {
                 connected = false;
-                notifyConnectionListeners(l -> l.onError(err));
             }
         });
-    }
-
-    public void dumpDatabaseToLog() {
-        Collection<MeshNode> nodes = nodeDb.getAllNodes();
-        log.info("======= INITIAL SYNC DUMP COMPLETE ({} Nodes) =======", nodes.size());
-
-        for (MeshNode node : nodes) {
-            try {
-                String id = String.format("!%08x", node.getNodeId());
-                String name = (node.getLongName() != null) ? node.getLongName() : "Unknown";
-
-                // Safe checks for nested Protobuf objects
-                String lat = "N/A";
-                String lon = "N/A";
-                if (node.getPosition() != null) {
-                    lat = String.valueOf(node.getPosition().getLatitudeI());
-                    lon = String.valueOf(node.getPosition().getLongitudeI());
-                }
-
-                String batt = "N/A";
-                if (node.getDeviceMetrics() != null) {
-                    batt = node.getDeviceMetrics().getBatteryLevel() + "%";
-                }
-
-                log.info("Node: {} | Name: {} | Lat/Lon: {},{} | Batt: {}",
-                        id, name, lat, lon, batt);
-
-            } catch (Exception e) {
-                log.error("Error printing node details for ID: " + node.getNodeId(), e);
-            }
-        }
-        log.info("======================================================");
     }
 
     /**
@@ -309,30 +233,6 @@ public class MeshtasticClient {
     private void notifyListeners(Consumer<MeshtasticEventListener> action) {
         for (MeshtasticEventListener l : listeners) {
             eventBus.execute(() -> {
-                try {
-                    action.accept(l);
-                } catch (Exception e) {
-                    log.error("Error in listener callback", e);
-                }
-            });
-        }
-    }
-
-    private void notifyConnectionListeners(Consumer<ConnectionListener> action) {
-        for (ConnectionListener l : connectionListeners) {
-            connectionEventBus.execute(() -> {
-                try {
-                    action.accept(l);
-                } catch (Exception e) {
-                    log.error("Error in listener callback", e);
-                }
-            });
-        }
-    }
-    
-    private void notifyActivityListeners(Consumer<TransportActivityListener> action) {
-        for (TransportActivityListener l : actvityListeners) {
-            activityEventBus.execute(() -> {
                 try {
                     action.accept(l);
                 } catch (Exception e) {
@@ -415,22 +315,6 @@ public class MeshtasticClient {
 
     public void removeEventListener(MeshtasticEventListener listener) {
         listeners.remove(listener);
-    }
-
-    public void addConnectionListener(ConnectionListener l) {
-        connectionListeners.add(l);
-    }
-
-    public void removeConnectionListener(ConnectionListener l) {
-        connectionListeners.remove(l);
-    }
-    
-     public void addActivityListener(TransportActivityListener l) {
-        actvityListeners.add(l);
-    }
-
-    public void removeActivityListener(TransportActivityListener l) {
-        actvityListeners.remove(l);
     }
 
     /**
@@ -523,15 +407,11 @@ public class MeshtasticClient {
         disconnect();
 
         eventBus.shutdown();
-        connectionEventBus.shutdown();
         internalScheduler.shutdown();
 
         try {
             if (!eventBus.awaitTermination(2, TimeUnit.SECONDS)) {
                 eventBus.shutdownNow();
-            }
-            if (!connectionEventBus.awaitTermination(2, TimeUnit.SECONDS)) {
-                connectionEventBus.shutdownNow();
             }
             if (!internalScheduler.awaitTermination(2, TimeUnit.SECONDS)) {
                 internalScheduler.shutdownNow();

@@ -1,51 +1,36 @@
 package com.meshmkt.meshtastic.ui.gemini;
 
-/**
- * <h2>MeshConstants</h2>
- * <p>
- * Centralized repository for protocol-specific constants, magic numbers, and
- * default values used throughout the application.
- * </p>
- */
 public final class MeshConstants {
 
-    /**
-     * Private constructor to prevent instantiation.
-     */
-    private MeshConstants() {
-    }
+    private MeshConstants() {}
 
     // --- Node ID Constants ---
-    /**
-     * Standard Meshtastic Broadcast ID (All nodes).
-     */
     public static final int ID_BROADCAST = 0xFFFFFFFF;
-
-    /**
-     * Represents an uninitialized or unknown Node ID.
-     */
     public static final int ID_UNKNOWN = 0;
 
     // --- Distance Constants ---
-    /**
-     * Returned when distance calculation is impossible (missing GPS).
-     */
     public static final double DISTANCE_UNKNOWN = -1.0;
-
-    /**
-     * Returned when a node is reached via MQTT (geographic distance is
-     * misleading).
-     */
     public static final double DISTANCE_MQTT = -2.0;
-
-    /**
-     * Distance for the local node to itself.
-     */
     public static final double DISTANCE_SELF = 0.0;
 
     // --- Timing & Freshness ---
+    
     /**
-     * Time in seconds before a node is considered 'Offline' or 'Stale'.
+     * LIVE_THRESHOLD: How long a node stays "LIVE" after we hear an actual OTA packet.
+     * Default: 15 minutes.
      */
-    public static final long OFFLINE_CUTOFF_SECONDS = 900;
+    public static final long LIVE_THRESHOLD_SECONDS = 900;
+
+    /**
+     * CACHE_THRESHOLD: How long ago the mesh (radio) heard a node for us to still 
+     * consider it "Fresh" in the list.
+     * Default: 24 hours (86400 seconds).
+     */
+    public static final long STALE_NODE_THRESHOLD_SECONDS = 86400;
+
+    /**
+     * PURGE_THRESHOLD: Absolute limit for keeping a node in memory. 
+     * If not seen in 7 days, it's gone.
+     */
+    public static final long PURGE_THRESHOLD_SECONDS = 604800; 
 }

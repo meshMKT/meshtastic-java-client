@@ -1,30 +1,32 @@
 package com.meshmkt.meshtastic.ui.ui;
 
-import com.meshmkt.meshtastic.ui.gemini.event.ConnectionListener;
 import com.meshmkt.meshtastic.ui.gemini.storage.MeshNode;
 import com.meshmkt.meshtastic.ui.gemini.storage.NodeDatabase;
 import com.meshmkt.meshtastic.ui.gemini.storage.NodeDatabaseObserver;
-import com.meshmkt.meshtastic.ui.gemini.transport.TransportActivityListener;
+import com.meshmkt.meshtastic.ui.gemini.transport.TransportConnectionListener;
 import javax.swing.*;
 import java.awt.*;
 import java.util.Collection;
 
 /**
  * <h2>MeshStatusBar</h2>
- * Provides real-time mesh statistics and a physical RX traffic indicator.
+ * Provides real-time mesh statistics and physical RX/TX traffic indicators.
  */
-public class MeshStatusBar extends JPanel implements NodeDatabaseObserver, ConnectionListener, TransportActivityListener {
+public class MeshStatusBar extends JPanel implements NodeDatabaseObserver, TransportConnectionListener {
 
     private final NodeDatabase nodeDb;
     private final JLabel statusLabel;
-    private final JLabel rxIndicator; // The "LED"
-    private final Timer blinkTimer;
+    private final JLabel rxIndicator;
+    private final JLabel txIndicator;
+    private final Timer rxBlinkTimer;
+    private final Timer txBlinkTimer;
 
     private boolean isConnected = false;
 
-    // Defined colors for the "LED"
+    // Defined colors for the "LEDs"
     private static final Color COLOR_OFF = new Color(180, 180, 180);
-    private static final Color COLOR_RX = new Color(0, 200, 0);
+    private static final Color COLOR_RX = new Color(0, 200, 0);   // Green for RX
+    private static final Color COLOR_TX = new Color(0, 120, 255); // Blue for TX
 
     public MeshStatusBar(NodeDatabase nodeDb) {
         this.nodeDb = nodeDb;
@@ -32,40 +34,62 @@ public class MeshStatusBar extends JPanel implements NodeDatabaseObserver, Conne
         this.setBackground(new Color(242, 242, 242));
         this.setBorder(BorderFactory.createMatteBorder(1, 0, 0, 0, Color.LIGHT_GRAY));
 
-        // 1. Initialize RX Indicator (The LED)
+        // 1. Initialize TX Indicator
+        this.txIndicator = new JLabel("● TX");
+        this.txIndicator.setFont(new Font("Monospaced", Font.BOLD, 11));
+        this.txIndicator.setForeground(COLOR_OFF);
+        add(txIndicator);
+
+        // 2. Initialize RX Indicator
         this.rxIndicator = new JLabel("● RX");
         this.rxIndicator.setFont(new Font("Monospaced", Font.BOLD, 11));
         this.rxIndicator.setForeground(COLOR_OFF);
         add(rxIndicator);
 
-        // 2. Initialize Status Text
+        // 3. Initialize Status Text
         this.statusLabel = new JLabel("Syncing Mesh...");
         this.statusLabel.setFont(new Font("Monospaced", Font.PLAIN, 11));
         add(statusLabel);
 
-        // 3. Setup the Blink Timer (Turns the LED off after 100ms)
-        this.blinkTimer = new Timer(100, e -> rxIndicator.setForeground(COLOR_OFF));
-        this.blinkTimer.setRepeats(false);
+        // 4. Setup Blink Timers (100ms flash duration)
+        this.rxBlinkTimer = new Timer(100, e -> rxIndicator.setForeground(COLOR_OFF));
+        this.rxBlinkTimer.setRepeats(false);
+
+        this.txBlinkTimer = new Timer(100, e -> txIndicator.setForeground(COLOR_OFF));
+        this.txBlinkTimer.setRepeats(false);
 
         nodeDb.addObserver(this);
         updateCounts();
     }
 
     /**
-     * Implementation of TransportActivityListener. Called whenever a valid
-     * frame is decoded from the radio.
+     * Called whenever a valid frame is received from the transport.
      */
     @Override
     public void onTrafficReceived() {
         SwingUtilities.invokeLater(() -> {
             rxIndicator.setForeground(COLOR_RX);
-            // Restart the timer every time a new packet hits
-            if (blinkTimer.isRunning()) {
-                blinkTimer.restart();
-            } else {
-                blinkTimer.start();
-            }
+            handleBlink(rxBlinkTimer);
         });
+    }
+
+    /**
+     * Called whenever data is successfully pushed to the physical layer.
+     */
+    @Override
+    public void onTrafficTransmitted() {
+        SwingUtilities.invokeLater(() -> {
+            txIndicator.setForeground(COLOR_TX);
+            handleBlink(txBlinkTimer);
+        });
+    }
+
+    private void handleBlink(Timer timer) {
+        if (timer.isRunning()) {
+            timer.restart();
+        } else {
+            timer.start();
+        }
     }
 
     private void updateCounts() {
@@ -77,12 +101,11 @@ public class MeshStatusBar extends JPanel implements NodeDatabaseObserver, Conne
                 continue;
             }
 
-            if (!node.isOnline()) {
-                offline++;
-            } else if (node.getLastSeenLocal() <= 0) {
-                cached++;
-            } else {
-                live++;
+            // The DTO does all the heavy lifting here
+            switch (node.getCalculatedStatus()) {
+                case LIVE -> live++;
+                case CACHED -> cached++;
+                case OFFLINE -> offline++;
             }
         }
 
@@ -113,7 +136,7 @@ public class MeshStatusBar extends JPanel implements NodeDatabaseObserver, Conne
     }
 
     @Override
-    public void onConnected(String destination) {
+    public void onConnected() {
         this.isConnected = true;
         updateCounts();
     }
@@ -126,5 +149,5 @@ public class MeshStatusBar extends JPanel implements NodeDatabaseObserver, Conne
 
     @Override
     public void onError(Throwable error) {
-        /* handle if needed */ }
+    }
 }

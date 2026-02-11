@@ -10,8 +10,8 @@ import java.net.Socket;
 /**
  * <h2>TCP Transport</h2>
  * <p>
- * Network implementation for radios connected via WiFi or Ethernet. Manages a
- * persistent socket connection and a dedicated reader thread.
+ * Network implementation for radios connected via WiFi or Ethernet. Refactored
+ * to use the Template Method pattern for framing and notifications.
  * </p>
  */
 public class TcpTransport extends StreamTransport {
@@ -45,30 +45,33 @@ public class TcpTransport extends StreamTransport {
     }
 
     /**
-     * Blocking read loop that feeds the shared data queue.
+     * Blocking read loop that feeds the shared data queue. Triggers async RX
+     * notifications via AbstractFramedTransport.
      */
     private void readLoop() {
-        while (running) {
-            try (BufferedInputStream bis = new BufferedInputStream(socket.getInputStream())) {
-                byte[] buffer = new byte[1024];
-                int read;
-                while (running && (read = bis.read(buffer)) != -1) {
-                    if (read > 0) {
-                        byte[] data = new byte[read];
-                        System.arraycopy(buffer, 0, data, 0, read);
-                        enqueueData(data);
-                    }
+        try (BufferedInputStream bis = new BufferedInputStream(socket.getInputStream())) {
+            byte[] buffer = new byte[1024];
+            int read;
+            while (running && connected && (read = bis.read(buffer)) != -1) {
+                if (read > 0) {
+                    byte[] data = new byte[read];
+                    System.arraycopy(buffer, 0, data, 0, read);
+                    // Base class handles queueing and async RX blinker notification
+                    enqueueData(data);
                 }
-            } catch (IOException e) {
-                // This is expected when the socket is closed or network fails
-            } finally {
-                if (running && connected) {
-                    handleTransportError(new IOException("TCP Connection Lost"));
-                }
+            }
+        } catch (IOException e) {
+            // Socket closed or network error
+        } finally {
+            if (running && connected) {
+                handleTransportError(new IOException("TCP Connection Lost"));
             }
         }
     }
 
+    /**
+     * Physical implementation of the framed write.
+     */
     @Override
     protected void writeToPhysicalLayer(byte[] framedData) throws IOException {
         if (!isConnected()) {
@@ -80,16 +83,14 @@ public class TcpTransport extends StreamTransport {
 
     @Override
     protected void handleTransportError(Exception e) {
-        // 1. Clean up the current failed session
         try {
             disconnect();
         } catch (Exception ignored) {
         }
 
-        // 2. Alert the client (which will likely reset its UI or sync state)
-        notifyDisconnected(e.getMessage());
+        // Notify client/listeners asynchronously
+        notifyError(e);
 
-        // 3. Launch the background recovery loop
         if (running) {
             startRetryLoop();
         }
@@ -104,11 +105,11 @@ public class TcpTransport extends StreamTransport {
                     attemptConnection();
                     if (isConnected()) {
                         System.out.println(">>> TCP Link Restored!");
-                        notifyConnected(); // This triggers the MeshtasticClient 'WantConfig'
+                        notifyConnected();
                         break;
                     }
                 } catch (Exception e) {
-                    // Fail silently and keep retrying
+                    // Stay in loop until connection is restored or transport stopped
                 }
             }
         }, "TcpRetryThread");

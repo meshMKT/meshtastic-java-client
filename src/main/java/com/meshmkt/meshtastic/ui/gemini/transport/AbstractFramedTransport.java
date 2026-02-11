@@ -7,114 +7,111 @@ import java.util.function.Consumer;
 /**
  * <h2>Abstract Framed Transport</h2>
  * <p>
- * Provides a thread-safe foundation for Meshtastic data transports, optimized
- * for low-power hardware like the Raspberry Pi Zero 2W.
+ * Refactored version using the Template Method Pattern and asynchronous event
+ * dispatching for low-power hardware.
  * </p>
- * * <p>
- * This class implements a <b>Producer/Consumer</b> pattern:</p>
- * <ul>
- * <li><b>Producer:</b> Subclasses (Serial, TCP, BLE) call
- * {@link #enqueueData(byte[])} immediately upon receiving hardware interrupts
- * or socket data.</li>
- * <li><b>Consumer:</b> A background daemon thread polls the queue and delegates
- * processing to {@link #handleIncomingRawData(byte[])}.</li>
- * </ul>
- *
- * * @author Gemini
- * @version 2.0
  */
 public abstract class AbstractFramedTransport implements MeshtasticTransport {
 
     protected final BlockingQueue<byte[]> dataQueue = new LinkedBlockingQueue<>(1000);
+    private final List<TransportConnectionListener> connectionListeners = new CopyOnWriteArrayList<>();
+
     private ExecutorService consumerExecutor;
+    private ExecutorService eventExecutor; // Decouples IO from Listeners
 
     protected Consumer<byte[]> packetConsumer = (data) -> {
-    }; // Null-safe default
+    };
     protected volatile boolean running = false;
 
+    // --- Template Methods for Subclasses ---
     /**
-     * Subclasses must implement this to handle the physical connection logic
-     * (e.g., opening a Serial Port or Socket).
+     * Subclasses implement physical connection logic.
      */
     protected abstract void connect() throws Exception;
 
     /**
-     * Subclasses must implement this to close physical resources safely.
+     * Subclasses implement physical disconnection.
      */
     protected abstract void disconnect() throws Exception;
 
     /**
-     * Subclasses must implement this to define how raw bytes are processed.
-     * Streaming transports will feed a {@link MeshtasticFrameDecoder}, while
-     * Datagram transports (BLE) will dispatch packets directly.
-     *
-     * @param data The raw bytes pulled from the internal queue.
+     * Subclasses implement the physical write (e.g., serial.writeBytes).
+     */
+    protected abstract void sendRawBytes(byte[] data) throws Exception;
+
+    /**
+     * Subclasses define how raw bytes are processed into packets.
      */
     protected abstract void handleIncomingRawData(byte[] data);
 
-    /**
-     * A thread-safe list of listeners interested in connection state changes.
-     * We use CopyOnWriteArrayList so that listeners can be added or removed
-     * even while an event is being broadcasted without causing a
-     * ConcurrentModificationException.
-     */
-    private final List<TransportConnectionListener> connectionListeners = new java.util.concurrent.CopyOnWriteArrayList<>();
+    // --- Public Template API (Final) ---
+    @Override
+    public final void write(byte[] protobufData) {
+        if (!isConnected() || protobufData == null) {
+            return;
+        }
 
-    /**
-     * Registers a new listener to receive connectivity updates.
-     *
-     * @param listener The listener implementation to add.
-     */
-    public void addConnectionListener(TransportConnectionListener listener) {
-        if (listener != null) {
-            this.connectionListeners.add(listener);
+        try {
+            // 1. Perform the work first
+            sendRawBytes(protobufData);
+
+            // 2. Notify asynchronously
+            asyncNotify(TransportConnectionListener::onTrafficTransmitted);
+        } catch (Exception e) {
+            handleTransportError(e);
         }
     }
 
     /**
-     * Removes a previously registered listener.
-     *
-     * @param listener The listener implementation to remove.
+     * Entry point for hardware threads to feed the system.
      */
-    public void removeConnectionListener(TransportConnectionListener listener) {
-        this.connectionListeners.remove(listener);
+    protected final void enqueueData(byte[] data) {
+        if (data != null && data.length > 0) {
+            try {
+                // 1. Queue data immediately to free up hardware thread
+                dataQueue.put(data);
+
+                // 2. Notify asynchronously
+                asyncNotify(TransportConnectionListener::onTrafficReceived);
+            } catch (InterruptedException ex) {
+                Thread.currentThread().interrupt();
+            }
+        }
     }
 
+    // --- Event Dispatching Logic ---
     /**
-     * Notifies all registered listeners that the physical link is active. This
-     * should be called by subclasses immediately after a successful handshake
-     * or socket connection.
+     * Safely dispatches events to listeners on a background thread.
      */
+    private void asyncNotify(Consumer<TransportConnectionListener> action) {
+        if (eventExecutor == null || eventExecutor.isShutdown()) {
+            return;
+        }
+
+        eventExecutor.submit(() -> {
+            for (TransportConnectionListener listener : connectionListeners) {
+                try {
+                    action.accept(listener);
+                } catch (Exception e) {
+                    System.err.println("Listener Error [" + listener.getClass().getSimpleName() + "]: " + e.getMessage());
+                }
+            }
+        });
+    }
+
     protected void notifyConnected() {
-        connectionListeners.forEach(TransportConnectionListener::onConnected);
+        asyncNotify(TransportConnectionListener::onConnected);
     }
 
-    /**
-     * Notifies all registered listeners that the connection has been lost.
-     *
-     * @param reason A descriptive string explaining why the disconnect occurred
-     * (e.g., "Socket timeout" or "Port closed").
-     */
-    protected void notifyDisconnected(String reason) {
-        connectionListeners.forEach(l -> l.onDisconnected(reason));
+    protected void notifyDisconnected() {
+        asyncNotify(TransportConnectionListener::onDisconnected);
     }
 
-    /**
-     * Notifies all registered listeners that a transport-level error occurred.
-     *
-     * @param t The exception that triggered the error state.
-     */
     protected void notifyError(Throwable t) {
-        connectionListeners.forEach(l -> l.onError(t));
+        asyncNotify(l -> l.onError(t));
     }
 
-    @Override
-    public void addParsedPacketConsumer(Consumer<byte[]> consumer) {
-        // Wrap in null-check to maintain safety
-        this.packetConsumer = (consumer != null) ? consumer : (data) -> {
-        };
-    }
-
+    // --- Lifecycle Management ---
     @Override
     public synchronized void start() {
         if (running) {
@@ -122,6 +119,13 @@ public abstract class AbstractFramedTransport implements MeshtasticTransport {
         }
 
         try {
+            // Setup Event Executor first so we can notify connection success
+            eventExecutor = Executors.newSingleThreadExecutor(r -> {
+                Thread t = new Thread(r, "TransportEvent-" + getClass().getSimpleName());
+                t.setDaemon(true);
+                return t;
+            });
+
             connect();
             running = true;
 
@@ -132,21 +136,15 @@ public abstract class AbstractFramedTransport implements MeshtasticTransport {
             });
 
             consumerExecutor.submit(this::processQueue);
-
-            // broadcase success
             notifyConnected();
 
         } catch (Exception e) {
-            notifyError(e);
             stop();
+            notifyError(e);
             throw new RuntimeException("Failed to start transport: " + e.getMessage(), e);
         }
     }
 
-    /**
-     * The Consumer loop: Polls the queue and delegates to the subclass handler.
-     * This runs on a dedicated background thread.
-     */
     private void processQueue() {
         while (running && !Thread.currentThread().isInterrupted()) {
             try {
@@ -159,60 +157,62 @@ public abstract class AbstractFramedTransport implements MeshtasticTransport {
         }
     }
 
-    /**
-     * Called by the hardware/IO thread to hand raw data to the worker thread.
-     *
-     * * @param data The raw bytes received from the physical link.
-     */
-    protected void enqueueData(byte[] data) {
-        if (data != null && data.length > 0) {
-            try {
-                // put() will block the IO thread until there is room.
-                // This acts as "Backpressure" to prevent data loss.
-                dataQueue.put(data);
-            } catch (InterruptedException ex) {
-                Thread.currentThread().interrupt();
-            }
-        }
-    }
-
-    /**
-     * Helper method for subclasses to safely dispatch a fully assembled
-     * Meshtastic packet to the registered consumer.
-     *
-     * * @param packet The assembled byte array (Protobuf payload).
-     */
-    protected void dispatchToConsumer(byte[] packet) {
-        packetConsumer.accept(packet);
-    }
-
     @Override
     public synchronized void stop() {
         if (!running) {
             return;
         }
-
         running = false;
+
         try {
             disconnect();
 
-            // Shutdown threads
             if (consumerExecutor != null) {
                 consumerExecutor.shutdownNow();
-
-                // Block for a moment to ensure thread is dead
-                if (!consumerExecutor.awaitTermination(2, TimeUnit.SECONDS)) {
-                    System.err.println("Worker thread failed to terminate in time.");
-                }
             }
 
-            // clear the queue
             dataQueue.clear();
-            notifyDisconnected("Manual stop requested");
+            notifyDisconnected();
+
+            // Shutdown events last to ensure 'onDisconnected' is sent
+            if (eventExecutor != null) {
+                eventExecutor.shutdown();
+            }
+
         } catch (Exception e) {
             notifyError(e);
         } finally {
             consumerExecutor = null;
+            eventExecutor = null;
         }
     }
+
+    // --- Implementation Helpers ---
+    @Override
+    public void addConnectionListener(TransportConnectionListener l) {
+        if (l != null) {
+            connectionListeners.add(l);
+        }
+    }
+
+    @Override
+    public void removeConnectionListener(TransportConnectionListener l) {
+        connectionListeners.remove(l);
+    }
+
+    @Override
+    public void addParsedPacketConsumer(Consumer<byte[]> c) {
+        this.packetConsumer = (c != null) ? c : (d) -> {
+        };
+    }
+
+    protected void dispatchToConsumer(byte[] packet) {
+        packetConsumer.accept(packet);
+    }
+
+    /**
+     * Logic for handling errors and triggering retries (implemented in concrete
+     * class)
+     */
+    protected abstract void handleTransportError(Exception e);
 }

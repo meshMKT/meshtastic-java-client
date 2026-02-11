@@ -5,6 +5,7 @@ import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
 import org.meshtastic.proto.MeshProtos;
 import org.meshtastic.proto.TelemetryProtos;
+
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Consumer;
@@ -13,6 +14,11 @@ import java.util.stream.Collectors;
 @Slf4j
 public class InMemoryNodeDatabase extends AbstractNodeDatabase {
 
+    /**
+     * Internal storage record. We've removed the 'online' boolean and
+     * 'PacketContext' object in favor of raw fields to ensure "Sticky" signal
+     * data.
+     */
     @Data
     private static class NodeRecord {
 
@@ -20,18 +26,26 @@ public class InMemoryNodeDatabase extends AbstractNodeDatabase {
         private MeshProtos.Position position;
         private TelemetryProtos.DeviceMetrics metrics;
         private TelemetryProtos.EnvironmentMetrics envMetrics;
-        private PacketContext lastContext;
+
+        // Signal Vitals (Last Known Good from a LIVE packet)
+        private float snr;
+        private int rssi;
+        private int hopsAway;
+        private int lastChannel;
+        private boolean viaMqtt;
+
         private double distanceKm = -1.0;
-        private long lastSeenRemote;
-        private long lastSeenLocal;
-        private boolean online = false;
+
+        // Timestamps for status calculation
+        private long lastSeenRemote; // Radio Hardware Time (seconds)
+        private long lastSeenLocal;  // PC System Time (ms)
     }
 
     private final ConcurrentHashMap<Integer, NodeRecord> nodes = new ConcurrentHashMap<>();
 
     /**
-     * THE SHARED CORE: Standardizes the Fetch-Update-Notify workflow. This
-     * eliminates redundant code and ensures metadata is always updated.
+     * Standardizes the Fetch-Update-Notify workflow. Decisions on "Live" vs
+     * "Cached" happen here to ensure data integrity.
      */
     private void updateNodeRecord(PacketContext ctx, Consumer<NodeRecord> updater) {
         int id = (ctx != null && ctx.getFrom() != 0) ? ctx.getFrom() : getSelfNodeId();
@@ -42,20 +56,27 @@ public class InMemoryNodeDatabase extends AbstractNodeDatabase {
         NodeRecord r = nodes.computeIfAbsent(id, k -> new NodeRecord());
 
         if (ctx != null) {
-            r.setLastContext(ctx);
-
+            // 1. Always update the Radio's internal timestamp (Remote)
             if (ctx.getTimestamp() != 0) {
-                r.setLastSeenRemote(ctx.getTimestamp());
+                r.setLastSeenRemote(ctx.getTimestamp() / 1000);
             }
 
-            // Only update the local time if the packet is considered LIVE
+            // 2. Promotion Logic: Only update signal vitals if it's a real OTA packet.
+            // This prevents a "Node Dump" from zeroing out your SNR/RSSI.
             if (ctx.isLive()) {
                 r.setLastSeenLocal(System.currentTimeMillis());
+                r.setSnr(ctx.getSnr());
+                r.setRssi(ctx.getRssi());
+                r.setHopsAway(ctx.getHopsAway());
+                r.setLastChannel(ctx.getChannel());
+                r.setViaMqtt(ctx.isViaMqtt());
             }
         }
 
+        // Apply the specific update (User, Position, etc.)
         updater.accept(r);
 
+        // Map to DTO and notify listeners
         notifyNodeUpdated(mapToDto(id, r));
     }
 
@@ -63,11 +84,8 @@ public class InMemoryNodeDatabase extends AbstractNodeDatabase {
     protected void refreshDistancesRelativeto(int selfId) {
         nodes.forEach((id, record) -> {
             if (id != selfId && record.getPosition() != null) {
-                // Perform the math
-                double newDist = calculateDistance(id, record.getPosition(), record.getLastContext());
+                double newDist = calculateDistance(id, record.getPosition(), null);
                 record.setDistanceKm(newDist);
-
-                // Notify the UI for every node that just "moved" relative to us
                 notifyNodeUpdated(mapToDto(id, record));
             }
         });
@@ -80,24 +98,18 @@ public class InMemoryNodeDatabase extends AbstractNodeDatabase {
 
     @Override
     public void updatePosition(MeshProtos.Position pos, PacketContext ctx) {
-        
         // GATEKEEPER: Don't overwrite good data with "no fix" (0,0)
         if (pos.getLatitudeI() == 0 && pos.getLongitudeI() == 0) {
-            log.info("Skipping position update: No valid GPS fix from !{}",
+            log.debug("Skipping position update: No valid GPS fix from !{}",
                     Integer.toHexString(ctx.getFrom()));
             return;
         }
 
         updateNodeRecord(ctx, r -> {
-            
-            // Store the raw object - this is our "Sticky" storage
             r.setPosition(pos);
-
-            // If this is ME, trigger the refresh for everyone else
             if (isSelfNode(ctx.getFrom())) {
                 handleSelfLocationUpdate(getSelfNodeId());
             } else {
-                // If this is someone else, calculate their distance from our current self-position
                 r.setDistanceKm(calculateDistance(ctx.getFrom(), pos, ctx));
             }
         });
@@ -106,7 +118,7 @@ public class InMemoryNodeDatabase extends AbstractNodeDatabase {
     @Override
     public void updateSignal(PacketContext ctx) {
         updateNodeRecord(ctx, r -> {
-        }); // Just updates metadata/online status
+            /* metadata updated in updateNodeRecord */ });
     }
 
     @Override
@@ -126,8 +138,15 @@ public class InMemoryNodeDatabase extends AbstractNodeDatabase {
     }
 
     @Override
-    protected void performPurge(long cutoff) {
-        nodes.entrySet().removeIf(entry -> entry.getValue().getLastSeenLocal() < cutoff);
+    protected void performPurge(long cutoffMs) {
+        long cutoffSecs = cutoffMs / 1000;
+        nodes.entrySet().removeIf(entry -> {
+            NodeRecord r = entry.getValue();
+            // Keep if seen locally recently OR if the radio has seen it recently
+            boolean recentLocal = r.getLastSeenLocal() > cutoffMs;
+            boolean recentRemote = r.getLastSeenRemote() > cutoffSecs;
+            return !recentLocal && !recentRemote;
+        });
         notifyNodesPurged();
     }
 
@@ -144,10 +163,12 @@ public class InMemoryNodeDatabase extends AbstractNodeDatabase {
         return r != null ? Optional.of(mapToDto(id, r)) : Optional.empty();
     }
 
+    /**
+     * Maps the internal Historian record to a clean, immutable DTO. The DTO's
+     * getCalculatedStatus() will handle the "Online/Offline" logic.
+     */
     private MeshNode mapToDto(int id, NodeRecord r) {
-        // Delegate naming logic to MeshUtils for consistency
         String bestName = MeshUtils.resolveName(id, r.getUser());
-        PacketContext ctx = r.getLastContext();
 
         return MeshNode.builder()
                 .nodeId(id)
@@ -158,12 +179,14 @@ public class InMemoryNodeDatabase extends AbstractNodeDatabase {
                 .position(r.getPosition())
                 .deviceMetrics(r.getMetrics())
                 .envMetrics(r.getEnvMetrics())
-                .snr(ctx != null ? ctx.getSnr() : 0)
-                .rssi(ctx != null ? ctx.getRssi() : 0)
-                .hopsAway(ctx != null ? ctx.getHopsAway() : 0)
-                .lastChannel(ctx != null ? ctx.getChannel() : 0)
-                .isMqtt(ctx != null && ctx.isViaMqtt())
+                // Use the sticky signal data
+                .snr(r.getSnr())
+                .rssi(r.getRssi())
+                .hopsAway(r.getHopsAway())
+                .lastChannel(r.getLastChannel())
+                .isMqtt(r.isViaMqtt())
                 .distanceKm(r.getDistanceKm())
+                // Timestamps passed directly to the DTO
                 .lastSeen(r.getLastSeenRemote())
                 .lastSeenLocal(r.getLastSeenLocal())
                 .self(isSelfNode(id))

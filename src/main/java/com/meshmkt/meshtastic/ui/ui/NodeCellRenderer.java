@@ -1,14 +1,11 @@
 package com.meshmkt.meshtastic.ui.ui;
 
+import com.meshmkt.meshtastic.ui.gemini.MeshConstants;
 import com.meshmkt.meshtastic.ui.gemini.storage.MeshNode;
 import org.meshtastic.proto.ConfigProtos;
 import javax.swing.*;
 import java.awt.*;
 
-/**
- * Updated renderer to support the 'online' status flag and MQTT distance
- * indicators.
- */
 public class NodeCellRenderer extends DefaultListCellRenderer {
 
     @Override
@@ -26,32 +23,30 @@ public class NodeCellRenderer extends DefaultListCellRenderer {
                 name = "★ " + name + " (Self)";
             }
 
-            // 2. Freshness & Status Logic
-            String statusText;
+            // 2. The "Smart" Status Logic (Delegated to DTO)
+            MeshNode.NodeStatus status = node.getCalculatedStatus();
+            String statusText = status.name();
             String statusColor;
-            float opacity = 1.0f;
+            float opacity;
 
-            if (node.isSelf()) {
-                statusText = "LOCAL";
-                statusColor = "#004488";
-            } else if (node.isMqtt()) {
-                // Check MQTT FIRST so the blue tag shows up even if the node is "offline"
-                statusText = "MQTT";
-                statusColor = "#0066CC";
-                if (!node.isOnline()) {
-                    opacity = 0.6f; // Dim it slightly if we haven't heard from the broker lately
+            switch (status) {
+                case SELF -> {
+                    statusText = "LOCAL";
+                    statusColor = "#004488";
+                    opacity = 1.0f;
                 }
-            } else if (!node.isOnline()) {
-                statusText = "OFFLINE";
-                statusColor = "#666666";
-                opacity = 0.5f;
-            } else if (node.getSnr() == 0 && node.getRssi() == 0 || node.getLastSeenLocal() <= 0) {
-                statusText = "CACHED";
-                statusColor = "#777777";
-                opacity = 0.8f;
-            } else {
-                statusText = "LIVE";
-                statusColor = "#008800";
+                case LIVE -> {
+                    statusColor = "#008800";
+                    opacity = 1.0f;
+                }
+                case CACHED -> {
+                    statusColor = "#2E7D32";
+                    opacity = 0.9f;
+                }
+                default -> { // OFFLINE
+                    statusColor = "#616161";
+                    opacity = 0.5f;
+                }
             }
 
             // 3. Data Preparation
@@ -59,7 +54,6 @@ public class NodeCellRenderer extends DefaultListCellRenderer {
             String batt = (node.getDeviceMetrics() != null) ? (int) node.getDeviceMetrics().getBatteryLevel() + "%" : "--%";
             String roleIcon = getRoleEmoji(node.getRole());
 
-            // Handle new distance logic: -1.0 (No Fix) vs -2.0 (MQTT)
             String distStr = formatDistance(node);
             String hopsStr = (node.isMqtt()) ? "Cloud" : (node.getHopsAway() == 0 ? "Direct" : node.getHopsAway() + " hops");
 
@@ -75,7 +69,7 @@ public class NodeCellRenderer extends DefaultListCellRenderer {
                 envData = String.format(" | 🌡️ %.1f°C", node.getEnvMetrics().getTemperature());
             }
 
-            // 4. HTML Layout (Updated opacity and distance display)
+            // 4. HTML Layout
             String html = String.format(
                     "<html><div style='padding:5px; opacity: %f;'>"
                     + "%s <b>%s</b> <font color='gray' size='2'>(%s)</font> &nbsp; <b><font color='%s' size='1'>[%s]</font></b><br>"
@@ -89,6 +83,7 @@ public class NodeCellRenderer extends DefaultListCellRenderer {
 
             setText(html);
 
+            // 5. Selection UI
             setBackground(isSelected ? new Color(220, 235, 255) : Color.WHITE);
             setOpaque(true);
             setBorder(BorderFactory.createMatteBorder(0, 0, 1, 0, new Color(230, 230, 230)));
@@ -96,19 +91,15 @@ public class NodeCellRenderer extends DefaultListCellRenderer {
         return this;
     }
 
-    /**
-     * Refined distance formatting to handle MQTT and No-Fix states.
-     */
     private String formatDistance(MeshNode node) {
         double km = node.getDistanceKm();
-
         if (node.isSelf()) {
             return "0m";
         }
         if (km == -2.0 || node.isMqtt()) {
             return "Internet";
         }
-        if (km == -1.0 || !node.hasGpsFix()) {
+        if (km <= -1.0 || !node.hasGpsFix()) {
             return "Unknown dist";
         }
 
@@ -119,12 +110,28 @@ public class NodeCellRenderer extends DefaultListCellRenderer {
     }
 
     private String formatNodeTime(MeshNode node) {
+        long nowMs = System.currentTimeMillis();
+
         if (node.getLastSeenLocal() > 0) {
-            return formatTime((System.currentTimeMillis() - node.getLastSeenLocal()) / 1000);
-        } else if (node.getLastSeen() > 0) {
-            return "Radio cache (" + formatTime((System.currentTimeMillis() - node.getLastSeen() * 1000) / 1000) + ")";
+            return formatTime((nowMs - node.getLastSeenLocal()) / 1000);
         }
-        return "Syncing...";
+
+        if (node.getLastSeen() > 0) {
+            long lastSeenMs = node.getLastSeen() * 1000L;
+            long diffSeconds = (nowMs - lastSeenMs) / 1000;
+
+            if (diffSeconds < 0) {
+                return "Radio cache (Just now)";
+            }
+
+            // Check if radio cache is older than stale threshold
+            String label = (diffSeconds > MeshConstants.STALE_NODE_THRESHOLD_SECONDS)
+                    ? "Radio cache (Stale: "
+                    : "Radio cache (";
+            return label + formatTime(diffSeconds) + ")";
+        }
+
+        return "Never (Cached)";
     }
 
     private String getRoleEmoji(ConfigProtos.Config.DeviceConfig.Role role) {
@@ -146,9 +153,6 @@ public class NodeCellRenderer extends DefaultListCellRenderer {
     }
 
     private String formatTime(long s) {
-        if (s < 0) {
-            return "Just now";
-        }
         if (s < 10) {
             return "Just now";
         }
@@ -158,6 +162,9 @@ public class NodeCellRenderer extends DefaultListCellRenderer {
         if (s < 3600) {
             return (s / 60) + "m ago";
         }
-        return (s / 3600) + "h ago";
+        if (s < 86400) {
+            return (s / 3600) + "h ago";
+        }
+        return (s / 86400) + "d ago";
     }
 }

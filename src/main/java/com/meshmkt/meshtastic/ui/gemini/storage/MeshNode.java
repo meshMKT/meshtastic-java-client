@@ -1,5 +1,6 @@
 package com.meshmkt.meshtastic.ui.gemini.storage;
 
+import com.meshmkt.meshtastic.ui.gemini.MeshConstants;
 import lombok.Builder;
 import lombok.Value;
 import org.meshtastic.proto.ConfigProtos;
@@ -32,12 +33,12 @@ public class MeshNode {
      * The four-character short name (e.g., "SB01").
      */
     String shortName;
-    
+
     /**
-     * Last channel 
+     * Last channel
      */
     int lastChannel;
-    
+
     /**
      * Did we get this via Mqtt
      */
@@ -85,8 +86,9 @@ public class MeshNode {
     int hopsAway;
 
     /**
-     * * The calculated distance in kilometers from the Local (Self) node. Note:
-     * This is usually calculated by the Core/App logic before building the DTO.
+     * * The calculated distance in kilometers from the Local (Self) node.
+     * Note: This is usually calculated by the Core/App logic before building
+     * the DTO.
      */
     double distanceKm;
 
@@ -106,7 +108,7 @@ public class MeshNode {
      * Is this node ourself
      */
     boolean self;
-    
+
     /**
      * Determines if the node has provided valid GPS coordinates.
      *
@@ -116,38 +118,42 @@ public class MeshNode {
         return position != null && position.getLatitudeI() != 0 && position.getLongitudeI() != 0;
     }
 
-    /**
-     * Determines if the node has been silent for more than 15 minutes. This
-     * matches the 'LIVE' threshold in our UI.
-     *
-     * @return true if the node hasn't spoken in 15 minutes.
-     */
-    public boolean isStale() {
-        long referenceTime = (lastSeenLocal > 0) ? lastSeenLocal : (lastSeen * 1000);
-        if (referenceTime <= 0) {
-            return true;
-        }
-        return (System.currentTimeMillis() - referenceTime) > (15 * 60 * 1000);
+    public enum NodeStatus {
+        SELF, LIVE, CACHED, OFFLINE
     }
 
-    /**
-     * Helper to format the Hex ID consistently across the app.
-     *
-     * @return e.g. "!06dd3b16"
-     */
     public String getHexId() {
         return String.format("!%08x", nodeId);
     }
-    
-    /**
-     * Dynamically calculates if the node is online based on the CURRENT system time.
-     * A node is online if we have heard a LIVE packet in the last 15 minutes.
-     */
-    public boolean isOnline() {
-        // If we've never heard a live packet, lastSeenLocal is 0.
-        if (lastSeenLocal <= 0) return false;
 
-        long ageMs = System.currentTimeMillis() - lastSeenLocal;
-        return ageMs < (15 * 60 * 1000); // 15 minutes
+    /**
+     * The single source of truth for node state.
+     */
+    public NodeStatus getCalculatedStatus() {
+        if (this.self) {
+            return NodeStatus.SELF;
+        }
+
+        long nowMs = System.currentTimeMillis();
+        long nowSecs = nowMs / 1000;
+
+        // 1. LIVE check
+        if (this.lastSeenLocal > 0) {
+            long ageMs = nowMs - this.lastSeenLocal;
+            if (ageMs < (MeshConstants.LIVE_THRESHOLD_SECONDS * 1000L)) {
+                return NodeStatus.LIVE;
+            }
+        }
+
+        // 2. CACHED check (Added > 0 check to prevent 1970/20475d bug)
+        if (this.lastSeen > 0) {
+            long ageSecs = nowSecs - this.lastSeen;
+            if (ageSecs < MeshConstants.STALE_NODE_THRESHOLD_SECONDS) {
+                return NodeStatus.CACHED;
+            }
+        }
+
+        return NodeStatus.OFFLINE;
     }
+
 }

@@ -9,8 +9,8 @@ import java.io.IOException;
 /**
  * <h2>Serial Transport</h2>
  * <p>
- * Hardware implementation for USB and UART serial connections. Utilizes the
- * {@code jSerialComm} library to interact with system COM ports.
+ * Hardware implementation for USB and UART serial connections. Refactored to
+ * fulfill the physical layer requirements of StreamTransport.
  * </p>
  */
 public class SerialTransport extends StreamTransport {
@@ -18,16 +18,10 @@ public class SerialTransport extends StreamTransport {
     private final SerialConfig config;
     private SerialPort port;
 
-    /**
-     * @param config The hardware parameters (Port Name, Baud, etc.)
-     */
     public SerialTransport(SerialConfig config) {
         this.config = config;
     }
 
-    /**
-     * Opens the serial port and registers the asynchronous data listener.
-     */
     @Override
     protected void connect() throws Exception {
         port = SerialPort.getCommPort(config.getPortName());
@@ -40,46 +34,49 @@ public class SerialTransport extends StreamTransport {
             throw new IOException("Failed to open serial port: " + config.getPortName());
         }
 
-        // Flush any previous buffers
         port.flushIOBuffers();
-        
-        // Flush any backlog in the listener pipeline
         port.flushDataListener();
-     
-        // Clear our buffer as well
         dataQueue.clear();
-        
+
         port.addDataListener(new SerialPortDataListener() {
             @Override
             public int getListeningEvents() {
-                // We listen for BOTH new data and the physical removal of the device
                 return SerialPort.LISTENING_EVENT_DATA_AVAILABLE
                         | SerialPort.LISTENING_EVENT_PORT_DISCONNECTED;
             }
 
             @Override
             public void serialEvent(SerialPortEvent event) {
-
-                // Handle Physical Unplug
                 if (event.getEventType() == SerialPort.LISTENING_EVENT_PORT_DISCONNECTED) {
                     handleTransportError(new IOException("Serial Device disconnected"));
+                    return;
                 }
 
                 if (event.getEventType() == SerialPort.LISTENING_EVENT_DATA_AVAILABLE) {
-                    byte[] buffer = new byte[port.bytesAvailable()];
-                    int read = port.readBytes(buffer, buffer.length);
-                    if (read > 0) {
-                        enqueueData(buffer);
+                    int available = port.bytesAvailable();
+                    if (available > 0) {
+                        byte[] buffer = new byte[available];
+                        int read = port.readBytes(buffer, buffer.length);
+                        if (read > 0) {
+                            // This triggers the async RX notification in AbstractFramedTransport
+                            enqueueData(buffer);
+                        }
                     }
                 }
-
             }
         });
     }
 
+    /**
+     * Physical implementation of the framed write. Magic bytes and length are
+     * already applied by the StreamTransport layer.
+     */
     @Override
     protected void writeToPhysicalLayer(byte[] framedData) throws IOException {
-        if (port == null || !port.isOpen()) throw new IOException("Port is closed");
+        if (port == null || !port.isOpen()) {
+            throw new IOException("Port is closed");
+        }
+
         int written = port.writeBytes(framedData, framedData.length);
         if (written < 0) {
             throw new IOException("Serial write failed.");
@@ -88,16 +85,14 @@ public class SerialTransport extends StreamTransport {
 
     @Override
     protected void handleTransportError(Exception e) {
-        // 1. Critical: Tear down everything to stop the "Event Storm"
         try {
             disconnect();
         } catch (Exception ignored) {
         }
 
-        // 2. Notify the UI/Client that we are currently down
-        notifyDisconnected(e.getMessage());
+        // Notify UI/Client (Async via base class)
+        notifyError(e);
 
-        // 3. Start a background thread to "fish" for the device
         if (running) {
             startRetryLoop();
         }
@@ -108,7 +103,7 @@ public class SerialTransport extends StreamTransport {
             System.out.println(">>> Serial link lost. Searching for radio on " + config.getPortName() + "...");
             while (running && !isConnected()) {
                 try {
-                    Thread.sleep(5000); // Wait 5s between "fishing" attempts
+                    Thread.sleep(5000);
                     connect();
                     if (isConnected()) {
                         System.out.println(">>> Radio Found! Link Restored.");
@@ -116,7 +111,7 @@ public class SerialTransport extends StreamTransport {
                         break;
                     }
                 } catch (Exception e) {
-                    // Fail silently and keep looking
+                    // Silently continue fishing
                 }
             }
         }, "SerialRetryThread");
@@ -126,9 +121,11 @@ public class SerialTransport extends StreamTransport {
 
     @Override
     protected void disconnect() {
-        if (port != null && port.isOpen()) {
+        if (port != null) {
             port.removeDataListener();
-            port.closePort();
+            if (port.isOpen()) {
+                port.closePort();
+            }
         }
     }
 

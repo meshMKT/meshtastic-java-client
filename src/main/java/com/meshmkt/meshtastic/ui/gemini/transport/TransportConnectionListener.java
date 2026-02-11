@@ -6,17 +6,35 @@ package com.meshmkt.meshtastic.ui.gemini.transport;
 public interface TransportConnectionListener {
 
     /**
-     * Called when the physical connection is successfully established.
+     * Fired when the link is physically established.
      */
     void onConnected();
 
     /**
-     * Called when the connection is lost or manually closed.
+     * Fired when the session is closed gracefully.
      */
-    void onDisconnected(String reason);
+    void onDisconnected();
 
     /**
-     * Called when a non-fatal error occurs (e.g., a failed reconnect attempt).
+     * Fired when the connection fails or is forcibly closed.
+     *
+     * @param error The cause of the failure.
      */
-    void onError(Throwable t);
+    void onError(Throwable error);
+
+    /**
+     * Called when traffic is sent out the transport which can be used to
+     * trigger a visual indicator in a ui if desired
+     * <br>
+     * Optional and do nothing unless overridden
+     */
+    default void onTrafficTransmitted() {}
+
+    /**
+     * Called when traffic is received from the transport which can be used to
+     * trigger a visual indicator in a ui if desired
+     * 
+     * Optional and do nothing unless overridden
+     */
+    default void onTrafficReceived() {}
 }
