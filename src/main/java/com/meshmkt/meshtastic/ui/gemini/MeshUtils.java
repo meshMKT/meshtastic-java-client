@@ -1,83 +1,62 @@
 package com.meshmkt.meshtastic.ui.gemini;
 
 import com.meshmkt.meshtastic.ui.gemini.storage.MeshNode;
-import java.text.SimpleDateFormat;
-import java.util.Date;
 import org.meshtastic.proto.ConfigProtos;
-import java.util.Objects;
 import org.meshtastic.proto.MeshProtos;
+
+import java.time.Duration;
+import java.time.Instant;
+import java.time.LocalDateTime;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
+import java.util.Objects;
 
 /**
  * <h2>MeshUtils</h2>
  * <p>
  * A centralized toolkit for data formatting, unit conversion, geographic
- * mathematics, and logical categorization. This class ensures that handlers,
- * databases, and UI components share the same mathematical logic without baking
- * UI-specific strings into the data layer.
+ * mathematics, and logical categorization. This version utilizes modern JDK
+ * Time APIs (java.time) for thread-safety and handles Meshtastic-specific edge
+ * cases like unsynchronized device clocks.
  * </p>
  */
 public final class MeshUtils {
 
-    private static final SimpleDateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
-
     /**
-     * The approximate radius of the Earth in kilometers. Used for Haversine
-     * calculations.
+     * Thread-safe formatter for absolute timestamps.
      */
+    private static final DateTimeFormatter DATE_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+
     private static final double EARTH_RADIUS_KM = 6371.0;
-
-    /**
-     * Conversion factor: 1 kilometer to miles.
-     */
     private static final double KM_TO_MILES = 0.621371;
-
-    /**
-     * Conversion factor: 1 hectopascal (hPa) to inches of mercury (inHg).
-     */
     private static final float HPA_TO_INHG = 0.02953f;
-
-    /**
-     * Conversion factor: 1 hectopascal (hPa) to millimeters of mercury (mmHg).
-     */
     private static final float HPA_TO_MMHG = 0.750062f;
 
     /**
      * Meshtastic coordinates are sent as scaled integers (10^-7 degrees).
-     * Dividing by this constant converts them to standard decimal degrees.
      */
     public static final double COORD_SCALE = 1e7;
 
-    /**
-     * Private constructor to prevent instantiation of this utility class.
-     */
     private MeshUtils() {
-        // No-op
+        // Prevent instantiation
     }
 
     // --- Identity & Naming ---
     /**
      * Formats a raw 32-bit Node ID into the standard Meshtastic hex string.
-     *
-     * * @param nodeId The unsigned 32-bit integer ID from the radio.
-     * @return A string in the format "!aabbccdd", or "Unknown" if the ID is 0.
      */
     public static String formatId(int nodeId) {
-        if (nodeId == MeshConstants.ID_UNKNOWN) {
+        if (nodeId == 0) {
             return "Unknown";
         }
         return String.format("!%08x", nodeId);
     }
 
     /**
-     * Resolves the best possible display name from a required MeshNode record.
-     * Logic priority: Long Name > Short Name > Hex ID fallback.
-     *
-     * * @param node The MeshNode record to process. Must not be null.
-     * @return A non-null display string.
-     * @throws NullPointerException if the provided node is null.
+     * Resolves the best possible display name from a MeshNode record.
      */
     public static String resolveName(MeshNode node) {
-        Objects.requireNonNull(node, "Cannot resolve name for a null MeshNode. Use formatId(int) if the node is missing.");
+        Objects.requireNonNull(node, "MeshNode cannot be null");
 
         if (node.getLongName() != null && !node.getLongName().isEmpty()) {
             return node.getLongName();
@@ -89,8 +68,7 @@ public final class MeshUtils {
     }
 
     /**
-     * Resolves a name using raw components. Useful for database mapping before
-     * a MeshNode object is fully built.
+     * Resolves a name using raw components.
      */
     public static String resolveName(int nodeId, MeshProtos.User user) {
         if (user != null) {
@@ -104,30 +82,93 @@ public final class MeshUtils {
         return formatId(nodeId);
     }
 
+    // --- Time & Duration Logic (JDK 8+) ---
     /**
-     * Converts a Meshtastic scaled integer coordinate to a decimal double.
+     * Formats a millisecond timestamp into either a relative or absolute
+     * string. Includes a guard for "Epoch 0" timestamps common in devices
+     * without GPS sync.
      *
-     * * @param scaledInt The integer from the protobuf (e.g., 341234567).
-     * @return The decimal representation (e.g., 34.1234567).
+     * @param millis The epoch milliseconds.
+     * @param relative If true, returns "5m ago". If false, returns "2024-02-11
+     * 14:20:00".
+     * @return A formatted string or "Unknown (No Clock Sync)" if the timestamp
+     * is invalid.
      */
-    public static double toDecimal(int scaledInt) {
-        if (scaledInt == 0) {
-            return 0.0;
+    public static String formatTimestamp(long millis, boolean relative) {
+        // Handle Epoch 0 or values very close to it (indicates no clock sync on device)
+        if (millis <= 60000) {
+            return "Unknown (No Clock Sync)";
         }
-        return scaledInt / COORD_SCALE;
+
+        if (!relative) {
+            LocalDateTime ldt = LocalDateTime.ofInstant(Instant.ofEpochMilli(millis), ZoneId.systemDefault());
+            return ldt.format(DATE_FORMATTER);
+        }
+
+        Duration duration = Duration.between(Instant.ofEpochMilli(millis), Instant.now());
+        long s = Math.abs(duration.getSeconds());
+
+        if (s < 10) {
+            return "Just now";
+        }
+        if (s < 60) {
+            return s + "s ago";
+        }
+        if (s < 3600) {
+            return (s / 60) + "m ago";
+        }
+        if (s < 86400) {
+            return (s / 3600) + "h ago";
+        }
+        return (s / 86400) + "d ago";
+    }
+
+    /**
+     * Formats total seconds into a hierarchical string (e.g., "1d 4h 20m 5s").
+     */
+    public static String formatUptime(int totalSeconds) {
+        if (totalSeconds <= 0) {
+            return "0s";
+        }
+
+        Duration d = Duration.ofSeconds(totalSeconds);
+        long days = d.toDays();
+        long hours = d.toHoursPart();
+        long minutes = d.toMinutesPart();
+        long seconds = d.toSecondsPart();
+
+        StringBuilder sb = new StringBuilder();
+        if (days > 0) {
+            sb.append(days).append("d ");
+        }
+        if (hours > 0) {
+            sb.append(hours).append("h ");
+        }
+        if (minutes > 0) {
+            sb.append(minutes).append("m ");
+        }
+        if (seconds > 0 || sb.length() == 0) {
+            sb.append(seconds).append("s");
+        }
+
+        return sb.toString().trim();
+    }
+
+    /**
+     * Calculates seconds elapsed since a given millisecond timestamp.
+     */
+    public static long getSecondsSince(long lastSeenMs) {
+        if (lastSeenMs <= 0) {
+            return Long.MAX_VALUE;
+        }
+        return Math.abs(Duration.between(Instant.ofEpochMilli(lastSeenMs), Instant.now()).toSeconds());
     }
 
     // --- Geographic Mathematics ---
-    /**
-     * Calculates the great-circle distance between two points on Earth using
-     * the Haversine formula.
-     *
-     * * @param lat1 Latitude of point A (decimal degrees).
-     * @param lon1 Longitude of point A (decimal degrees).
-     * @param lat2 Latitude of point B (decimal degrees).
-     * @param lon2 Longitude of point B (decimal degrees).
-     * @return The distance in kilometers.
-     */
+    public static double toDecimal(int scaledInt) {
+        return (scaledInt == 0) ? 0.0 : scaledInt / COORD_SCALE;
+    }
+
     public static double calculateDistance(double lat1, double lon1, double lat2, double lon2) {
         double dLat = Math.toRadians(lat2 - lat1);
         double dLon = Math.toRadians(lon2 - lon1);
@@ -141,74 +182,31 @@ public final class MeshUtils {
     }
 
     // --- Unit Conversions ---
-    /**
-     * Converts kilometers to miles.
-     *
-     * * @param km Distance in kilometers.
-     * @return Distance in miles, or original value if it is a special constant
-     * (negative).
-     */
     public static double convertKmToMiles(double km) {
         return (km < 0) ? km : km * KM_TO_MILES;
     }
 
-    /**
-     * Converts kilometers to meters.
-     *
-     * * @param km Distance in kilometers.
-     * @return Distance in meters.
-     */
     public static double convertKmToMeters(double km) {
         return (km < 0) ? km : km * 1000.0;
     }
 
-    /**
-     * Converts Celsius to Fahrenheit.
-     *
-     * * @param celsius Temperature in Celsius.
-     * @return Temperature in Fahrenheit.
-     */
     public static float celsiusToFahrenheit(float celsius) {
         return (celsius * 9 / 5) + 32;
     }
 
-    /**
-     * Converts hPa (hectopascals) to inHg (inches of mercury).
-     *
-     * * @param hpa Pressure in hPa.
-     * @return Pressure in inHg.
-     */
     public static float hpaToInHg(float hpa) {
         return hpa * HPA_TO_INHG;
     }
 
-    /**
-     * Converts hPa (hectopascals) to mmHg (millimeters of mercury).
-     *
-     * * @param hpa Pressure in hPa.
-     * @return Pressure in mmHg.
-     */
     public static float hpaToMmHg(float hpa) {
         return hpa * HPA_TO_MMHG;
     }
 
     // --- Logical Categorization ---
-    /**
-     * Normalizes battery percentage to a 0-100 range.
-     *
-     * * @param rawPercent Raw percentage from the radio.
-     * @return Clamped value.
-     */
     public static int normalizeBattery(int rawPercent) {
         return Math.max(0, Math.min(100, rawPercent));
     }
 
-    /**
-     * Categorizes battery voltage health.
-     *
-     * * @param voltage Reported voltage in Volts.
-     * @return Index: 0 (Critical), 1 (Low), 2 (Normal), 3 (Full).
-     */
     public static int getBatteryHealth(float voltage) {
         if (voltage <= 0) {
             return 2;
@@ -225,12 +223,6 @@ public final class MeshUtils {
         return 2;
     }
 
-    /**
-     * Maps SNR to a 0-4 quality scale for signal bars.
-     *
-     * * @param snr Signal-to-Noise Ratio.
-     * @return Level: 0 (None) to 4 (Excellent).
-     */
     public static int getSignalQuality(float snr) {
         if (snr <= -15) {
             return 0;
@@ -249,64 +241,42 @@ public final class MeshUtils {
 
     /**
      * Resolves a symbolic representation for the node's operational role.
-     *
-     * * @param role The Role enum from DeviceConfig.
-     * @return A short code representation.
      */
     public static String getRoleSymbol(ConfigProtos.Config.DeviceConfig.Role role) {
         if (role == null) {
             return "C";
         }
 
-        switch (role) {
-            case CLIENT:
-                return "C";
-            case CLIENT_MUTE:
-                return "M";
-            case CLIENT_HIDDEN:
-                return "H";
-            case CLIENT_BASE:
-                return "B";
-            case ROUTER:
-                return "R";
-            case ROUTER_CLIENT:
-                return "RC";
-            case REPEATER:
-                return "X";
-            case TRACKER:
-                return "T";
-            case SENSOR:
-                return "S";
-            case TAK:
-                return "K";
-            case TAK_TRACKER:
-                return "TK";
-            case LOST_AND_FOUND:
-                return "LF";
-            default:
-                return "C";
-        }
+        return switch (role) {
+            case CLIENT ->
+                "C";
+            case CLIENT_MUTE ->
+                "M";
+            case CLIENT_HIDDEN ->
+                "H";
+            case CLIENT_BASE ->
+                "B";
+            case ROUTER ->
+                "R";
+            case ROUTER_CLIENT ->
+                "RC";
+            case REPEATER ->
+                "X";
+            case TRACKER ->
+                "T";
+            case SENSOR ->
+                "S";
+            case TAK ->
+                "K";
+            case TAK_TRACKER ->
+                "TK";
+            case LOST_AND_FOUND ->
+                "LF";
+            default ->
+                "C";
+        };
     }
 
-    /**
-     * Calculates seconds since a given timestamp.
-     *
-     * * @param lastSeenMs System milliseconds.
-     * @return Seconds elapsed.
-     */
-    public static long getSecondsSince(long lastSeenMs) {
-        if (lastSeenMs <= 0) {
-            return Long.MAX_VALUE;
-        }
-        return (System.currentTimeMillis() - lastSeenMs) / 1000;
-    }
-
-    /**
-     * Categorizes Air Quality based on Gas Resistance.
-     *
-     * * @param gasResistance The resistance value in Ohms.
-     * @return Air quality level: 0 (Poor), 1 (Fair), 2 (Excellent).
-     */
     public static int getAirQualityLevel(float gasResistance) {
         if (gasResistance <= 0) {
             return 1;
@@ -318,79 +288,5 @@ public final class MeshUtils {
             return 0;
         }
         return 1;
-    }
-
-    /**
-     * Formats seconds into a nice string
-     */
-    public static String formatUptime(int totalSeconds) {
-        if (totalSeconds <= 0) {
-            return "0s";
-        }
-
-        long years = totalSeconds / 31536000L;
-        int remainder = (int) (totalSeconds % 31536000L);
-
-        long days = remainder / 86400;
-        remainder %= 86400;
-
-        long hours = remainder / 3600;
-        remainder %= 3600;
-
-        long minutes = remainder / 60;
-        long seconds = remainder % 60;
-
-        StringBuilder sb = new StringBuilder();
-        if (years > 0) {
-            sb.append(years).append("y ");
-        }
-        if (days > 0) {
-            sb.append(days).append("d ");
-        }
-        if (hours > 0) {
-            sb.append(hours).append("h ");
-        }
-        if (minutes > 0) {
-            sb.append(minutes).append("m ");
-        }
-        if (seconds > 0 || sb.length() == 0) {
-            sb.append(seconds).append("s");
-        }
-
-        return sb.toString().trim();
-    }
-
-    /**
-     * @param millis The timestamp from node.getLastSeenLocal()
-     * @param relative If true, returns "13m ago". If false, returns "2024-02-09
-     * 14:20:01"
-     */
-    public static  String formatTimestamp(long millis, boolean relative) {
-        if (millis <= 0) {
-            return "Never";
-        }
-
-        if (!relative) {
-            return dateFormat.format(new Date(millis));
-        }
-
-        // Relative Logic (Reuse your uptime logic math)
-        long diffSeconds = (System.currentTimeMillis() - millis) / 1000;
-        if (diffSeconds < 60) {
-            return diffSeconds + "s ago";
-        }
-
-        long mins = diffSeconds / 60;
-        if (mins < 60) {
-            return mins + "m ago";
-        }
-
-        long hours = mins / 60;
-        if (hours < 24) {
-            return hours + "h ago";
-        }
-
-        long days = hours / 24;
-        return days + "d ago";
     }
 }

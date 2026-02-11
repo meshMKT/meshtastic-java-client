@@ -1,6 +1,8 @@
 package com.meshmkt.meshtastic.ui.gemini.storage;
 
 import com.meshmkt.meshtastic.ui.gemini.MeshConstants;
+import java.time.Duration;
+import java.time.Instant;
 import lombok.Builder;
 import lombok.Value;
 import org.meshtastic.proto.ConfigProtos;
@@ -129,26 +131,29 @@ public class MeshNode {
     /**
      * The single source of truth for node state.
      */
+    /**
+     * The single source of truth for node state using modern JDK 8+ Time API.
+     */
     public NodeStatus getCalculatedStatus() {
         if (this.self) {
             return NodeStatus.SELF;
         }
 
-        long nowMs = System.currentTimeMillis();
-        long nowSecs = nowMs / 1000;
+        Instant now = Instant.now();
 
-        // 1. LIVE check
+        // 1. LIVE check (Local PC reception time)
         if (this.lastSeenLocal > 0) {
-            long ageMs = nowMs - this.lastSeenLocal;
-            if (ageMs < (MeshConstants.LIVE_THRESHOLD_SECONDS * 1000L)) {
+            Duration ageLocal = Duration.between(Instant.ofEpochMilli(this.lastSeenLocal), now);
+            if (ageLocal.getSeconds() < MeshConstants.LIVE_THRESHOLD_SECONDS) {
                 return NodeStatus.LIVE;
             }
         }
 
-        // 2. CACHED check (Added > 0 check to prevent 1970/20475d bug)
+        // 2. CACHED check (Radio-reported timestamp in seconds)
         if (this.lastSeen > 0) {
-            long ageSecs = nowSecs - this.lastSeen;
-            if (ageSecs < MeshConstants.STALE_NODE_THRESHOLD_SECONDS) {
+            // Note: lastSeen is in seconds, so we use ofEpochSecond
+            Duration ageRadio = Duration.between(Instant.ofEpochSecond(this.lastSeen), now);
+            if (ageRadio.getSeconds() < MeshConstants.STALE_NODE_THRESHOLD_SECONDS) {
                 return NodeStatus.CACHED;
             }
         }

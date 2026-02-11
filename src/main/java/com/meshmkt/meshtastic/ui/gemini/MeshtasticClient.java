@@ -257,56 +257,63 @@ public class MeshtasticClient {
     }
 
     /**
-     * Manually requests the radio to re-send or fetch the NodeInfo (User) data
-     * for a specific node ID.
+     * Manually requests the radio to re-send or fetch the NodeInfo (User) data.
      *
-     * * @param nodeId The 32-bit unsigned integer ID of the node to refresh.
+     * @return The generated Packet ID to track for ACKs.
      */
-    public void refreshNodeInfo(int nodeId) {
-        log.info(">>> Manually requesting SINGLE node refresh: !{}", MeshUtils.formatId(nodeId));
-        sendRequest(nodeId, PortNum.NODEINFO_APP);
+    public int refreshNodeInfo(int nodeId) {
+        log.info(">>> Requesting NodeInfo: !{}", MeshUtils.formatId(nodeId));
+        return sendRequest(nodeId, PortNum.NODEINFO_APP);
     }
 
     /**
      * Requests the latest Position (GPS) from a specific node.
+     *
+     * @return The generated Packet ID to track for ACKs.
      */
-    public void requestPosition(int nodeId) {
-        log.info(">>> Requesting POSITION from node: !{}", MeshUtils.formatId(nodeId));
-        sendRequest(nodeId, PortNum.POSITION_APP);
+    public int requestPosition(int nodeId) {
+        log.info(">>> Requesting Position: !{}", MeshUtils.formatId(nodeId));
+        return sendRequest(nodeId, PortNum.POSITION_APP);
     }
 
     /**
      * Requests Telemetry (Battery, Voltage, etc.) from a specific node.
+     *
+     * @return The generated Packet ID to track for ACKs.
      */
-    public void requestTelemetry(int nodeId) {
-        log.info(">>> Requesting TELEMETRY from node: !{}", MeshUtils.formatId(nodeId));
-        sendRequest(nodeId, PortNum.TELEMETRY_APP);
+    public int requestTelemetry(int nodeId) {
+        log.info(">>> Requesting Telemetry: !{}", MeshUtils.formatId(nodeId));
+        return sendRequest(nodeId, PortNum.TELEMETRY_APP);
     }
 
     /**
-     * Private helper to wrap the logic for targeted requests.
+     * Refactored helper to generate and return a Packet ID.
      */
-    private void sendRequest(int nodeId, PortNum port) {
+    private int sendRequest(int nodeId, PortNum port) {
+        // 1. Generate a unique ID (Same logic as your sendRawText method)
+        int packetId = ThreadLocalRandom.current().nextInt(1, Integer.MAX_VALUE);
 
-        // 1. Create empty data payload for the specific port
+        // 2. Create empty data payload for the specific port
         Data payload = Data.newBuilder()
                 .setPortnum(port)
                 .build();
 
-        // 2. Wrap in MeshPacket
+        // 3. Wrap in MeshPacket and set the ID
         MeshPacket pk = MeshPacket.newBuilder()
                 .setTo(nodeId)
                 .setDecoded(payload)
                 .setWantAck(true)
+                .setId(packetId) // CRITICAL: This links the packet to the ACK
                 .build();
 
-        // 3. Send to Radio
-        // 3. Send via ToRadio
+        // 4. Wrap in ToRadio and send
         ToRadio request = ToRadio.newBuilder()
                 .setPacket(pk)
                 .build();
 
         sendToRadio(request);
+
+        return packetId; // Return to the UI for tracking
     }
 
     public void addEventListener(MeshtasticEventListener listener) {

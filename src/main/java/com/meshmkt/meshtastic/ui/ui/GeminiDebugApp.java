@@ -37,48 +37,106 @@ public class GeminiDebugApp implements MeshtasticEventListener, NodeDatabaseObse
     private final JButton connectBtn = new JButton("Connect");
     private final JButton disconnectBtn = new JButton("Disconnect");
     private final JButton sendDMBtn = new JButton("Send DM");
-    private final JButton mapBtn = new JButton("View Map");
     private final JButton dumpBtn = new JButton("Dump Debug");
     private final JButton clearButton = new JButton("Clear Log");
 
-    private final DefaultListModel<MeshNode> nodeListModel = new DefaultListModel<>();
-    private final JList<MeshNode> nodeListView = new JList<>(nodeListModel);
+    private final MeshNodeListModel nodeListModel = new MeshNodeListModel();
+    private JList<MeshNode> nodeListView = new JList<>(nodeListModel);
 
-    private final Timer refreshTimer;
+//    private Timer refreshTimer;
     private final MeshtasticClient client;
     private final NodeDatabase nodeDb;
     private final MeshStatusBar statusBar;
     private final JFrame frame;
 
     private int lastSentPacketId = -1;
+    private int lastInfoRequestId = -1;
+    private int lastGpsRequestId = -1;
+    private int lastTeleRequestId = -1;
+
+    private MeshNode selectedNode;
 
     private final AtomicBoolean isUpdating = new AtomicBoolean(false);
 
     public GeminiDebugApp() {
         this.nodeDb = new InMemoryNodeDatabase();
         this.nodeDb.addObserver(this);
+        this.nodeDb.addObserver(nodeListModel);
+
         this.client = new MeshtasticClient(nodeDb);
+
+        nodeField.setEditable(false);
 
         frame = new JFrame("Gemini Meshtastic Dashboard [v2.0]");
         frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
         frame.setSize(1100, 750);
         frame.setLayout(new BorderLayout());
 
-        refreshTimer = new Timer(500, e -> performUpsert());
-        refreshTimer.setRepeats(false);
-
         nodeListView.setCellRenderer(new NodeCellRenderer());
+        nodeListView.setFixedCellHeight(85); // Or whatever your preferred row height is
         nodeListView.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
+        // This tells Swing to use a background thread for the initial render calculations
+        nodeListView.setPrototypeCellValue(MeshNode.builder().nodeId(0).build());
         nodeListView.addListSelectionListener(e -> {
             if (!e.getValueIsAdjusting()) {
+                selectedNode = nodeListView.getSelectedValue();
                 updateSelectionDependentButtons();
             }
         });
 
+        nodeListModel.setOnRefreshComplete(() -> {
+            if (selectedNode == null) {
+                return;
+            }
+
+            int targetId = selectedNode.getNodeId();
+            int size = nodeListModel.getSize();
+
+            for (int i = 0; i < size; i++) {
+                MeshNode nodeAt = nodeListModel.getElementAt(i);
+                if (nodeAt != null && nodeAt.getNodeId() == targetId) {
+                    // We found the identity, now force the UI to it
+                    nodeListView.setSelectedIndex(i);
+
+                    // Optional: Update our 'selectedNode' reference to the new instance
+                    // so the detail panel stays current
+                    this.selectedNode = nodeAt;
+                    return;
+                }
+            }
+
+            // If we reach here, the node was purged/lost from the list
+            log.warn("Lost track of node: " + Integer.toHexString(targetId));
+        });
+
         nodeListView.addMouseListener(new MouseAdapter() {
             @Override
+            public void mousePressed(MouseEvent e) {
+                handleContextMenu(e);
+            }
+
+            @Override
+            public void mouseReleased(MouseEvent e) {
+                handleContextMenu(e);
+            }
+
+            private void handleContextMenu(MouseEvent e) {
+                if (e.isPopupTrigger()) {
+                    int index = nodeListView.locationToIndex(e.getPoint());
+                    if (index != -1) {
+                        nodeListView.setSelectedIndex(index); // Select what was right-clicked
+                        MeshNode selected = nodeListView.getSelectedValue();
+                        if (selected != null) {
+                            showRightClickMenu(e.getComponent(), e.getX(), e.getY(), selected);
+                        }
+                    }
+                }
+            }
+
+            @Override
             public void mouseClicked(MouseEvent e) {
-                if (e.getClickCount() == 2) {
+                // ONLY trigger on double click
+                if (e.getClickCount() == 2 && SwingUtilities.isLeftMouseButton(e)) {
                     MeshNode selected = nodeListView.getSelectedValue();
                     if (selected != null) {
                         showNodeDetailDialog(selected);
@@ -94,7 +152,6 @@ public class GeminiDebugApp implements MeshtasticEventListener, NodeDatabaseObse
         connectBtn.addActionListener(e -> connect());
         disconnectBtn.addActionListener(e -> disconnect());
         sendDMBtn.addActionListener(e -> sendDirectMessage());
-        mapBtn.addActionListener(e -> openMapForSelectedNode());
         dumpBtn.addActionListener(e -> dumpNodeData());
         clearButton.addActionListener(e -> clearLog());
 
@@ -122,7 +179,6 @@ public class GeminiDebugApp implements MeshtasticEventListener, NodeDatabaseObse
         dmPanel.add(new JLabel("Msg:"));
         dmPanel.add(messageField);
         dmPanel.add(sendDMBtn);
-        dmPanel.add(mapBtn);
 
         client.addEventListener(this);
         statusBar = new MeshStatusBar(nodeDb);
@@ -140,86 +196,35 @@ public class GeminiDebugApp implements MeshtasticEventListener, NodeDatabaseObse
         frame.setVisible(true);
     }
 
-    // --- Core Logic Restored ---
-//    private void performUpsert() {
-//        if (nodeDb == null) {
-//            return;
-//        }
-//
-//        MeshNode selected = nodeListView.getSelectedValue();
-//        final int selectedId = (selected != null) ? selected.getNodeId() : -1;
-//
-//        new SwingWorker<List<MeshNode>, Void>() {
-//            @Override
-//            protected List<MeshNode> doInBackground() {
-//                return nodeDb.getAllNodes().stream()
-//                        .sorted((n1, n2) -> {
-//                            int p1 = getSortPriority(n1);
-//                            int p2 = getSortPriority(n2);
-//                            if (p1 != p2) {
-//                                return Integer.compare(p1, p2);
-//                            }
-//                            String name1 = n1.getLongName() != null ? n1.getLongName() : "!" + Integer.toHexString(n1.getNodeId());
-//                            String name2 = n2.getLongName() != null ? n2.getLongName() : "!" + Integer.toHexString(n2.getNodeId());
-//                            return name1.compareToIgnoreCase(name2);
-//                        }).collect(Collectors.toList());
-//            }
-//
-//            @Override
-//            protected void done() {
-//                try {
-//                    List<MeshNode> sortedNodes = get();
-//                    for (int i = 0; i < sortedNodes.size(); i++) {
-//                        if (i < nodeListModel.size()) {
-//                            nodeListModel.set(i, sortedNodes.get(i));
-//                        } else {
-//                            nodeListModel.addElement(sortedNodes.get(i));
-//                        }
-//                    }
-//                    while (nodeListModel.size() > sortedNodes.size()) {
-//                        nodeListModel.remove(nodeListModel.size() - 1);
-//                    }
-//
-//                    if (selectedId != -1) {
-//                        for (int i = 0; i < nodeListModel.size(); i++) {
-//                            if (nodeListModel.get(i).getNodeId() == selectedId) {
-//                                nodeListView.setSelectedIndex(i);
-//                                break;
-//                            }
-//                        }
-//                    }
-//                    updateSelectionDependentButtons();
-//                } catch (Exception e) {
-//                    log.error("Update failed", e);
-//                }
-//            }
-//        }.execute();
-//    }
     private void showNodeDetailDialog(MeshNode node) {
         JDialog dialog = new JDialog(frame, "Node Detail: " + node.getHexId(), true);
         dialog.setLayout(new BorderLayout());
 
-        StringBuilder info = new StringBuilder("<html><body style='padding:15px; font-family:sans-serif;'>");
-        info.append("<h2>").append(node.getLongName()).append(" (").append(node.getShortName()).append(")</h2><hr>");
-        info.append("<b>Node ID:</b> ").append(node.getHexId()).append("<br>");
-        info.append("<br>Role:</b> ").append(MeshUtils.getRoleSymbol(node.getRole())).append("(").append(node.getRole()).append(")").append("<br>");
+        StringBuilder info = new StringBuilder("<html><body style='padding:15px; font-family:sans-serif; width:300px;'>");
+        info.append("<h2>").append(node.getLongName() != null ? node.getLongName() : "Unknown Node").append("</h2><hr>");
+
+        // Safety check for metrics
+        var metrics = node.getDeviceMetrics();
+        String uptime = (metrics != null) ? MeshUtils.formatUptime(metrics.getUptimeSeconds()) : "N/A";
+        String batt = (metrics != null) ? (int) metrics.getBatteryLevel() + "% (" + String.format("%.2fV", metrics.getVoltage()) + ")" : "Unknown";
+
+        info.append("<b>ID:</b> ").append(node.getHexId()).append("<br>");
+        info.append("<b>Role:</b> ").append(node.getRole()).append("<br>");
         info.append("<b>Hardware:</b> ").append(node.getHwModel() != null ? node.getHwModel() : "Generic").append("<br>");
-        info.append("<b>Uptime:</b> ").append(MeshUtils.formatUptime(node.getDeviceMetrics().getUptimeSeconds())).append("<br>");
+        info.append("<b>Uptime:</b> ").append(uptime).append("<br>");
+        info.append("<b>Battery:</b> ").append(batt).append("<br>");
 
-        // Following your original double-timestamp format
-        info.append("<b>First Seen:</b> ").append(MeshUtils.formatTimestamp(node.getLastSeen(), false)).append("<br>");
-        info.append("<b>Last Seen:</b> ").append(MeshUtils.formatTimestamp(node.getLastSeenLocal(), false)).append("<br>");
-        info.append("<b>First Seen:</b> ").append(MeshUtils.formatTimestamp(node.getLastSeen(), true)).append("<br>");
-        info.append("<b>Last Seen:</b> ").append(MeshUtils.formatTimestamp(node.getLastSeenLocal(), true)).append("<br>");
+        info.append("<br><b>Timing:</b><br>");
+        info.append("• Local: ").append(MeshUtils.formatTimestamp(node.getLastSeenLocal(), true)).append("<br>");
+        info.append("• Radio: ").append(MeshUtils.formatTimestamp(node.getLastSeen(), true)).append("<br>");
 
-        if (node.getDeviceMetrics() != null) {
-            info.append("<b>Battery:</b> ").append((int) node.getDeviceMetrics().getBatteryLevel()).append("% (")
-                    .append(String.format("%.2fV", node.getDeviceMetrics().getVoltage())).append(")<br>");
-        }
-
-        info.append("<b>Hops Away:</b> ").append(node.getHopsAway()).append("<br>");
+        // Safety check for position
+        var pos = node.getPosition();
         String dist = (node.getDistanceKm() > 0) ? String.format("%.2f km", node.getDistanceKm()) : "Unknown";
-        info.append("<b>Distance:</b> ").append(dist).append("<br>");
+        info.append("<br><b>Distance:</b> ").append(dist).append("<br>");
+        if (pos != null && pos.getLatitudeI() != 0) {
+            info.append("<b>GPS:</b> ").append(pos.getLatitudeI() / 1e7).append(", ").append(pos.getLongitudeI() / 1e7);
+        }
 
         info.append("</body></html>");
 
@@ -228,9 +233,65 @@ public class GeminiDebugApp implements MeshtasticEventListener, NodeDatabaseObse
         close.addActionListener(e -> dialog.dispose());
         dialog.add(close, BorderLayout.SOUTH);
 
-        dialog.setSize(400, 380);
+        dialog.setSize(420, 450);
         dialog.setLocationRelativeTo(frame);
         dialog.setVisible(true);
+    }
+
+    private void showRightClickMenu(Component invoker, int x, int y, MeshNode node) {
+        JPopupMenu menu = new JPopupMenu();
+
+        // --- Basic Actions ---
+        JMenuItem setTarget = new JMenuItem("Set as DM Target");
+        setTarget.addActionListener(e -> {
+            nodeField.setText(Integer.toUnsignedString(node.getNodeId()));
+            messageField.requestFocusInWindow();
+        });
+
+        JMenuItem copyId = new JMenuItem("Copy Hex ID");
+        copyId.addActionListener(e -> {
+            java.awt.datatransfer.StringSelection ss = new java.awt.datatransfer.StringSelection(node.getHexId());
+            Toolkit.getDefaultToolkit().getSystemClipboard().setContents(ss, null);
+        });
+
+        menu.add(setTarget);
+        menu.add(copyId);
+        menu.addSeparator();
+
+        // --- Request Actions (The missing logic) ---
+        // These use the client to send a request packet to the specific node
+        JMenuItem reqInfo = new JMenuItem("Request Node Info");
+        reqInfo.addActionListener(e -> {
+            append("[SYSTEM] Requesting Node Info from " + node.getHexId());
+            lastInfoRequestId = client.refreshNodeInfo(node.getNodeId());
+        });
+
+        JMenuItem reqGps = new JMenuItem("Request GPS Position");
+        reqGps.addActionListener(e -> {
+            append("[SYSTEM] Requesting Position from " + node.getHexId());
+            lastGpsRequestId = client.requestPosition(node.getNodeId());
+        });
+
+        JMenuItem reqTelemetry = new JMenuItem("Request Telemetry");
+        reqTelemetry.addActionListener(e -> {
+            append("[SYSTEM] Requesting Telemetry from " + node.getHexId());
+            lastTeleRequestId = client.requestTelemetry(node.getNodeId());
+        });
+
+        menu.add(reqInfo);
+        menu.add(reqGps);
+        menu.add(reqTelemetry);
+        menu.addSeparator();
+
+        // --- External Actions ---
+        JMenuItem map = new JMenuItem("View on Google Maps");
+        // Only enable if we actually have coordinates
+        map.setEnabled(node.getPosition() != null && node.getPosition().getLatitudeI() != 0);
+        map.addActionListener(e -> openMapForSelectedNode());
+
+        menu.add(map);
+
+        menu.show(invoker, x, y);
     }
 
     private void sendDirectMessage() {
@@ -375,34 +436,14 @@ public class GeminiDebugApp implements MeshtasticEventListener, NodeDatabaseObse
     private void disconnect() {
         if (client != null) {
             client.disconnect();
+            nodeListModel.stopJanitor();
         }
     }
 
     private void updateSelectionDependentButtons() {
         MeshNode selected = nodeListView.getSelectedValue();
         boolean isConnected = client.isConnected();
-        sendDMBtn.setEnabled(isConnected && selected != null);
-        mapBtn.setEnabled(selected != null && selected.getPosition() != null && selected.getPosition().getLatitudeI() != 0);
-        if (selected != null) {
-            nodeField.setText(Integer.toUnsignedString(selected.getNodeId()));
-        }
-    }
-
-    /**
-     * Explicitly defines the sort order: SELF (0) -> LIVE (1) -> CACHED (2) ->
-     * OFFLINE (3) This is safe even if the Enum is reordered.
-     */
-    private int getStatusWeight(MeshNode.NodeStatus status) {
-        return switch (status) {
-            case SELF ->
-                0;
-            case LIVE ->
-                1;
-            case CACHED ->
-                2;
-            case OFFLINE ->
-                3;
-        };
+        sendDMBtn.setEnabled(isConnected && nodeField.getText() != null);
     }
 
     private void append(String text) {
@@ -461,133 +502,24 @@ public class GeminiDebugApp implements MeshtasticEventListener, NodeDatabaseObse
 
     @Override
     public void onNodeUpdated(MeshNode node) {
-        // Only restart the timer. Do NOT trigger logic here.
-        // This "debounces" the flurry of updates into a single call.
-        if (!refreshTimer.isRunning()) {
-            refreshTimer.start();
-        }
-    }
-
-    private void performUpsert() {
-        // If a worker is already sorting/drawing, skip this tick.
-        if (nodeDb == null || isUpdating.get()) {
-            return;
-        }
-
-        isUpdating.set(true);
-
-        // Capture the selected ID BEFORE moving to background thread
-        MeshNode selected = nodeListView.getSelectedValue();
-        final int selectedId = (selected != null) ? selected.getNodeId() : -1;
-
-        new SwingWorker<List<MeshNode>, Void>() {
-            @Override
-            protected List<MeshNode> doInBackground() {
-                return nodeDb.getAllNodes().stream()
-                        .sorted((n1, n2) -> {
-                            // 1. Primary: Status Bucket
-                            int w1 = getStatusWeight(n1.getCalculatedStatus());
-                            int w2 = getStatusWeight(n2.getCalculatedStatus());
-                            if (w1 != w2) {
-                                return Integer.compare(w1, w2);
-                            }
-
-                            // 2. Secondary: Recency (Last Seen Local)
-                            // Use the highest available timestamp for each node
-                            long time1 = Math.max(n1.getLastSeenLocal(), n1.getLastSeen() * 1000L);
-                            long time2 = Math.max(n2.getLastSeenLocal(), n2.getLastSeen() * 1000L);
-
-                            if (time1 != time2) {
-                                return Long.compare(time2, time1); // Descending: Newer at top
-                            }
-
-                            // 3. Tertiary: Alphabetical Tie-breaker
-                            String name1 = (n1.getLongName() != null && !n1.getLongName().isEmpty())
-                                    ? n1.getLongName() : "zz" + n1.getHexId();
-                            String name2 = (n2.getLongName() != null && !n2.getLongName().isEmpty())
-                                    ? n2.getLongName() : "zz" + n2.getHexId();
-
-                            return name1.compareToIgnoreCase(name2);
-                        })
-                        .collect(Collectors.toList());
-            }
-
-            @Override
-            protected void done() {
-                try {
-                    List<MeshNode> sortedNodes = get();
-
-                    // 1. Check if we actually need to change the size
-                    if (nodeListModel.size() != sortedNodes.size()) {
-                        nodeListModel.removeAllElements();
-                        for (MeshNode n : sortedNodes) {
-                            nodeListModel.addElement(n);
-                        }
-                    } else {
-                        // 2. If size is same, just update elements in place to prevent scroll-jump
-                        for (int i = 0; i < sortedNodes.size(); i++) {
-                            MeshNode newNode = sortedNodes.get(i);
-                            MeshNode oldNode = nodeListModel.get(i);
-
-                            // Only trigger a redraw if the data actually changed
-                            if (!newNode.equals(oldNode) || newNode.getLastSeenLocal() != oldNode.getLastSeenLocal()) {
-                                nodeListModel.set(i, newNode);
-                            }
-                        }
-                    }
-
-                    // 3. Restore selection
-                    if (selectedId != -1) {
-                        for (int i = 0; i < nodeListModel.size(); i++) {
-                            if (nodeListModel.get(i).getNodeId() == selectedId) {
-                                nodeListView.setSelectedIndex(i);
-                                break;
-                            }
-                        }
-                    }
-                } catch (Exception e) {
-                    log.error("Sync Redraw Failed", e);
-                } finally {
-                    isUpdating.set(false);
-                }
-            }
-        }.execute();
     }
 
     @Override
     public void onNodesPurged() {
-        triggerRefresh();
     }
 
     @Override
     public void onPositionUpdate(PositionUpdateEvent e) {
-        triggerRefresh();
     }
 
     @Override
     public void onTelemetryUpdate(TelemetryUpdateEvent e) {
-        triggerRefresh();
     }
 
     @Override
     public void onNodeDiscovery(NodeDiscoveryEvent e) {
-        // This gives you that "scrolling log" feel back immediately
         append("[NODE] Found: " + e.getLongName() + " (" + MeshUtils.formatId(e.getNodeId()) + ")");
 
-        // If the list is empty, trigger an immediate refresh instead of waiting 500ms
-        if (nodeListModel.isEmpty()) {
-            performUpsert();
-        } else {
-            triggerRefresh();
-        }
-    }
-
-    private void triggerRefresh() {
-        // Lower this from 500ms to 200ms for snappier feedback during sync
-        if (!refreshTimer.isRunning()) {
-            refreshTimer.setInitialDelay(200);
-            refreshTimer.start();
-        }
     }
 
     public static void main(String[] args) {
