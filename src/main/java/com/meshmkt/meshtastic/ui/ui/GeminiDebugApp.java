@@ -244,8 +244,9 @@ public class GeminiDebugApp implements MeshtasticEventListener, NodeDatabaseObse
         // --- Basic Actions ---
         JMenuItem setTarget = new JMenuItem("Set as DM Target");
         setTarget.addActionListener(e -> {
-            nodeField.setText(Integer.toUnsignedString(node.getNodeId()));
+            nodeField.setText(MeshUtils.formatId(node.getNodeId()));
             messageField.requestFocusInWindow();
+            updateSelectionDependentButtons();
         });
 
         JMenuItem copyId = new JMenuItem("Copy Hex ID");
@@ -258,24 +259,44 @@ public class GeminiDebugApp implements MeshtasticEventListener, NodeDatabaseObse
         menu.add(copyId);
         menu.addSeparator();
 
-        // --- Request Actions (The missing logic) ---
-        // These use the client to send a request packet to the specific node
+        // --- Request Actions (Asynchronous Refactor) ---
         JMenuItem reqInfo = new JMenuItem("Request Node Info");
         reqInfo.addActionListener(e -> {
-            append("[SYSTEM] Requesting Node Info from " + node.getHexId());
-            lastInfoRequestId = client.refreshNodeInfo(node.getNodeId());
+            append("[SYSTEM] Requesting Node Info from " + node.getHexId() + "...");
+            client.refreshNodeInfo(node.getNodeId())
+                    .thenAccept(success -> {
+                        append("[SUCCESS] Node Info received for " + node.getHexId());
+                    })
+                    .exceptionally(ex -> {
+                        append("[ERROR] Node Info request timed out for " + node.getHexId());
+                        return null;
+                    });
         });
 
         JMenuItem reqGps = new JMenuItem("Request GPS Position");
         reqGps.addActionListener(e -> {
-            append("[SYSTEM] Requesting Position from " + node.getHexId());
-            lastGpsRequestId = client.requestPosition(node.getNodeId());
+            append("[SYSTEM] Requesting Position from " + node.getHexId() + "...");
+            client.requestPosition(node.getNodeId())
+                    .thenAccept(success -> {
+                        append("[SUCCESS] Position updated for " + node.getHexId());
+                    })
+                    .exceptionally(ex -> {
+                        append("[ERROR] Position request timed out for " + node.getHexId());
+                        return null;
+                    });
         });
 
         JMenuItem reqTelemetry = new JMenuItem("Request Telemetry");
         reqTelemetry.addActionListener(e -> {
-            append("[SYSTEM] Requesting Telemetry from " + node.getHexId());
-            lastTeleRequestId = client.requestTelemetry(node.getNodeId());
+            append("[SYSTEM] Requesting Telemetry from " + node.getHexId() + "...");
+            client.requestTelemetry(node.getNodeId())
+                    .thenAccept(success -> {
+                        append("[SUCCESS] Telemetry received for " + node.getHexId());
+                    })
+                    .exceptionally(ex -> {
+                        append("[ERROR] Telemetry request timed out for " + node.getHexId());
+                        return null;
+                    });
         });
 
         menu.add(reqInfo);
@@ -296,26 +317,42 @@ public class GeminiDebugApp implements MeshtasticEventListener, NodeDatabaseObse
 
     private void sendDirectMessage() {
         if (!client.isConnected()) {
+            append("[SYSTEM] Cannot send: Radio not connected.");
             return;
         }
+
         try {
-            int targetId = (int) Long.parseUnsignedLong(nodeField.getText().trim());
+            // Parse destination
+            int targetId = MeshUtils.parseId(nodeField.getText()); // Assuming hex input
             String text = messageField.getText().trim();
+
             if (text.isEmpty()) {
                 return;
             }
 
-            this.lastSentPacketId = client.sendMessage(MessageRequest.builder()
-                    .autoChunk(true)
-                    .recipientId(targetId)
-                    .text(text)
-                    .build());
+            // Use the new async API
+            client.sendDirectText(targetId, text)
+                    .thenAccept(success -> {
+                        // This happens when the radio confirms it sent/received the ACK
+                        append("[ACK] Message confirmed by " + MeshUtils.formatId(targetId));
+                    })
+                    .exceptionally(ex -> {
+                        // This happens if the node is offline or the mesh is too busy (Timeout)
+                        append("[FAIL] No confirmation from " + MeshUtils.formatId(targetId));
+                        return null;
+                    });
 
-            String displayName = nodeDb.getNode(targetId).map(MeshUtils::resolveName).orElseGet(() -> MeshUtils.formatId(targetId));
+            // Immediate UI feedback
+            String displayName = nodeDb.getNode(targetId)
+                    .map(MeshUtils::resolveName)
+                    .orElseGet(() -> MeshUtils.formatId(targetId));
+
             append("[OUTGOING] To " + displayName + ": " + text);
             messageField.setText("");
+
         } catch (Exception e) {
-            append("[ERROR] Send Failed: " + e.getMessage());
+            log.error("Could not send message", e);
+            append("[ERROR] Invalid Node ID: Use Hex (e.g., a1b2c3d4)");
         }
     }
 
@@ -495,9 +532,6 @@ public class GeminiDebugApp implements MeshtasticEventListener, NodeDatabaseObse
 
     @Override
     public void onMessageStatusUpdate(MessageStatusEvent event) {
-        if (event.getPacketId() == lastSentPacketId) {
-            append("[ACK] " + (event.isSuccess() ? "Success" : "Failed"));
-        }
     }
 
     @Override

@@ -9,7 +9,7 @@ import java.util.List;
  * Handles slicing large text into radio-safe chunks with sequence numbering.
  */
 public class MeshtasticChunker {
-    private static final int ABSOLUTE_MAX_MTU = 200;
+    private static final int ABSOLUTE_MAX_MTU = 180; // To keep it safe plus some overhead
 
     @Value
     public static class ChunkedResult {

@@ -3,6 +3,7 @@ package com.meshmkt.meshtastic.ui.gemini.transport;
 import java.util.List;
 import java.util.concurrent.*;
 import java.util.function.Consumer;
+import lombok.extern.slf4j.Slf4j;
 
 /**
  * <h2>Abstract Framed Transport</h2>
@@ -11,10 +12,14 @@ import java.util.function.Consumer;
  * dispatching for low-power hardware.
  * </p>
  */
+@Slf4j
 public abstract class AbstractFramedTransport implements MeshtasticTransport {
 
     protected final BlockingQueue<byte[]> dataQueue = new LinkedBlockingQueue<>(1000);
     private final List<TransportConnectionListener> connectionListeners = new CopyOnWriteArrayList<>();
+
+    protected final BlockingQueue<byte[]> txQueue = new LinkedBlockingQueue<>(100);
+    private ExecutorService txExecutor;
 
     private ExecutorService consumerExecutor;
     private ExecutorService eventExecutor; // Decouples IO from Listeners
@@ -22,6 +27,9 @@ public abstract class AbstractFramedTransport implements MeshtasticTransport {
     protected Consumer<byte[]> packetConsumer = (data) -> {
     };
     protected volatile boolean running = false;
+
+    // Default to 1000ms, which is a safe "middle ground"
+    private long outboundPacingDelay = 200;
 
     // --- Template Methods for Subclasses ---
     /**
@@ -45,21 +53,20 @@ public abstract class AbstractFramedTransport implements MeshtasticTransport {
     protected abstract void handleIncomingRawData(byte[] data);
 
     // --- Public Template API (Final) ---
+    public void setOutboundPacingDelay(long millis) {
+        this.outboundPacingDelay = millis;
+    }
+
     @Override
     public final void write(byte[] protobufData) {
         if (!isConnected() || protobufData == null) {
             return;
         }
 
-        try {
-            // 1. Perform the work first
-            sendRawBytes(protobufData);
-
-            // 2. Notify asynchronously
-            asyncNotify(TransportConnectionListener::onTrafficTransmitted);
-        } catch (Exception e) {
-            handleTransportError(e);
-        }
+        // Drop it into the outbox to help buffering
+        log.info("write - adding incoming bytes to txQueue");
+        txQueue.offer(protobufData);
+        log.info("write - bytes added to txQueue");
     }
 
     /**
@@ -80,6 +87,40 @@ public abstract class AbstractFramedTransport implements MeshtasticTransport {
     }
 
     // --- Event Dispatching Logic ---
+    /**
+     * Look in the outbox to see if we have packets to send to the radio
+     */
+    private void processTxQueue() {
+        while (running && !Thread.currentThread().isInterrupted()) {
+            try {
+                log.info("processTxQueue - Checking for txQueue data");
+                byte[] protobufData = txQueue.take(); // Wait for a packet
+                log.info("processTxQeueu - Found data to process");
+
+                log.info("processTxQueue - Sending bytes to radio");
+                sendRawBytes(protobufData);
+                log.info("processTxQueue - Bytes sent to radio");
+
+                log.info("processTxQueue - Sending activity event");
+                asyncNotify(TransportConnectionListener::onTrafficTransmitted);
+                log.info("processTxQueue - Activity event sent");
+
+                /// Use the configurable delay
+            if (outboundPacingDelay > 0) {
+                    log.info("processTxQueue - Sleeping for {}ms", outboundPacingDelay);
+                    Thread.sleep(outboundPacingDelay);
+                    log.info("processTxQueue - Sleep finished");
+                }
+
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                break;
+            } catch (Exception e) {
+                handleTransportError(e);
+            }
+        }
+    }
+
     /**
      * Safely dispatches events to listeners on a background thread.
      */
@@ -126,16 +167,25 @@ public abstract class AbstractFramedTransport implements MeshtasticTransport {
                 return t;
             });
 
-            connect();
-            running = true;
-
             consumerExecutor = Executors.newSingleThreadExecutor(r -> {
                 Thread t = new Thread(r, "TransportWorker-" + getClass().getSimpleName());
                 t.setDaemon(true);
                 return t;
             });
 
-            consumerExecutor.submit(this::processQueue);
+            txExecutor = Executors.newSingleThreadExecutor(r -> {
+                Thread t = new Thread(r, "TransportTX-" + getClass().getSimpleName());
+                t.setDaemon(true);
+                return t;
+            });
+
+            connect();
+            running = true;
+
+            // Start AFTER the running flag is set
+            consumerExecutor.submit(this::processIncomingDataQueue);
+            txExecutor.submit(this::processTxQueue);
+
             notifyConnected();
 
         } catch (Exception e) {
@@ -145,7 +195,10 @@ public abstract class AbstractFramedTransport implements MeshtasticTransport {
         }
     }
 
-    private void processQueue() {
+    /**
+     * Process the incoming raw data queue so we don't block the IO thread
+     */
+    private void processIncomingDataQueue() {
         while (running && !Thread.currentThread().isInterrupted()) {
             try {
                 byte[] data = dataQueue.take();
@@ -171,19 +224,26 @@ public abstract class AbstractFramedTransport implements MeshtasticTransport {
                 consumerExecutor.shutdownNow();
             }
 
-            dataQueue.clear();
-            notifyDisconnected();
-
             // Shutdown events last to ensure 'onDisconnected' is sent
             if (eventExecutor != null) {
                 eventExecutor.shutdown();
             }
+
+            if (txExecutor != null) {
+                txExecutor.shutdownNow();
+            }
+
+            dataQueue.clear();
+            txQueue.clear();
+
+            notifyDisconnected();
 
         } catch (Exception e) {
             notifyError(e);
         } finally {
             consumerExecutor = null;
             eventExecutor = null;
+            txExecutor = null;
         }
     }
 

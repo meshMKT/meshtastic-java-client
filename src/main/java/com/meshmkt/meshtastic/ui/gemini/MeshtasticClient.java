@@ -1,103 +1,69 @@
 package com.meshmkt.meshtastic.ui.gemini;
 
-import com.meshmkt.meshtastic.ui.gemini.transport.TransportConnectionListener;
-import com.meshmkt.meshtastic.ui.gemini.transport.MeshtasticTransport;
 import com.google.protobuf.ByteString;
 import com.google.protobuf.InvalidProtocolBufferException;
+import com.google.protobuf.Message;
 import com.meshmkt.meshtastic.ui.gemini.event.*;
 import com.meshmkt.meshtastic.ui.gemini.handlers.*;
-import com.meshmkt.meshtastic.ui.gemini.storage.MeshNode;
 import com.meshmkt.meshtastic.ui.gemini.storage.NodeDatabase;
+import com.meshmkt.meshtastic.ui.gemini.transport.MeshtasticTransport;
+import com.meshmkt.meshtastic.ui.gemini.transport.TransportConnectionListener;
 import org.meshtastic.proto.MeshProtos;
-import org.meshtastic.proto.MeshProtos.FromRadio;
-import org.meshtastic.proto.MeshProtos.ToRadio;
-import org.meshtastic.proto.Portnums;
+import org.meshtastic.proto.MeshProtos.*;
+import org.meshtastic.proto.Portnums.PortNum;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.nio.charset.StandardCharsets;
-import java.util.Collection;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.*;
 import java.util.function.Consumer;
-import org.meshtastic.proto.MeshProtos.Data;
-import org.meshtastic.proto.MeshProtos.MeshPacket;
-import org.meshtastic.proto.Portnums.PortNum;
 
 /**
- * <h2>Meshtastic Client</h2>
- * <p>
- * The high-level orchestrator for Meshtastic radio interaction. This version
- * uses a private internal dispatcher to keep event-firing methods hidden from
- * the end-user, ensuring a clean public API.
- * </p>
+ * MeshtasticClient
  *
- * * @version 2.5
+ * Orchestrates serial communication with the Meshtastic radio. * FIXES APPLIED:
+ * 1. Sequential "Drip-Feed" Support: executeRequest now returns a future that
+ * only completes when the radio confirms the Packet ID via a Routing ACK. 2.
+ * Packet ID Correlation: We set a random ID on outbound packets. The radio
+ * returns this ID in the 'decoded.request_id' field of a ROUTING_APP packet. 3.
+ * Thread Safety: Uses ConcurrentHashMap and Atomic types for stability.
  */
 public class MeshtasticClient {
 
-    private final static Logger log = LoggerFactory.getLogger(MeshtasticClient.class);
+    private static final Logger log = LoggerFactory.getLogger(MeshtasticClient.class);
 
-    /**
-     * The physical communication medium (Serial, TCP, etc.)
-     */
     private volatile MeshtasticTransport transport;
-
-    /**
-     * The engine that routes incoming Protobufs to Handlers
-     */
     private final MeshtasticDispatcher dispatcher;
-
-    /**
-     * Scheduler for heartbeats and background tasks
-     */
-    private final ScheduledExecutorService internalScheduler;
-
-    /**
-     * Shared repository for mesh node data
-     */
+    private final ScheduledExecutorService scheduler;
+    private final ExecutorService eventBus;
     private final NodeDatabase nodeDb;
 
-    /**
-     * Internal bridge to fire events from handlers to public listeners
-     */
-    private final InternalDispatcher internalDispatcher = new InternalDispatcher();
-
-    /**
-     * High-level connection state
-     */
     private volatile boolean connected = false;
-
-    /**
-     * Public event listeners
-     */
-    private final List<MeshtasticEventListener> listeners = new CopyOnWriteArrayList<>();
-
-    /**
-     * Dedicated thread for mesh data events
-     */
-    private final ExecutorService eventBus;
-
     private int currentSyncId;
+    // This ensures only one request is "In-Flight" to the radio at a time
+    private final Semaphore radioLock = new Semaphore(1);
 
     /**
-     * Initializes the client service. Executors are started once and persist
-     * across transport reconnections.
-     *
-     * * @param database The shared NodeDatabase instance.
+     * The Correlation Map. Maps our generated Packet ID -> The Future waiting
+     * for hardware confirmation.
      */
+    private final Map<Integer, CompletableFuture<MeshPacket>> pendingRequests = new ConcurrentHashMap<>();
+
     public MeshtasticClient(NodeDatabase database) {
         this.nodeDb = database;
         this.dispatcher = new MeshtasticDispatcher();
-        this.internalScheduler = Executors.newSingleThreadScheduledExecutor(r -> {
-            Thread t = new Thread(r, "ClientScheduler");
+
+        this.scheduler = Executors.newSingleThreadScheduledExecutor(r -> {
+            Thread t = new Thread(r, "Mesh-Scheduler");
             t.setDaemon(true);
             return t;
         });
+
         this.eventBus = Executors.newSingleThreadExecutor(r -> {
-            Thread t = new Thread(r, "Mesh-Event-Bus");
+            Thread t = new Thread(r, "Mesh-EventBus");
             t.setDaemon(true);
-            t.setPriority(Thread.NORM_PRIORITY - 1);
             return t;
         });
 
@@ -105,63 +71,209 @@ public class MeshtasticClient {
         startHeartbeatTask();
     }
 
-    /**
-     * Connects to the mesh using the provided transport medium.
-     *
-     * @param newTransport The transport implementation to use.
-     */
-    public synchronized void connect(MeshtasticTransport newTransport) {
-        if (this.transport != null) {
-            disconnect();
-        }
-        this.transport = newTransport;
-        setupPipeline(this.transport);
-        this.transport.start();
-    }
-
-    /**
-     * Registers the logic handlers that process incoming radio packets.
-     */
     private void initializeHandlers() {
-
         dispatcher.registerHandler(new MessageLoggingHandler(nodeDb));
-        dispatcher.registerHandler(new MeshEventLogger(nodeDb));
+        dispatcher.registerHandler(new MyInfoHandler(nodeDb, new InternalDispatcher()));
+        dispatcher.registerHandler(new NodeInfoHandler(nodeDb, new InternalDispatcher()));
+        dispatcher.registerHandler(new PositionHandler(nodeDb, new InternalDispatcher()));
+        dispatcher.registerHandler(new TelemetryHandler(nodeDb, new InternalDispatcher()));
+        dispatcher.registerHandler(new RoutingHandler(nodeDb, new InternalDispatcher()));
+        dispatcher.registerHandler(new TextMessageHandler(nodeDb, new InternalDispatcher()));
+    }
 
-        // 1. Identity & Database Handlers
-        dispatcher.registerHandler(new MyInfoHandler(nodeDb, internalDispatcher));
-        dispatcher.registerHandler(new NodeInfoHandler(nodeDb, internalDispatcher));
-
-        // 3. Functional Handlers (Logic)
-        dispatcher.registerHandler(new PositionHandler(nodeDb, internalDispatcher));
-        dispatcher.registerHandler(new TelemetryHandler(nodeDb, internalDispatcher));
-        dispatcher.registerHandler(new RoutingHandler(nodeDb, internalDispatcher));
-        dispatcher.registerHandler(new TextMessageHandler(nodeDb, internalDispatcher));
+    /**
+     * Wrapper for mesh requests.
+     */
+    public record MeshRequest<T>(
+            int destinationId,
+            PortNum port,
+            Message payload,
+            byte[] rawData,
+            int channelIndex,
+            boolean wantAck,
+            Class<T> responseType
+            ) {
 
     }
 
     /**
-     * Configures the transport to feed data into the client's dispatcher.
+     * Sends a Private Message (DM). DMs almost always go over the Primary
+     * channel (0).
      */
-    private void setupPipeline(MeshtasticTransport t) {
-        t.addParsedPacketConsumer((byte[] packet) -> {
-            try {
-                FromRadio fromRadio = FromRadio.parseFrom(packet);
+    public CompletableFuture<Boolean> sendDirectText(int nodeId, String text) {
+        return sendText(nodeId, 0, text);
+    }
 
-                /* * According to documentation: 
-                 * The integer written into want_config_id will be reported back 
-                 * in the config_complete_id response.
-                 */
-                if (fromRadio.hasConfigCompleteId() || fromRadio.getConfigCompleteId() != 0) {
-                    if (fromRadio.getConfigCompleteId() == currentSyncId) {
-                        log.info(">>> Received Config Complete (ID: {}). Initial dump finished.", currentSyncId);
-//                        nodeDb.startCleanupTask(15);
-                    }
+    /**
+     * Broadcasts to a specific channel.
+     */
+    public CompletableFuture<Boolean> sendChannelText(int channelIndex, String text) {
+        return sendText(MeshConstants.ID_BROADCAST, channelIndex, text);
+    }
+
+    /**
+     * THE master method.
+     */
+    private CompletableFuture<Boolean> sendText(int destinationId, int channelIndex, String text) {
+        MeshtasticChunker.ChunkedResult result = MeshtasticChunker.prepare(text);
+        CompletableFuture<Boolean> finalStatus = new CompletableFuture<>();
+
+        // Kick off the recursion using the common worker
+        sendNextChunk(destinationId, channelIndex, result.getFormattedChunks(), 0, finalStatus);
+
+        return finalStatus;
+    }
+
+    /**
+     * The recursive worker.
+     */
+    private void sendNextChunk(int destinationId, int channelIndex, List<String> chunks, int index, CompletableFuture<Boolean> finalStatus) {
+        if (index >= chunks.size()) {
+            finalStatus.complete(true);
+            return;
+        }
+
+        log.info("[CHUNKER] Sending chunk {}/{} to {} on channel index {}",
+                index + 1, chunks.size(), Integer.toHexString(destinationId), channelIndex);
+
+        byte[] chunkBytes = chunks.get(index).getBytes(StandardCharsets.UTF_8);
+
+        MeshRequest<Boolean> request = new MeshRequest<>(
+                destinationId,
+                PortNum.TEXT_MESSAGE_APP,
+                null,
+                chunkBytes,
+                channelIndex, // Used by executeRequest to set .setChannel()
+                true, // Want ACK to clear the radioLock
+                Boolean.class
+        );
+
+        executeRequest(request).thenAccept(packet -> {
+            // executeRequest only completes after the 200ms cooldown, 
+            // so we can loop immediately to the next chunk safely.
+            sendNextChunk(destinationId, channelIndex, chunks, index + 1, finalStatus);
+        }).exceptionally(ex -> {
+            log.error("[CHUNKER] Chunk {} failed: {}", index + 1, ex.getMessage());
+            finalStatus.completeExceptionally(ex);
+            return null;
+        });
+    }
+
+    // -------------------------------------------------------------------------
+    // Core Engine
+    // -------------------------------------------------------------------------
+    private <T> CompletableFuture<MeshPacket> executeRequest(MeshRequest<T> request) {
+        CompletableFuture<MeshPacket> future = new CompletableFuture<>();
+
+        eventBus.execute(() -> {
+            try {
+                radioLock.acquire();
+
+                // 1. Prepare Payload (Handling ByteString vs Raw)
+                ByteString payload = ByteString.EMPTY;
+                if (request.payload() != null) {
+                    payload = request.payload().toByteString();
+                } else if (request.rawData() != null) {
+                    payload = ByteString.copyFrom(request.rawData());
                 }
 
-                // Dispatch to the handlers
+                // 2. Generate Unique ID for this specific transaction
+                int myPacketId = ThreadLocalRandom.current().nextInt(1, Integer.MAX_VALUE);
+
+                MeshPacket packet = MeshPacket.newBuilder()
+                        .setTo(request.destinationId())
+                        .setDecoded(Data.newBuilder()
+                                .setPortnum(request.port())
+                                .setPayload(payload)
+                                .build())
+                        .setWantAck(request.wantAck())
+                        .setChannel(request.channelIndex())
+                        .setId(myPacketId)
+                        .build();
+
+                // 3. Register for correlation
+                if (request.wantAck()) {
+                    pendingRequests.put(myPacketId, future);
+                }
+
+                log.info("[TX] Lock Acquired. Sending ID: {} | Port: {}", myPacketId, request.port());
+                sendToRadio(ToRadio.newBuilder().setPacket(packet).build());
+
+                // 4. Handle Lock Release with built-in Cooldown
+                if (!request.wantAck()) {
+                    // Immediate release if no ACK needed
+                    radioLock.release();
+                    future.complete(packet);
+                } else {
+                    future.handle((res, err) -> {
+                        // This triggers when correlateResponse completes the future or it times out
+                        scheduler.schedule(() -> {
+                            log.trace("[TX] Cooldown finished. Releasing radio lock for ID: {}", myPacketId);
+                            radioLock.release();
+                        }, 200, TimeUnit.MILLISECONDS);
+                        return null;
+                    });
+
+                    // Fail-safe Timeout
+                    scheduler.schedule(() -> {
+                        if (!future.isDone()) {
+                            pendingRequests.remove(myPacketId);
+                            future.completeExceptionally(new TimeoutException("ACK Timeout for: " + myPacketId));
+                        }
+                    }, 30, TimeUnit.SECONDS);
+                }
+
+            } catch (Exception e) {
+                radioLock.release();
+                future.completeExceptionally(e);
+            }
+        });
+
+        return future;
+    }
+
+    /**
+     * The Correlator: Matches incoming radio responses to our pending futures.
+     */
+    private void correlateResponse(FromRadio fromRadio) {
+        if (!fromRadio.hasPacket()) {
+            return;
+        }
+
+        MeshPacket incoming = fromRadio.getPacket();
+        Data decoded = incoming.getDecoded();
+
+        log.info("correlateResponse - Incoming FromRadio: {}", fromRadio);
+        log.info("correlateResponse - Incoming MeshPacket: {}", incoming);
+
+        // Check for ROUTING_APP which contains the ACK delivery status
+        if (decoded.getPortnum() == PortNum.ROUTING_APP) {
+            // Per your logs, the radio puts our original packet ID here
+            int confirmedId = decoded.getRequestId();
+
+            if (confirmedId != 0) {
+                CompletableFuture<MeshPacket> pending = pendingRequests.remove(confirmedId);
+                if (pending != null) {
+                    log.info("[CORRELATOR] Match found for Packet ID: {}. Releasing queue.", confirmedId);
+                    pending.complete(incoming);
+                }
+            }
+        }
+
+        // FUTURE: Add Admin_APP correlation here if needed
+    }
+
+    // -------------------------------------------------------------------------
+    // Pipeline & Lifecycle
+    // -------------------------------------------------------------------------
+    private void setupPipeline(MeshtasticTransport t) {
+        t.addParsedPacketConsumer(data -> {
+            try {
+                FromRadio fromRadio = FromRadio.parseFrom(data);
+                correlateResponse(fromRadio);
                 dispatcher.enqueue(fromRadio);
             } catch (InvalidProtocolBufferException ex) {
-                log.error("Protobuf parsing error", ex);
+                log.error("Failed to parse FromRadio packet", ex);
             }
         });
 
@@ -169,65 +281,186 @@ public class MeshtasticClient {
             @Override
             public void onConnected() {
                 connected = true;
-                requestLocalConfig(); // Standard initial handshake
+                requestLocalConfig();
             }
 
             @Override
             public void onDisconnected() {
                 connected = false;
+                cancelAllPending();
             }
 
             @Override
             public void onError(Throwable err) {
                 connected = false;
+                cancelAllPending();
             }
         });
     }
 
+    public synchronized void connect(MeshtasticTransport newTransport) {
+        if (transport != null) {
+            disconnect();
+        }
+        transport = newTransport;
+        setupPipeline(transport);
+        transport.start();
+    }
+
+    public synchronized void disconnect() {
+        if (transport != null) {
+            transport.stop();
+            transport = null;
+        }
+        connected = false;
+        cancelAllPending();
+    }
+
+    private void cancelAllPending() {
+        // 1. Clear the mapping so no late ACKs try to trigger logic
+        pendingRequests.forEach((id, future) -> {
+            future.cancel(true);
+        });
+        pendingRequests.clear();
+
+        // 2. FORCE release the lock so the next connection starts fresh
+        // drainPermits() + release() ensures we are back to exactly 1 permit
+        radioLock.drainPermits();
+        radioLock.release();
+
+        log.info("[CLEANUP] All pending requests cancelled and radio lock reset.");
+    }
+
+    private void sendToRadio(ToRadio toRadio) {
+        if (isConnected()) {
+            log.info("sendToRadio - Sending ToRadio: {}", toRadio);
+            transport.write(toRadio.toByteArray());
+        }
+    }
+
+    public boolean isConnected() {
+        return connected && transport != null && transport.isConnected();
+    }
+
+    public void shutdown() {
+        disconnect();
+        scheduler.shutdown();
+        eventBus.shutdown();
+    }
+
+    // -------------------------------------------------------------------------
+    // Node Utilities
+    // -------------------------------------------------------------------------
     /**
-     * Persistent heartbeat task that sends a packet every 30 seconds if
-     * connected.
+     * Explicitly requests NodeInfo from a specific node.
      */
-    private void startHeartbeatTask() {
-        internalScheduler.scheduleAtFixedRate(() -> {
-            if (isConnected()) {
-                sendToRadio(ToRadio.newBuilder()
-                        .setHeartbeat(MeshProtos.Heartbeat.newBuilder().build())
-                        .build());
-            }
-        }, 10, 30, TimeUnit.SECONDS);
+    public CompletableFuture<MeshPacket> refreshNodeInfo(int nodeId) {
+        log.info("[UTIL] Requesting NodeInfo for {}", nodeId);
+        return executeRequest(new MeshRequest<>(
+                nodeId,
+                PortNum.NODEINFO_APP,
+                null, // No payload needed for request
+                new byte[0],
+                0,
+                true,
+                MeshPacket.class
+        ));
     }
 
     /**
-     * Private Inner Class: Implements the internal dispatcher interface. This
-     * keeps the "onXXX" methods off the public Client API.
+     * Explicitly requests a Position update from a specific node.
      */
+    public CompletableFuture<MeshPacket> requestPosition(int nodeId) {
+        log.info("[UTIL] Requesting Position from {}", nodeId);
+        return executeRequest(new MeshRequest<>(
+                nodeId,
+                PortNum.POSITION_APP,
+                null,
+                new byte[0],
+                0,
+                true,
+                MeshPacket.class
+        ));
+    }
+
+    /**
+     * Explicitly requests Telemetry (battery, etc) from a specific node.
+     */
+    public CompletableFuture<MeshPacket> requestTelemetry(int nodeId) {
+        log.info("[UTIL] Requesting Telemetry from {}", nodeId);
+        return executeRequest(new MeshRequest<>(
+                nodeId,
+                PortNum.TELEMETRY_APP,
+                null,
+                new byte[0],
+                0,
+                true,
+                MeshPacket.class
+        ));
+    }
+
+    private void requestLocalConfig() {
+        this.currentSyncId = (int) (System.currentTimeMillis() / 1000);
+        sendToRadio(ToRadio.newBuilder().setWantConfigId(currentSyncId).build());
+    }
+
+    private void startHeartbeatTask() {
+        scheduler.scheduleAtFixedRate(this::sendHeartbeat, 10, 30, TimeUnit.SECONDS);
+    }
+
+    private void sendHeartbeat() {
+        if (!isConnected()) {
+            return;
+        }
+
+        // We use tryAcquire so we don't block the scheduler thread.
+        // If a text message is sending, we just skip this heartbeat.
+        if (radioLock.tryAcquire()) {
+            try {
+                log.trace("[TX] Sending Heartbeat");
+                sendToRadio(ToRadio.newBuilder().setHeartbeat(Heartbeat.newBuilder().build()).build());
+            } finally {
+                // Heartbeats are instant, no ACK needed, release immediately
+                radioLock.release();
+            }
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // Events
+    // -------------------------------------------------------------------------
     private class InternalDispatcher implements MeshEventDispatcher {
 
         @Override
-        public void onChatMessage(ChatMessageEvent event) {
-            notifyListeners(l -> l.onTextMessage(event));
+        public void onChatMessage(ChatMessageEvent e) {
+            notifyListeners(l -> l.onTextMessage(e));
         }
 
         @Override
-        public void onPositionUpdate(PositionUpdateEvent event) {
-            notifyListeners(l -> l.onPositionUpdate(event));
+        public void onPositionUpdate(PositionUpdateEvent e) {
+            notifyListeners(l -> l.onPositionUpdate(e));
         }
 
         @Override
-        public void onTelemetryUpdate(TelemetryUpdateEvent event) {
-            notifyListeners(l -> l.onTelemetryUpdate(event));
+        public void onTelemetryUpdate(TelemetryUpdateEvent e) {
+            notifyListeners(l -> l.onTelemetryUpdate(e));
         }
 
         @Override
-        public void onNodeDiscovery(NodeDiscoveryEvent event) {
-            notifyListeners(l -> l.onNodeDiscovery(event));
+        public void onNodeDiscovery(NodeDiscoveryEvent e) {
+            notifyListeners(l -> l.onNodeDiscovery(e));
         }
 
         @Override
-        public void onMessageStatusUpdate(MessageStatusEvent event) {
-            notifyListeners(l -> l.onMessageStatusUpdate(event));
+        public void onMessageStatusUpdate(MessageStatusEvent e) {
+            notifyListeners(l -> l.onMessageStatusUpdate(e));
         }
+    }
+
+    private final List<MeshtasticEventListener> listeners = new CopyOnWriteArrayList<>();
+
+    public void addEventListener(MeshtasticEventListener l) {
+        listeners.add(l);
     }
 
     private void notifyListeners(Consumer<MeshtasticEventListener> action) {
@@ -235,197 +468,9 @@ public class MeshtasticClient {
             eventBus.execute(() -> {
                 try {
                     action.accept(l);
-                } catch (Exception e) {
-                    log.error("Error in listener callback", e);
+                } catch (Exception ignored) {
                 }
             });
         }
-    }
-
-    // --- Public API ---
-    /**
-     * Sends the config request and stores the ID so we can listen for the echo
-     * when the radio is finished.
-     */
-    public void requestLocalConfig() {
-        this.currentSyncId = (int) (System.currentTimeMillis() / 1000);
-        log.info(">>> Requesting Local Config with Sync ID: {}", currentSyncId);
-
-        sendToRadio(ToRadio.newBuilder()
-                .setWantConfigId(currentSyncId)
-                .build());
-    }
-
-    /**
-     * Manually requests the radio to re-send or fetch the NodeInfo (User) data.
-     *
-     * @return The generated Packet ID to track for ACKs.
-     */
-    public int refreshNodeInfo(int nodeId) {
-        log.info(">>> Requesting NodeInfo: !{}", MeshUtils.formatId(nodeId));
-        return sendRequest(nodeId, PortNum.NODEINFO_APP);
-    }
-
-    /**
-     * Requests the latest Position (GPS) from a specific node.
-     *
-     * @return The generated Packet ID to track for ACKs.
-     */
-    public int requestPosition(int nodeId) {
-        log.info(">>> Requesting Position: !{}", MeshUtils.formatId(nodeId));
-        return sendRequest(nodeId, PortNum.POSITION_APP);
-    }
-
-    /**
-     * Requests Telemetry (Battery, Voltage, etc.) from a specific node.
-     *
-     * @return The generated Packet ID to track for ACKs.
-     */
-    public int requestTelemetry(int nodeId) {
-        log.info(">>> Requesting Telemetry: !{}", MeshUtils.formatId(nodeId));
-        return sendRequest(nodeId, PortNum.TELEMETRY_APP);
-    }
-
-    /**
-     * Refactored helper to generate and return a Packet ID.
-     */
-    private int sendRequest(int nodeId, PortNum port) {
-        // 1. Generate a unique ID (Same logic as your sendRawText method)
-        int packetId = ThreadLocalRandom.current().nextInt(1, Integer.MAX_VALUE);
-
-        // 2. Create empty data payload for the specific port
-        Data payload = Data.newBuilder()
-                .setPortnum(port)
-                .build();
-
-        // 3. Wrap in MeshPacket and set the ID
-        MeshPacket pk = MeshPacket.newBuilder()
-                .setTo(nodeId)
-                .setDecoded(payload)
-                .setWantAck(true)
-                .setId(packetId) // CRITICAL: This links the packet to the ACK
-                .build();
-
-        // 4. Wrap in ToRadio and send
-        ToRadio request = ToRadio.newBuilder()
-                .setPacket(pk)
-                .build();
-
-        sendToRadio(request);
-
-        return packetId; // Return to the UI for tracking
-    }
-
-    public void addEventListener(MeshtasticEventListener listener) {
-        listeners.add(listener);
-    }
-
-    public void removeEventListener(MeshtasticEventListener listener) {
-        listeners.remove(listener);
-    }
-
-    /**
-     * Sends a text message with automatic MTU chunking logic.
-     */
-    /**
-     * Sends a text message with automatic MTU chunking logic.
-     *
-     * @return The ID of the first (or only) packet sent.
-     */
-    public int sendMessage(MessageRequest request) {
-        byte[] bytes = request.getText().getBytes(StandardCharsets.UTF_8);
-
-        if (bytes.length <= 200) {
-            return sendRawText(request.getRecipientId(), request.getText()); // Return ID
-        } else if (request.isAutoChunk()) {
-            var result = MeshtasticChunker.prepare(request.getText());
-            List<String> chunks = result.getFormattedChunks();
-
-            // For chunked messages, we return the ID of the FIRST chunk
-            int firstId = sendRawText(request.getRecipientId(), chunks.get(0));
-
-            for (int i = 1; i < chunks.size(); i++) {
-                final String chunk = chunks.get(i);
-                internalScheduler.schedule(() -> sendRawText(request.getRecipientId(), chunk),
-                        (long) i * request.getDelayBetweenChunks(), TimeUnit.MILLISECONDS);
-            }
-            return firstId;
-        } else {
-            log.error("Message exceeds 200 byte MTU. Enable autoChunk.");
-            return -1;
-        }
-    }
-
-    private int sendRawText(int to, String text) {
-        // Generate the ID here so we can return it
-        int packetId = (int) (System.currentTimeMillis() % Integer.MAX_VALUE);
-
-        var data = MeshProtos.Data.newBuilder()
-                .setPortnum(Portnums.PortNum.TEXT_MESSAGE_APP)
-                .setPayload(ByteString.copyFrom(text, StandardCharsets.UTF_8))
-                .build();
-
-        var packet = MeshProtos.MeshPacket.newBuilder()
-                .setTo(to)
-                .setDecoded(data)
-                .setWantAck(true)
-                .setId(packetId) // Use the variable we just created
-                .build();
-
-        sendToRadio(ToRadio.newBuilder().setPacket(packet).build());
-
-        return packetId; // Return the ID to the UI
-    }
-
-    /**
-     * Routes a ToRadio packet to the current transport. Synchronized to prevent
-     * overlapping writes.
-     *
-     * @param toRadio
-     */
-    public synchronized void sendToRadio(ToRadio toRadio) {
-        if (!isConnected()) {
-            log.warn("Attempted to send packet while disconnected. Packet dropped.");
-            return;
-        }
-        transport.write(toRadio.toByteArray());
-    }
-
-    public boolean isConnected() {
-        return connected && transport != null && transport.isConnected();
-    }
-
-    /**
-     * Stops the current transport but keeps executors alive for future
-     * connections.
-     */
-    public synchronized void disconnect() {
-        if (transport != null) {
-            transport.stop();
-            transport = null;
-        }
-        connected = false;
-    }
-
-    /**
-     * Permanently shuts down the client and releases all thread resources.
-     */
-    public void shutdown() {
-        disconnect();
-
-        eventBus.shutdown();
-        internalScheduler.shutdown();
-
-        try {
-            if (!eventBus.awaitTermination(2, TimeUnit.SECONDS)) {
-                eventBus.shutdownNow();
-            }
-            if (!internalScheduler.awaitTermination(2, TimeUnit.SECONDS)) {
-                internalScheduler.shutdownNow();
-            }
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-        }
-        log.info("Client resources released.");
     }
 }

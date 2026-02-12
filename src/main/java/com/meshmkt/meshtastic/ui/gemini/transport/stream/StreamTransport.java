@@ -35,7 +35,7 @@ public abstract class StreamTransport extends AbstractFramedTransport {
      * responsible for framing the data before the physical write.
      */
     @Override
-    protected void sendRawBytes(byte[] protobufData) throws Exception {
+    protected synchronized void sendRawBytes(byte[] protobufData) throws Exception {
         // 1. Apply Meshtastic Protocol Framing
         // Header: [Magic1: 0x94][Magic2: 0xC3][LengthMSB][LengthLSB]
         byte[] framed = new byte[protobufData.length + 4];

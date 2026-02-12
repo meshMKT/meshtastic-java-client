@@ -5,6 +5,7 @@ import com.fazecast.jSerialComm.SerialPortDataListener;
 import com.fazecast.jSerialComm.SerialPortEvent;
 import com.meshmkt.meshtastic.ui.gemini.transport.stream.StreamTransport;
 import java.io.IOException;
+import lombok.extern.slf4j.Slf4j;
 
 /**
  * <h2>Serial Transport</h2>
@@ -13,6 +14,7 @@ import java.io.IOException;
  * fulfill the physical layer requirements of StreamTransport.
  * </p>
  */
+@Slf4j
 public class SerialTransport extends StreamTransport {
 
     private final SerialConfig config;
@@ -66,7 +68,7 @@ public class SerialTransport extends StreamTransport {
             }
         });
     }
-
+    
     /**
      * Physical implementation of the framed write. Magic bytes and length are
      * already applied by the StreamTransport layer.
@@ -77,6 +79,7 @@ public class SerialTransport extends StreamTransport {
             throw new IOException("Port is closed");
         }
 
+        log.info("PHYSICAL WRITE: {} bytes to port {}", framedData.length, config.getPortName());
         int written = port.writeBytes(framedData, framedData.length);
         if (written < 0) {
             throw new IOException("Serial write failed.");
