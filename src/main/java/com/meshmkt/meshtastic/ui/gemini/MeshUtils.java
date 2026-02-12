@@ -41,6 +41,30 @@ public final class MeshUtils {
         // Prevent instantiation
     }
 
+    /**
+     * Converts !ddac (hex) or 371903 (decimal) to the raw integer ID
+     * @param input
+     * @return 
+     */
+    public static int parseId(String input) {
+        if (input == null) {
+            return 0;
+        }
+        // Remove ! prefix if present
+        String clean = input.trim().toLowerCase();
+        if (clean.startsWith("!")) {
+            clean = clean.substring(1);
+        }
+
+        try {
+            // ALWAYS parse as Hex for Meshtastic IDs
+            return (int) Long.parseUnsignedLong(clean, 16);
+        } catch (NumberFormatException e) {
+            // Only fallback to decimal if it's strictly digits and not hex
+            return (int) Long.parseUnsignedLong(clean, 10);
+        }
+    }
+
     // --- Identity & Naming ---
     /**
      * Formats a raw 32-bit Node ID into the standard Meshtastic hex string.
