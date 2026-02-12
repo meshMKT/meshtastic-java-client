@@ -1,5 +1,6 @@
 package com.meshmkt.meshtastic.ui.gemini.handlers;
 
+import com.meshmkt.meshtastic.ui.gemini.MeshUtils;
 import com.meshmkt.meshtastic.ui.gemini.event.MeshEventDispatcher;
 import com.meshmkt.meshtastic.ui.gemini.event.MessageStatusEvent;
 import com.meshmkt.meshtastic.ui.gemini.storage.NodeDatabase;
@@ -37,7 +38,7 @@ public class RoutingHandler extends BaseMeshHandler {
 
             log.info("[ROUTING] Status: {} from !{} for Packet: {}",
                     routing.getErrorReason(),
-                    Integer.toHexString(packet.getFrom()),
+                    MeshUtils.formatId(packet.getFrom()),
                     packet.getId());
 
             dispatcher.onMessageStatusUpdate(event);
