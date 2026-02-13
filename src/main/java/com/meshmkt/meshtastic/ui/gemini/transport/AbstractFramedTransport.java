@@ -219,6 +219,7 @@ public abstract class AbstractFramedTransport implements MeshtasticTransport {
 
         try {
             disconnect();
+            notifyDisconnected();
 
             if (consumerExecutor != null) {
                 consumerExecutor.shutdownNow();
@@ -235,8 +236,6 @@ public abstract class AbstractFramedTransport implements MeshtasticTransport {
 
             dataQueue.clear();
             txQueue.clear();
-
-            notifyDisconnected();
 
         } catch (Exception e) {
             notifyError(e);

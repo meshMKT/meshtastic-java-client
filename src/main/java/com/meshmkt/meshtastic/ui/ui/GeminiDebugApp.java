@@ -181,6 +181,7 @@ public class GeminiDebugApp implements MeshtasticEventListener, NodeDatabaseObse
         dmPanel.add(sendDMBtn);
 
         client.addEventListener(this);
+       
         statusBar = new MeshStatusBar(nodeDb);
 
         JPanel footerStack = new JPanel();
@@ -475,6 +476,9 @@ public class GeminiDebugApp implements MeshtasticEventListener, NodeDatabaseObse
             client.disconnect();
             nodeListModel.stopJanitor();
         }
+        
+        connectBtn.setEnabled(true);
+        disconnectBtn.setEnabled(false);
     }
 
     private void updateSelectionDependentButtons() {
