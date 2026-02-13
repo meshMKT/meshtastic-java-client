@@ -11,6 +11,10 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
+/**
+ *
+ * @author tmulle
+ */
 @Slf4j
 public class InMemoryNodeDatabase extends AbstractNodeDatabase {
 
@@ -131,12 +135,19 @@ public class InMemoryNodeDatabase extends AbstractNodeDatabase {
         updateNodeRecord(ctx, r -> r.setEnvMetrics(e));
     }
 
+    /**
+     *
+     */
     @Override
     public void clear() {
         nodes.clear();
         notifyNodesPurged();
     }
 
+    /**
+     *
+     * @param cutoffMs
+     */
     @Override
     protected void performPurge(long cutoffMs) {
         long cutoffSecs = cutoffMs / 1000;
@@ -150,6 +161,10 @@ public class InMemoryNodeDatabase extends AbstractNodeDatabase {
         notifyNodesPurged();
     }
 
+    /**
+     *
+     * @return
+     */
     @Override
     public Collection<MeshNode> getAllNodes() {
         return nodes.entrySet().stream()
@@ -157,6 +172,11 @@ public class InMemoryNodeDatabase extends AbstractNodeDatabase {
                 .collect(Collectors.toList());
     }
 
+    /**
+     *
+     * @param id
+     * @return
+     */
     @Override
     public Optional<MeshNode> getNode(int id) {
         NodeRecord r = nodes.get(id);

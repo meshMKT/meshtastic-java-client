@@ -15,6 +15,11 @@ import org.meshtastic.proto.Portnums.PortNum;
 @Slf4j
 public class TextMessageHandler extends BaseMeshHandler {
 
+    /**
+     *
+     * @param nodeDb
+     * @param dispatcher
+     */
     public TextMessageHandler(NodeDatabase nodeDb, MeshEventDispatcher dispatcher) {
         super(nodeDb, dispatcher);
     }

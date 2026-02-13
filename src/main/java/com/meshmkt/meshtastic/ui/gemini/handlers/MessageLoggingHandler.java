@@ -15,6 +15,10 @@ public class MessageLoggingHandler extends BaseMeshHandler {
 
     private static final Logger log = LoggerFactory.getLogger("MeshChat");
 
+    /**
+     *
+     * @param nodeDb
+     */
     public MessageLoggingHandler(NodeDatabase nodeDb) {
         super(nodeDb, null); // No dispatcher needed for simple logging
     }

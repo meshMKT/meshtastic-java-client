@@ -20,6 +20,10 @@ public class SerialTransport extends StreamTransport {
     private final SerialConfig config;
     private SerialPort port;
 
+    /**
+     *
+     * @param config
+     */
     public SerialTransport(SerialConfig config) {
         this.config = config;
     }
@@ -72,6 +76,8 @@ public class SerialTransport extends StreamTransport {
     /**
      * Physical implementation of the framed write. Magic bytes and length are
      * already applied by the StreamTransport layer.
+     * @param framedData
+     * @throws java.io.IOException
      */
     @Override
     protected void writeToPhysicalLayer(byte[] framedData) throws IOException {

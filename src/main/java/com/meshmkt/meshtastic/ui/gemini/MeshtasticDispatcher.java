@@ -21,12 +21,17 @@ public class MeshtasticDispatcher {
         return t;
     });
 
+    /**
+     *
+     * @param handler
+     */
     public void registerHandler(MeshtasticMessageHandler handler) {
         handlers.add(handler);
     }
 
     /**
      * Hands off the message to the worker queue immediately.
+     * @param message
      */
     public void enqueue(MeshProtos.FromRadio message) {
         if (!worker.isShutdown()) {
@@ -51,6 +56,9 @@ public class MeshtasticDispatcher {
         }
     }
 
+    /**
+     *
+     */
     public void shutdown() {
         worker.shutdown();
     }

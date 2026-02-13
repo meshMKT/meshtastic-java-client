@@ -15,6 +15,11 @@ import org.meshtastic.proto.Portnums.PortNum;
 @Slf4j
 public class PositionHandler extends BaseMeshHandler {
 
+    /**
+     *
+     * @param nodeDb
+     * @param dispatcher
+     */
     public PositionHandler(NodeDatabase nodeDb, MeshEventDispatcher dispatcher) {
         super(nodeDb, dispatcher);
     }

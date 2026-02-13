@@ -11,12 +11,20 @@ import java.util.List;
 public class MeshtasticChunker {
     private static final int ABSOLUTE_MAX_MTU = 180; // To keep it safe plus some overhead
 
+    /**
+     *
+     */
     @Value
     public static class ChunkedResult {
         List<String> formattedChunks;
         boolean multiPart;
     }
 
+    /**
+     *
+     * @param text
+     * @return
+     */
     public static ChunkedResult prepare(String text) {
         byte[] allBytes = text.getBytes(StandardCharsets.UTF_8);
         if (allBytes.length <= ABSOLUTE_MAX_MTU) {

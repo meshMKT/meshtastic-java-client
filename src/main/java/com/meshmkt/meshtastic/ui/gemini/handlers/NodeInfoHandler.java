@@ -17,6 +17,11 @@ import org.meshtastic.proto.Portnums.PortNum;
 @Slf4j
 public class NodeInfoHandler extends BaseMeshHandler {
 
+    /**
+     *
+     * @param nodeDb
+     * @param dispatcher
+     */
     public NodeInfoHandler(NodeDatabase nodeDb, MeshEventDispatcher dispatcher) {
         super(nodeDb, dispatcher);
     }
@@ -31,6 +36,8 @@ public class NodeInfoHandler extends BaseMeshHandler {
      * LOCAL HANDSHAKE (Non-Packet): The radio is dumping its internal list of
      * nodes to us via Serial/Bluetooth. These represent "Cached" nodes and do
      * not have current signal (SNR/RSSI) data.
+     * @param message
+     * @return 
      */
     @Override
     protected boolean handleNonPacketMessage(MeshProtos.FromRadio message) {
@@ -73,6 +80,9 @@ public class NodeInfoHandler extends BaseMeshHandler {
      * OVER-THE-AIR BROADCAST (Packet): A node just broadcast its User info to
      * the whole mesh. This IS a live radio event and includes signal metadata
      * (SNR/RSSI).
+     * @param packet
+     * @param ctx
+     * @return 
      */
     @Override
     protected boolean handlePacket(MeshProtos.MeshPacket packet, PacketContext ctx) {

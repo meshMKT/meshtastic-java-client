@@ -62,6 +62,7 @@ public class MeshtasticFrameDecoder {
      * signed-to-unsigned conversion and state transitions.
      *
      * * @param b The raw byte from the hardware interface.
+     * @param b
      */
     public void processByte(byte b) {
 

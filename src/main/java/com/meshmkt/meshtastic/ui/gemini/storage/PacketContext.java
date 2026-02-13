@@ -5,7 +5,10 @@ import lombok.Builder;
 import lombok.Value;
 import org.meshtastic.proto.MeshProtos;
 
-
+/**
+ *
+ * @author tmulle
+ */
 @Value
 @Builder
 public class PacketContext {
@@ -34,6 +37,11 @@ public class PacketContext {
     
     MeshProtos.MeshPacket rawProto;
 
+    /**
+     *
+     * @param message
+     * @return
+     */
     public static PacketContext from(MeshProtos.FromRadio message) {
         MeshProtos.MeshPacket p = message.getPacket();
 
@@ -55,6 +63,10 @@ public class PacketContext {
                 .build();
     }
 
+    /**
+     *
+     * @return
+     */
     public int getHopsAway() {
         // Standard formula: How many hops were consumed?
         return Math.max(0, hopStart - hopLimit);

@@ -120,10 +120,36 @@ public class MeshNode {
         return position != null && position.getLatitudeI() != 0 && position.getLongitudeI() != 0;
     }
 
+    /**
+     *
+     */
     public enum NodeStatus {
-        SELF, LIVE, CACHED, OFFLINE
+
+        /**
+         *
+         */
+        SELF,
+
+        /**
+         *
+         */
+        LIVE,
+
+        /**
+         *
+         */
+        CACHED,
+
+        /**
+         *
+         */
+        OFFLINE
     }
 
+    /**
+     *
+     * @return
+     */
     public String getHexId() {
         return String.format("!%08x", nodeId);
     }
@@ -133,6 +159,7 @@ public class MeshNode {
      */
     /**
      * The single source of truth for node state using modern JDK 8+ Time API.
+     * @return 
      */
     public NodeStatus getCalculatedStatus() {
         if (this.self) {

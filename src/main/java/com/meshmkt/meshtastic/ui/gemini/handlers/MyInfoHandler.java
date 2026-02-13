@@ -5,8 +5,17 @@ import com.meshmkt.meshtastic.ui.gemini.storage.NodeDatabase;
 import com.meshmkt.meshtastic.ui.gemini.storage.PacketContext;
 import org.meshtastic.proto.MeshProtos;
 
+/**
+ *
+ * @author tmulle
+ */
 public class MyInfoHandler extends BaseMeshHandler {
 
+    /**
+     *
+     * @param nodeDb
+     * @param dispatcher
+     */
     public MyInfoHandler(NodeDatabase nodeDb, MeshEventDispatcher dispatcher) {
         super(nodeDb, dispatcher);
     }

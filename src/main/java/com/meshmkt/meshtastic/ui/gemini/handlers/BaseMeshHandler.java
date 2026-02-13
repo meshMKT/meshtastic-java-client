@@ -12,9 +12,21 @@ import org.meshtastic.proto.MeshProtos;
  */
 public abstract class BaseMeshHandler implements MeshtasticMessageHandler {
 
+    /**
+     *
+     */
     protected final NodeDatabase nodeDb;
+
+    /**
+     *
+     */
     protected final MeshEventDispatcher dispatcher;
 
+    /**
+     *
+     * @param nodeDb
+     * @param dispatcher
+     */
     protected BaseMeshHandler(NodeDatabase nodeDb, MeshEventDispatcher dispatcher) {
         this.nodeDb = nodeDb;
         this.dispatcher = dispatcher;
@@ -48,6 +60,8 @@ public abstract class BaseMeshHandler implements MeshtasticMessageHandler {
     /**
      * Override this to handle local radio events like NodeInfo syncs or MyInfo.
      * These do NOT contain signal metadata (SNR/RSSI).
+     * @param message
+     * @return 
      */
     protected boolean handleNonPacketMessage(MeshProtos.FromRadio message) {
         return false;
@@ -56,9 +70,17 @@ public abstract class BaseMeshHandler implements MeshtasticMessageHandler {
     /**
      * Override this to handle live data heard over the mesh frequency. These
      * ALWAYS contain signal metadata.
+     * @param packet
+     * @param ctx
+     * @return 
      */
     protected abstract boolean handlePacket(MeshProtos.MeshPacket packet, PacketContext ctx);
 
+    /**
+     *
+     * @param nodeId
+     * @return
+     */
     protected String resolveName(int nodeId) {
         return nodeDb.getNode(nodeId)
                 .map(MeshUtils::resolveName)

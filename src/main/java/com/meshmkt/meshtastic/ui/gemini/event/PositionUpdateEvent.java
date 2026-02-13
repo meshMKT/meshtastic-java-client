@@ -9,7 +9,10 @@ import lombok.AllArgsConstructor;
 import lombok.Getter;
 import org.meshtastic.proto.MeshProtos;
 
-
+/**
+ *
+ * @author tmulle
+ */
 @Getter
 @AllArgsConstructor(access = AccessLevel.PRIVATE)
 public class PositionUpdateEvent extends MeshEvent {
@@ -22,6 +25,14 @@ public class PositionUpdateEvent extends MeshEvent {
     // We keep the raw proto so the UI can check things like 'time' or 'PDOP'
     private final MeshProtos.Position rawPosition;
 
+    /**
+     *
+     * @param p
+     * @param ctx
+     * @param selfId
+     * @param raw
+     * @return
+     */
     public static PositionUpdateEvent of(MeshProtos.MeshPacket p, PacketContext ctx, int selfId, MeshProtos.Position raw) {
         return new PositionUpdateEvent(
                 MeshUtils.toDecimal(raw.getLatitudeI()),

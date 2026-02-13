@@ -51,6 +51,10 @@ public class MeshtasticClient {
      */
     private final Map<Integer, CompletableFuture<MeshPacket>> pendingRequests = new ConcurrentHashMap<>();
 
+    /**
+     *
+     * @param database
+     */
     public MeshtasticClient(NodeDatabase database) {
         this.nodeDb = database;
         this.dispatcher = new MeshtasticDispatcher();
@@ -99,6 +103,9 @@ public class MeshtasticClient {
     /**
      * Sends a Private Message (DM). DMs almost always go over the Primary
      * channel (0).
+     * @param nodeId
+     * @param text
+     * @return 
      */
     public CompletableFuture<Boolean> sendDirectText(int nodeId, String text) {
         return sendText(nodeId, 0, text);
@@ -106,6 +113,9 @@ public class MeshtasticClient {
 
     /**
      * Broadcasts to a specific channel.
+     * @param channelIndex
+     * @param text
+     * @return 
      */
     public CompletableFuture<Boolean> sendChannelText(int channelIndex, String text) {
         return sendText(MeshConstants.ID_BROADCAST, channelIndex, text);
@@ -298,6 +308,10 @@ public class MeshtasticClient {
         });
     }
 
+    /**
+     *
+     * @param newTransport
+     */
     public synchronized void connect(MeshtasticTransport newTransport) {
         if (transport != null) {
             disconnect();
@@ -307,6 +321,9 @@ public class MeshtasticClient {
         transport.start();
     }
 
+    /**
+     *
+     */
     public synchronized void disconnect() {
         if (transport != null) {
             transport.stop();
@@ -338,10 +355,17 @@ public class MeshtasticClient {
         }
     }
 
+    /**
+     *
+     * @return
+     */
     public boolean isConnected() {
         return connected && transport != null && transport.isConnected();
     }
 
+    /**
+     *
+     */
     public void shutdown() {
         disconnect();
         scheduler.shutdown();
@@ -353,6 +377,8 @@ public class MeshtasticClient {
     // -------------------------------------------------------------------------
     /**
      * Explicitly requests NodeInfo from a specific node.
+     * @param nodeId
+     * @return 
      */
     public CompletableFuture<MeshPacket> refreshNodeInfo(int nodeId) {
         log.info("[UTIL] Requesting NodeInfo for {}", nodeId);
@@ -369,6 +395,8 @@ public class MeshtasticClient {
 
     /**
      * Explicitly requests a Position update from a specific node.
+     * @param nodeId
+     * @return 
      */
     public CompletableFuture<MeshPacket> requestPosition(int nodeId) {
         log.info("[UTIL] Requesting Position from {}", nodeId);
@@ -385,6 +413,8 @@ public class MeshtasticClient {
 
     /**
      * Explicitly requests Telemetry (battery, etc) from a specific node.
+     * @param nodeId
+     * @return 
      */
     public CompletableFuture<MeshPacket> requestTelemetry(int nodeId) {
         log.info("[UTIL] Requesting Telemetry from {}", nodeId);
@@ -459,6 +489,10 @@ public class MeshtasticClient {
 
     private final List<MeshtasticEventListener> listeners = new CopyOnWriteArrayList<>();
 
+    /**
+     *
+     * @param l
+     */
     public void addEventListener(MeshtasticEventListener l) {
         listeners.add(l);
     }

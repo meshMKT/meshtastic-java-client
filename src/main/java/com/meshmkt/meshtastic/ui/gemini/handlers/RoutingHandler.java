@@ -16,6 +16,11 @@ import org.meshtastic.proto.Portnums.PortNum;
 @Slf4j
 public class RoutingHandler extends BaseMeshHandler {
 
+    /**
+     *
+     * @param nodeDb
+     * @param dispatcher
+     */
     public RoutingHandler(NodeDatabase nodeDb, MeshEventDispatcher dispatcher) {
         super(nodeDb, dispatcher);
     }

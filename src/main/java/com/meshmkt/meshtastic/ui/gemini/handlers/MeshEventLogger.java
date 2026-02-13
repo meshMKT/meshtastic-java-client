@@ -21,6 +21,10 @@ public class MeshEventLogger extends BaseMeshHandler {
     private static final DateTimeFormatter TIME_FORMAT = DateTimeFormatter.ofPattern("HH:mm:ss.SSS")
             .withZone(ZoneId.systemDefault());
 
+    /**
+     *
+     * @param nodeDb
+     */
     public MeshEventLogger(NodeDatabase nodeDb) {
         super(nodeDb, null);
     }
@@ -32,6 +36,8 @@ public class MeshEventLogger extends BaseMeshHandler {
 
     /**
      * Handles local serial/BLE handshake messages.
+     * @param message
+     * @return 
      */
     @Override
     protected boolean handleNonPacketMessage(MeshProtos.FromRadio message) {
@@ -53,6 +59,9 @@ public class MeshEventLogger extends BaseMeshHandler {
 
     /**
      * Handles live Over-The-Air traffic.
+     * @param packet
+     * @param ctx
+     * @return 
      */
     @Override
     protected boolean handlePacket(MeshProtos.MeshPacket packet, PacketContext ctx) {

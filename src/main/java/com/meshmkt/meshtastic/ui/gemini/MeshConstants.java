@@ -1,16 +1,40 @@
 package com.meshmkt.meshtastic.ui.gemini;
 
+/**
+ *
+ * @author tmulle
+ */
 public final class MeshConstants {
 
     private MeshConstants() {}
 
     // --- Node ID Constants ---
+
+    /**
+     *
+     */
     public static final int ID_BROADCAST = 0xFFFFFFFF;
+
+    /**
+     *
+     */
     public static final int ID_UNKNOWN = 0;
 
     // --- Distance Constants ---
+
+    /**
+     *
+     */
     public static final double DISTANCE_UNKNOWN = -1.0;
+
+    /**
+     *
+     */
     public static final double DISTANCE_MQTT = -2.0;
+
+    /**
+     *
+     */
     public static final double DISTANCE_SELF = 0.0;
 
     // --- Timing & Freshness ---

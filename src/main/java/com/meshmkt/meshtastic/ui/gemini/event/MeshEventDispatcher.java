@@ -5,13 +5,33 @@ package com.meshmkt.meshtastic.ui.gemini.event;
  */
 public interface MeshEventDispatcher {
 
+    /**
+     *
+     * @param event
+     */
     void onChatMessage(ChatMessageEvent event);
 
+    /**
+     *
+     * @param event
+     */
     void onPositionUpdate(PositionUpdateEvent event);
 
+    /**
+     *
+     * @param event
+     */
     void onTelemetryUpdate(TelemetryUpdateEvent event);
 
+    /**
+     *
+     * @param event
+     */
     void onNodeDiscovery(NodeDiscoveryEvent event);
 
+    /**
+     *
+     * @param event
+     */
     void onMessageStatusUpdate(MessageStatusEvent event);
 }

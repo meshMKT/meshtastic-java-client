@@ -43,7 +43,11 @@ public class ChatMessageEvent extends MeshEvent {
     /**
      * Factory to create a Chat event.
      *
+     * @param p
      * @param text The decoded UTF-8 string.
+     * @param ctx
+     * @param selfId
+     * @return 
      */
     public static ChatMessageEvent of(MeshProtos.MeshPacket p, PacketContext ctx, int selfId, String text) {
         MeshProtos.Data data = p.getDecoded();

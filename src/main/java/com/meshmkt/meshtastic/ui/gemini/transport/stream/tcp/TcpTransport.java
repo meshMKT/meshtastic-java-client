@@ -21,6 +21,10 @@ public class TcpTransport extends StreamTransport {
     private OutputStream outputStream;
     private volatile boolean connected = false;
 
+    /**
+     *
+     * @param config
+     */
     public TcpTransport(TcpConfig config) {
         this.config = config;
     }
@@ -71,6 +75,8 @@ public class TcpTransport extends StreamTransport {
 
     /**
      * Physical implementation of the framed write.
+     * @param framedData
+     * @throws java.io.IOException
      */
     @Override
     protected void writeToPhysicalLayer(byte[] framedData) throws IOException {

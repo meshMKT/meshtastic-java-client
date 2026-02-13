@@ -22,11 +22,35 @@ public class TelemetryUpdateEvent extends MeshEvent {
      * Matches the Telemetry variant cases in the Protobuf definition.
      */
     public enum TelemetryVariant {
+
+        /**
+         *
+         */
         DEVICE_METRICS,
+
+        /**
+         *
+         */
         ENVIRONMENT_METRICS,
+
+        /**
+         *
+         */
         AIR_QUALITY_METRICS,
+
+        /**
+         *
+         */
         POWER_METRICS, // InA219/InA260 sensors
+
+        /**
+         *
+         */
         LOCAL_STATS, // Device uptime/memory
+
+        /**
+         *
+         */
         OTHER          // Catch-all for niche/future types
     }
 
@@ -112,6 +136,7 @@ public class TelemetryUpdateEvent extends MeshEvent {
 
     /**
      * Helper to check if this event contains power/battery info.
+     * @return 
      */
     public boolean isDeviceMetrics() {
         return variant == TelemetryVariant.DEVICE_METRICS;
@@ -119,6 +144,7 @@ public class TelemetryUpdateEvent extends MeshEvent {
 
     /**
      * Helper to check if this event contains weather/env info.
+     * @return 
      */
     public boolean isEnvironmentMetrics() {
         return variant == TelemetryVariant.ENVIRONMENT_METRICS;

@@ -68,6 +68,8 @@ public final class MeshUtils {
     // --- Identity & Naming ---
     /**
      * Formats a raw 32-bit Node ID into the standard Meshtastic hex string.
+     * @param nodeId
+     * @return 
      */
     public static String formatId(int nodeId) {
         if (nodeId == 0) {
@@ -78,6 +80,8 @@ public final class MeshUtils {
 
     /**
      * Resolves the best possible display name from a MeshNode record.
+     * @param node
+     * @return 
      */
     public static String resolveName(MeshNode node) {
         Objects.requireNonNull(node, "MeshNode cannot be null");
@@ -93,6 +97,9 @@ public final class MeshUtils {
 
     /**
      * Resolves a name using raw components.
+     * @param nodeId
+     * @param user
+     * @return 
      */
     public static String resolveName(int nodeId, MeshProtos.User user) {
         if (user != null) {
@@ -149,6 +156,8 @@ public final class MeshUtils {
 
     /**
      * Formats total seconds into a hierarchical string (e.g., "1d 4h 20m 5s").
+     * @param totalSeconds
+     * @return 
      */
     public static String formatUptime(int totalSeconds) {
         if (totalSeconds <= 0) {
@@ -180,6 +189,8 @@ public final class MeshUtils {
 
     /**
      * Calculates seconds elapsed since a given millisecond timestamp.
+     * @param lastSeenMs
+     * @return 
      */
     public static long getSecondsSince(long lastSeenMs) {
         if (lastSeenMs <= 0) {
@@ -189,10 +200,24 @@ public final class MeshUtils {
     }
 
     // --- Geographic Mathematics ---
+
+    /**
+     *
+     * @param scaledInt
+     * @return
+     */
     public static double toDecimal(int scaledInt) {
         return (scaledInt == 0) ? 0.0 : scaledInt / COORD_SCALE;
     }
 
+    /**
+     *
+     * @param lat1
+     * @param lon1
+     * @param lat2
+     * @param lon2
+     * @return
+     */
     public static double calculateDistance(double lat1, double lon1, double lat2, double lon2) {
         double dLat = Math.toRadians(lat2 - lat1);
         double dLon = Math.toRadians(lon2 - lon1);
@@ -206,31 +231,68 @@ public final class MeshUtils {
     }
 
     // --- Unit Conversions ---
+
+    /**
+     *
+     * @param km
+     * @return
+     */
     public static double convertKmToMiles(double km) {
         return (km < 0) ? km : km * KM_TO_MILES;
     }
 
+    /**
+     *
+     * @param km
+     * @return
+     */
     public static double convertKmToMeters(double km) {
         return (km < 0) ? km : km * 1000.0;
     }
 
+    /**
+     *
+     * @param celsius
+     * @return
+     */
     public static float celsiusToFahrenheit(float celsius) {
         return (celsius * 9 / 5) + 32;
     }
 
+    /**
+     *
+     * @param hpa
+     * @return
+     */
     public static float hpaToInHg(float hpa) {
         return hpa * HPA_TO_INHG;
     }
 
+    /**
+     *
+     * @param hpa
+     * @return
+     */
     public static float hpaToMmHg(float hpa) {
         return hpa * HPA_TO_MMHG;
     }
 
     // --- Logical Categorization ---
+
+    /**
+     *
+     * @param rawPercent
+     * @return
+     */
     public static int normalizeBattery(int rawPercent) {
         return Math.max(0, Math.min(100, rawPercent));
     }
 
+    /**
+     *
+     * @param voltage
+     * @return
+     */
     public static int getBatteryHealth(float voltage) {
         if (voltage <= 0) {
             return 2;
@@ -247,6 +309,11 @@ public final class MeshUtils {
         return 2;
     }
 
+    /**
+     *
+     * @param snr
+     * @return
+     */
     public static int getSignalQuality(float snr) {
         if (snr <= -15) {
             return 0;
@@ -265,6 +332,8 @@ public final class MeshUtils {
 
     /**
      * Resolves a symbolic representation for the node's operational role.
+     * @param role
+     * @return 
      */
     public static String getRoleSymbol(ConfigProtos.Config.DeviceConfig.Role role) {
         if (role == null) {
@@ -301,6 +370,11 @@ public final class MeshUtils {
         };
     }
 
+    /**
+     *
+     * @param gasResistance
+     * @return
+     */
     public static int getAirQualityLevel(float gasResistance) {
         if (gasResistance <= 0) {
             return 1;

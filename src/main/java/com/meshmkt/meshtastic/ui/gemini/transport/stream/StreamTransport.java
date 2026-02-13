@@ -13,14 +13,21 @@ import java.io.IOException;
  */
 public abstract class StreamTransport extends AbstractFramedTransport {
 
+    /**
+     *
+     */
     protected final MeshtasticFrameDecoder frameDecoder;
 
+    /**
+     *
+     */
     protected StreamTransport() {
         this.frameDecoder = new MeshtasticFrameDecoder(this::dispatchToConsumer);
     }
 
     /**
      * Feeds raw data chunks into the byte-by-byte frame decoder.
+     * @param data
      */
     @Override
     protected void handleIncomingRawData(byte[] data) {
@@ -33,6 +40,8 @@ public abstract class StreamTransport extends AbstractFramedTransport {
      * Implementation of the Template Method from AbstractFramedTransport. This
      * method is called after the base class has validated connectivity and is
      * responsible for framing the data before the physical write.
+     * @param protobufData
+     * @throws java.lang.Exception
      */
     @Override
     protected synchronized void sendRawBytes(byte[] protobufData) throws Exception {
@@ -57,11 +66,14 @@ public abstract class StreamTransport extends AbstractFramedTransport {
 
     /**
      * Subclasses (Serial/TCP) implement this to transmit the framed packet.
+     * @param framedData
+     * @throws java.io.IOException
      */
     protected abstract void writeToPhysicalLayer(byte[] framedData) throws IOException;
 
     /**
      * Subclasses implement recovery logic (e.g., retry loops).
+     * @param e
      */
     @Override
     protected abstract void handleTransportError(Exception e);
