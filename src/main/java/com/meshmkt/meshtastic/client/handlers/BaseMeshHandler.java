@@ -9,23 +9,27 @@ import org.meshtastic.proto.MeshProtos;
 /**
  * The traffic controller for all incoming radio data. It distinguishes between
  * "Live" mesh packets and "Local" status messages.
+ * <p>
+ * Every handler receives both a {@link NodeDatabase} and {@link MeshEventDispatcher} for a uniform constructor
+ * contract. Some handlers are state-only and might not publish events directly, but they still share this base type.
+ * </p>
  */
 public abstract class BaseMeshHandler implements MeshtasticMessageHandler {
 
     /**
-     *
+     * Shared node database used to resolve names and update signal/state data.
      */
     protected final NodeDatabase nodeDb;
 
     /**
-     *
+     * Event dispatcher used by handlers that publish mesh events.
+     * State-only handlers may not emit through this field.
      */
     protected final MeshEventDispatcher dispatcher;
 
     /**
-     *
-     * @param nodeDb
-     * @param dispatcher
+     * @param nodeDb shared node database.
+     * @param dispatcher shared event dispatcher.
      */
     protected BaseMeshHandler(NodeDatabase nodeDb, MeshEventDispatcher dispatcher) {
         this.nodeDb = nodeDb;
@@ -46,8 +50,6 @@ public abstract class BaseMeshHandler implements MeshtasticMessageHandler {
         // quality metadata (RSSI/SNR) which we extract into the PacketContext.
         MeshProtos.MeshPacket packet = message.getPacket();
         PacketContext ctx = PacketContext.from(message);
-        
-                
 
         // Record the fact that this node is alive and update signal health
         if (packet.getFrom() != 0) {
@@ -60,8 +62,8 @@ public abstract class BaseMeshHandler implements MeshtasticMessageHandler {
     /**
      * Override this to handle local radio events like NodeInfo syncs or MyInfo.
      * These do NOT contain signal metadata (SNR/RSSI).
-     * @param message
-     * @return 
+     * @param message incoming local-only radio message.
+     * @return {@code true} if handled.
      */
     protected boolean handleNonPacketMessage(MeshProtos.FromRadio message) {
         return false;
@@ -70,18 +72,19 @@ public abstract class BaseMeshHandler implements MeshtasticMessageHandler {
     /**
      * Override this to handle live data heard over the mesh frequency. These
      * ALWAYS contain signal metadata.
-     * @param packet
-     * @param ctx
-     * @return 
+     * @param packet decoded mesh packet.
+     * @param ctx derived packet context (signal, relay, timestamps).
+     * @return {@code true} if handled.
      */
     protected boolean handlePacket(MeshProtos.MeshPacket packet, PacketContext ctx) {
         return false;
     }
 
     /**
+     * Resolves a display name for a node if known, else formatted hex id.
      *
-     * @param nodeId
-     * @return
+     * @param nodeId node number.
+     * @return display-friendly name.
      */
     protected String resolveName(int nodeId) {
         return nodeDb.getNode(nodeId)

@@ -11,8 +11,8 @@ import com.meshmkt.meshtastic.client.event.NodeDiscoveryEvent;
 import com.meshmkt.meshtastic.client.event.PositionUpdateEvent;
 import com.meshmkt.meshtastic.client.event.TelemetryUpdateEvent;
 import com.meshmkt.meshtastic.client.handlers.AdminHandler;
+import com.meshmkt.meshtastic.client.handlers.LocalStateHandler;
 import com.meshmkt.meshtastic.client.handlers.MessageLoggingHandler;
-import com.meshmkt.meshtastic.client.handlers.MyInfoHandler;
 import com.meshmkt.meshtastic.client.handlers.NodeInfoHandler;
 import com.meshmkt.meshtastic.client.handlers.PositionHandler;
 import com.meshmkt.meshtastic.client.handlers.RoutingHandler;
@@ -51,11 +51,16 @@ public class MeshtasticClient {
     private volatile MeshtasticTransport transport;
     private final MeshtasticDispatcher dispatcher;
     private final ScheduledExecutorService scheduler;
-    private final ExecutorService eventBus;
+    private final ExecutorService requestExecutor;
+    private final ExecutorService listenerExecutor;
     private final NodeDatabase nodeDb;
 
     private volatile boolean connected = false;
     private int currentSyncId;
+    private volatile int startupSyncPhase = 0;
+    private volatile boolean sawMyInfoInCurrentPhase = false;
+    private volatile CompletableFuture<Void> startupSyncBarrier = CompletableFuture.completedFuture(null);
+    private volatile long lastRebootSignalAtMs = 0L;
     // This ensures only one request is "In-Flight" to the radio at a time
     private final Semaphore radioLock = new Semaphore(1);
     
@@ -67,6 +72,10 @@ public class MeshtasticClient {
      * for hardware confirmation.
      */
     private final Map<Integer, CompletableFuture<MeshPacket>> pendingRequests = new ConcurrentHashMap<>();
+    private static final long STARTUP_SYNC_TIMEOUT_SECONDS = 45;
+    private static final int NODELESS_WANT_CONFIG_ID = 69420;
+    private static final int FULL_WANT_CONFIG_ID = 69421;
+    private volatile ScheduledFuture<?> heartbeatFuture;
 
     /**
      *
@@ -82,8 +91,14 @@ public class MeshtasticClient {
             return t;
         });
 
-        this.eventBus = Executors.newSingleThreadExecutor(r -> {
-            Thread t = new Thread(r, "Mesh-EventBus");
+        this.requestExecutor = Executors.newSingleThreadExecutor(r -> {
+            Thread t = new Thread(r, "Mesh-RequestExecutor");
+            t.setDaemon(true);
+            return t;
+        });
+
+        this.listenerExecutor = Executors.newSingleThreadExecutor(r -> {
+            Thread t = new Thread(r, "Mesh-ListenerExecutor");
             t.setDaemon(true);
             return t;
         });
@@ -91,7 +106,6 @@ public class MeshtasticClient {
         adminService = new AdminService(this);
         
         initializeHandlers();
-        startHeartbeatTask();
     }
 
     public AdminService getAdminService() {
@@ -109,8 +123,8 @@ public class MeshtasticClient {
     private void initializeHandlers() {
         dispatcher.registerHandler(new MessageLoggingHandler(nodeDb));
         dispatcher.registerHandler(new AdminHandler(nodeDb, internalDispatcher, adminService));
-        dispatcher.registerHandler(new MyInfoHandler(nodeDb, internalDispatcher));
-        dispatcher.registerHandler(new NodeInfoHandler(nodeDb, internalDispatcher));
+        dispatcher.registerHandler(new LocalStateHandler(nodeDb, internalDispatcher, adminService));
+        dispatcher.registerHandler(new NodeInfoHandler(nodeDb, internalDispatcher, adminService));
         dispatcher.registerHandler(new PositionHandler(nodeDb, internalDispatcher));
         dispatcher.registerHandler(new TelemetryHandler(nodeDb, internalDispatcher));
         dispatcher.registerHandler(new RoutingHandler(nodeDb, internalDispatcher));
@@ -228,7 +242,7 @@ public class MeshtasticClient {
                 adminMsg, // The Proto Object
                 null, // No destination app needed
                 0, // Admin usually happens on Primary channel
-                false, // MUST want ACK for Admin ops
+                false, // Admin waits for app response correlation, not routing ACK
                 MeshPacket.class // We expect a MeshPacket back
         ));
     }
@@ -236,9 +250,19 @@ public class MeshtasticClient {
     private <T> CompletableFuture<MeshPacket> executeRequest(MeshRequest<T> request) {
         CompletableFuture<MeshPacket> future = new CompletableFuture<>();
 
-        eventBus.execute(() -> {
+        requestExecutor.execute(() -> {
+            boolean lockAcquired = false;
             try {
+                awaitStartupSyncBarrier();
                 radioLock.acquire();
+                lockAcquired = true;
+
+                if (!isConnected()) {
+                    radioLock.release();
+                    lockAcquired = false;
+                    future.completeExceptionally(new IllegalStateException("Transport disconnected before send"));
+                    return;
+                }
 
                 // 1. Prepare Payload (Handling ByteString vs Raw)
                 ByteString payload = ByteString.EMPTY;
@@ -268,8 +292,11 @@ public class MeshtasticClient {
                         .setId(myPacketId)
                         .build();
 
-                // 3. Register for correlation
-                if (request.wantAck()) {
+                // 3. Register for correlation.
+                // Admin requests wait for ADMIN_APP response correlation via decoded.request_id
+                // even when routing ACK is disabled.
+                boolean awaitCorrelation = request.wantAck() || request.port() == PortNum.ADMIN_APP;
+                if (awaitCorrelation) {
                     pendingRequests.put(myPacketId, future);
                 }
 
@@ -277,7 +304,7 @@ public class MeshtasticClient {
                 sendToRadio(ToRadio.newBuilder().setPacket(packet).build());
 
                 // 4. Handle Lock Release with built-in Cooldown
-                if (!request.wantAck()) {
+                if (!awaitCorrelation) {
                     // Immediate release if no ACK needed
                     radioLock.release();
                     future.complete(packet);
@@ -295,18 +322,31 @@ public class MeshtasticClient {
                     scheduler.schedule(() -> {
                         if (!future.isDone()) {
                             pendingRequests.remove(myPacketId);
-                            future.completeExceptionally(new TimeoutException("ACK Timeout for: " + myPacketId));
+                            future.completeExceptionally(new TimeoutException("Response timeout for: " + myPacketId));
                         }
                     }, 30, TimeUnit.SECONDS);
                 }
 
             } catch (Exception e) {
-                radioLock.release();
+                if (lockAcquired) {
+                    radioLock.release();
+                }
                 future.completeExceptionally(e);
             }
         });
 
         return future;
+    }
+
+    private void awaitStartupSyncBarrier() {
+        CompletableFuture<Void> barrier = startupSyncBarrier;
+        if (barrier != null && !barrier.isDone()) {
+            try {
+                barrier.get(STARTUP_SYNC_TIMEOUT_SECONDS + 5, TimeUnit.SECONDS);
+            } catch (Exception e) {
+                log.warn("[SYNC] Proceeding without completed startup barrier: {}", e.getMessage());
+            }
+        }
     }
 
     /**
@@ -323,21 +363,17 @@ public class MeshtasticClient {
         log.info("correlateResponse - Incoming FromRadio: {}", fromRadio);
         log.info("correlateResponse - Incoming MeshPacket: {}", incoming);
 
-        // Check for ROUTING_APP which contains the ACK delivery status
-        if (decoded.getPortnum() == PortNum.ROUTING_APP) {
-            // Per your logs, the radio puts our original packet ID here
-            int confirmedId = decoded.getRequestId();
-
-            if (confirmedId != 0) {
-                CompletableFuture<MeshPacket> pending = pendingRequests.remove(confirmedId);
-                if (pending != null) {
-                    log.info("[CORRELATOR] Match found for Packet ID: {}. Releasing queue.", confirmedId);
-                    pending.complete(incoming);
-                }
+        // Some responses include the original request id in decoded.request_id.
+        // We complete the pending request immediately when we see that correlation.
+        int confirmedId = decoded.getRequestId();
+        if (confirmedId != 0) {
+            CompletableFuture<MeshPacket> pending = pendingRequests.remove(confirmedId);
+            if (pending != null) {
+                log.info("[CORRELATOR] Match found for Packet ID: {} via port {}. Releasing queue.",
+                        confirmedId, decoded.getPortnum());
+                pending.complete(incoming);
             }
         }
-
-        // FUTURE: Add Admin_APP correlation here if needed
     }
 
     // -------------------------------------------------------------------------
@@ -347,6 +383,8 @@ public class MeshtasticClient {
         t.addParsedPacketConsumer(data -> {
             try {
                 FromRadio fromRadio = FromRadio.parseFrom(data);
+                handleRebootSignal(fromRadio);
+                processStartupSyncSignals(fromRadio);
                 correlateResponse(fromRadio);
                 dispatcher.enqueue(fromRadio);
             } catch (InvalidProtocolBufferException ex) {
@@ -358,18 +396,20 @@ public class MeshtasticClient {
             @Override
             public void onConnected() {
                 connected = true;
-                requestLocalConfig();
+                startStartupSync();
             }
 
             @Override
             public void onDisconnected() {
                 connected = false;
+                stopHeartbeatTask();
                 cancelAllPending();
             }
 
             @Override
             public void onError(Throwable err) {
                 connected = false;
+                stopHeartbeatTask();
                 cancelAllPending();
             }
         });
@@ -383,6 +423,7 @@ public class MeshtasticClient {
         if (transport != null) {
             disconnect();
         }
+        primeStartupSync();
         transport = newTransport;
         setupPipeline(transport);
         transport.start();
@@ -397,6 +438,7 @@ public class MeshtasticClient {
             transport = null;
         }
         connected = false;
+        stopHeartbeatTask();
         cancelAllPending();
     }
 
@@ -411,8 +453,120 @@ public class MeshtasticClient {
         // drainPermits() + release() ensures we are back to exactly 1 permit
         radioLock.drainPermits();
         radioLock.release();
+        resetStartupSync();
 
         log.info("[CLEANUP] All pending requests cancelled and radio lock reset.");
+    }
+
+    private synchronized void primeStartupSync() {
+        startupSyncPhase = 1;
+        sawMyInfoInCurrentPhase = false;
+        startupSyncBarrier = new CompletableFuture<>();
+    }
+
+    private synchronized void startStartupSync() {
+        if (startupSyncPhase == 0) {
+            primeStartupSync();
+        }
+        sendWantConfigForCurrentPhase();
+    }
+
+    private synchronized void sendWantConfigForCurrentPhase() {
+        currentSyncId = (startupSyncPhase == 1) ? NODELESS_WANT_CONFIG_ID : FULL_WANT_CONFIG_ID;
+        final int expectedNonce = currentSyncId;
+        final int expectedPhase = startupSyncPhase;
+
+        log.info("[SYNC] Starting phase {} with want_config_id={}", expectedPhase, expectedNonce);
+        sendToRadio(ToRadio.newBuilder().setWantConfigId(expectedNonce).build());
+
+        scheduler.schedule(() -> {
+            CompletableFuture<Void> barrier = startupSyncBarrier;
+            if (barrier != null && !barrier.isDone()
+                    && startupSyncPhase == expectedPhase
+                    && currentSyncId == expectedNonce) {
+                barrier.completeExceptionally(new TimeoutException(
+                        "Startup sync timeout (phase " + expectedPhase + ", nonce " + expectedNonce + ")"));
+            }
+        }, STARTUP_SYNC_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+    }
+
+    private synchronized void processStartupSyncSignals(FromRadio fromRadio) {
+        if (startupSyncPhase == 0) {
+            return;
+        }
+
+        if (fromRadio.hasMyInfo()) {
+            sawMyInfoInCurrentPhase = true;
+        }
+
+        if (!fromRadio.hasConfigCompleteId()) {
+            return;
+        }
+
+        int completedId = fromRadio.getConfigCompleteId();
+        if (completedId != currentSyncId) {
+            log.debug("[SYNC] Ignoring stale config_complete_id={} while waiting for {}",
+                    completedId, currentSyncId);
+            return;
+        }
+
+        if (startupSyncPhase == 1) {
+            log.info("[SYNC] Phase 1 complete (local identity pass). my_info_seen={}", sawMyInfoInCurrentPhase);
+            CompletableFuture<Void> barrier = startupSyncBarrier;
+            if (barrier != null && !barrier.isDone()) {
+                barrier.complete(null);
+            }
+            startupSyncPhase = 2;
+            sawMyInfoInCurrentPhase = false;
+            sendWantConfigForCurrentPhase();
+            return;
+        }
+
+        if (startupSyncPhase == 2) {
+            log.info("[SYNC] Phase 2 complete (full config/node sync).");
+            startupSyncPhase = 0;
+            startHeartbeatTask();
+            CompletableFuture<Void> barrier = startupSyncBarrier;
+            if (barrier != null && !barrier.isDone()) {
+                barrier.complete(null);
+            }
+        }
+    }
+
+    private synchronized void resetStartupSync() {
+        startupSyncPhase = 0;
+        sawMyInfoInCurrentPhase = false;
+        currentSyncId = 0;
+        CompletableFuture<Void> barrier = startupSyncBarrier;
+        startupSyncBarrier = CompletableFuture.completedFuture(null);
+        if (barrier != null && !barrier.isDone()) {
+            barrier.completeExceptionally(new CancellationException("Disconnected before startup sync completed"));
+        }
+    }
+
+    private void handleRebootSignal(FromRadio fromRadio) {
+        if (!fromRadio.hasRebooted()) {
+            return;
+        }
+
+        long now = System.currentTimeMillis();
+        if (now - lastRebootSignalAtMs < 3000) {
+            return;
+        }
+        lastRebootSignalAtMs = now;
+
+        log.warn("[SYNC] Radio reboot detected. Resetting state and re-syncing.");
+        stopHeartbeatTask();
+        cancelAllPending();
+        adminService.getRadioModel().reset();
+        primeStartupSync();
+
+        // Give the radio a moment to come fully back up before requesting config.
+        scheduler.schedule(() -> {
+            if (isConnected()) {
+                startStartupSync();
+            }
+        }, 2, TimeUnit.SECONDS);
     }
 
     private void sendToRadio(ToRadio toRadio) {
@@ -436,7 +590,8 @@ public class MeshtasticClient {
     public void shutdown() {
         disconnect();
         scheduler.shutdown();
-        eventBus.shutdown();
+        requestExecutor.shutdown();
+        listenerExecutor.shutdown();
     }
 
     // -------------------------------------------------------------------------
@@ -499,13 +654,18 @@ public class MeshtasticClient {
         ));
     }
 
-    private void requestLocalConfig() {
-        this.currentSyncId = (int) (System.currentTimeMillis() / 1000);
-        sendToRadio(ToRadio.newBuilder().setWantConfigId(currentSyncId).build());
+    private synchronized void startHeartbeatTask() {
+        if (heartbeatFuture != null && !heartbeatFuture.isDone()) {
+            return;
+        }
+        heartbeatFuture = scheduler.scheduleAtFixedRate(this::sendHeartbeat, 10, 30, TimeUnit.SECONDS);
     }
 
-    private void startHeartbeatTask() {
-        scheduler.scheduleAtFixedRate(this::sendHeartbeat, 10, 30, TimeUnit.SECONDS);
+    private synchronized void stopHeartbeatTask() {
+        if (heartbeatFuture != null) {
+            heartbeatFuture.cancel(true);
+            heartbeatFuture = null;
+        }
     }
 
     private void sendHeartbeat() {
@@ -569,7 +729,7 @@ public class MeshtasticClient {
 
     private void notifyListeners(Consumer<MeshtasticEventListener> action) {
         for (MeshtasticEventListener l : listeners) {
-            eventBus.execute(() -> {
+            listenerExecutor.execute(() -> {
                 try {
                     action.accept(l);
                 } catch (Exception ignored) {

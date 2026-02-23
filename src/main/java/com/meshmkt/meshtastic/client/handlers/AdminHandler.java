@@ -13,6 +13,12 @@ import org.meshtastic.proto.Portnums.PortNum;
 import static org.meshtastic.proto.Portnums.PortNum.ADMIN_APP;
 
 @Slf4j
+/**
+ * Handles packet-based {@code ADMIN_APP} payloads and forwards decoded admin messages into {@link AdminService}.
+ * <p>
+ * This handler currently acts as a state-ingest bridge and does not publish dispatcher events directly.
+ * </p>
+ */
 public class AdminHandler extends BaseMeshHandler {
 
     private final AdminService adminService;
@@ -42,7 +48,7 @@ public class AdminHandler extends BaseMeshHandler {
                 log.info("[DIAGNOSTIC] Payload: {}", msg);
 
                 // Feed it to the service to see if the model finally populates
-                adminService.updateFromRadio(msg);
+                adminService.ingestAdminMessage(msg);
 
                 return true;
             } catch (Exception e) {

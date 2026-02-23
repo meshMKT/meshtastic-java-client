@@ -4,6 +4,7 @@ import lombok.Data;
 import org.meshtastic.proto.AdminProtos.AdminMessage.ModuleConfigType;
 import org.meshtastic.proto.ChannelProtos.Channel;
 import org.meshtastic.proto.ConfigProtos.Config;
+import org.meshtastic.proto.MeshProtos.DeviceMetadata;
 import org.meshtastic.proto.MeshProtos.User;
 import org.meshtastic.proto.ModuleConfigProtos.ModuleConfig;
 
@@ -26,6 +27,7 @@ public class RadioModel {
     private Config.DeviceConfig deviceConfig;
     private Config.DisplayConfig displayConfig;
     private Config.NetworkConfig networkConfig;
+    private DeviceMetadata deviceMetadata;
 
     // Channel Slots (0-7)
     private final Map<Integer, Channel> channels = new ConcurrentHashMap<>();
@@ -66,6 +68,7 @@ public class RadioModel {
         deviceConfig = null;
         displayConfig = null;
         networkConfig = null;
+        deviceMetadata = null;
         channels.clear();
         moduleConfigs.clear();
     }

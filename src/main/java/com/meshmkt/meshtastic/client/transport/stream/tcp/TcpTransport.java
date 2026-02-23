@@ -56,7 +56,7 @@ public class TcpTransport extends StreamTransport {
         try (BufferedInputStream bis = new BufferedInputStream(socket.getInputStream())) {
             byte[] buffer = new byte[1024];
             int read;
-            while (running && connected && (read = bis.read(buffer)) != -1) {
+            while (connected && (read = bis.read(buffer)) != -1) {
                 if (read > 0) {
                     byte[] data = new byte[read];
                     System.arraycopy(buffer, 0, data, 0, read);

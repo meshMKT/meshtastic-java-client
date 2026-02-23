@@ -3,6 +3,7 @@ package com.meshmkt.meshtastic.client.handlers;
 import com.meshmkt.meshtastic.client.MeshConstants;
 import com.meshmkt.meshtastic.client.event.MeshEventDispatcher;
 import com.meshmkt.meshtastic.client.event.NodeDiscoveryEvent;
+import com.meshmkt.meshtastic.client.service.AdminService;
 import com.meshmkt.meshtastic.client.storage.NodeDatabase;
 import com.meshmkt.meshtastic.client.storage.PacketContext;
 import org.meshtastic.proto.MeshProtos;
@@ -17,13 +18,16 @@ import org.meshtastic.proto.Portnums.PortNum;
 @Slf4j
 public class NodeInfoHandler extends BaseMeshHandler {
 
+    private final AdminService adminService;
+
     /**
      *
      * @param nodeDb
      * @param dispatcher
      */
-    public NodeInfoHandler(NodeDatabase nodeDb, MeshEventDispatcher dispatcher) {
+    public NodeInfoHandler(NodeDatabase nodeDb, MeshEventDispatcher dispatcher, AdminService adminService) {
         super(nodeDb, dispatcher);
+        this.adminService = adminService;
     }
 
     @Override
@@ -56,6 +60,9 @@ public class NodeInfoHandler extends BaseMeshHandler {
 
             // 1. Update User Identity (Names/Hardware)
             nodeDb.updateUser(user, localCtx);
+            if (adminService != null && info.getNum() == nodeDb.getSelfNodeId()) {
+                adminService.ingestNodeInfo(info);
+            }
 
             // 2. Update cached Position if available
             if (info.hasPosition()) {
