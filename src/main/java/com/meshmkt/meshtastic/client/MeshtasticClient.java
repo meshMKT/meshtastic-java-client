@@ -10,6 +10,7 @@ import com.meshmkt.meshtastic.client.event.MessageStatusEvent;
 import com.meshmkt.meshtastic.client.event.NodeDiscoveryEvent;
 import com.meshmkt.meshtastic.client.event.PositionUpdateEvent;
 import com.meshmkt.meshtastic.client.event.TelemetryUpdateEvent;
+import com.meshmkt.meshtastic.client.handlers.AdminHandler;
 import com.meshmkt.meshtastic.client.handlers.MessageLoggingHandler;
 import com.meshmkt.meshtastic.client.handlers.MyInfoHandler;
 import com.meshmkt.meshtastic.client.handlers.NodeInfoHandler;
@@ -17,6 +18,7 @@ import com.meshmkt.meshtastic.client.handlers.PositionHandler;
 import com.meshmkt.meshtastic.client.handlers.RoutingHandler;
 import com.meshmkt.meshtastic.client.handlers.TelemetryHandler;
 import com.meshmkt.meshtastic.client.handlers.TextMessageHandler;
+import com.meshmkt.meshtastic.client.service.AdminService;
 import com.meshmkt.meshtastic.client.storage.NodeDatabase;
 import com.meshmkt.meshtastic.client.transport.MeshtasticTransport;
 import com.meshmkt.meshtastic.client.transport.TransportConnectionListener;
@@ -30,6 +32,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.*;
 import java.util.function.Consumer;
+import org.meshtastic.proto.AdminProtos.AdminMessage;
 
 /**
  * MeshtasticClient
@@ -55,6 +58,9 @@ public class MeshtasticClient {
     private int currentSyncId;
     // This ensures only one request is "In-Flight" to the radio at a time
     private final Semaphore radioLock = new Semaphore(1);
+    
+    private AdminService adminService;
+    private final MeshEventDispatcher internalDispatcher = new InternalDispatcher();
 
     /**
      * The Correlation Map. Maps our generated Packet ID -> The Future waiting
@@ -82,18 +88,29 @@ public class MeshtasticClient {
             return t;
         });
 
+        adminService = new AdminService(this);
+        
         initializeHandlers();
         startHeartbeatTask();
     }
 
+    public int getSelfNodeId() {
+        if (nodeDb == null) {
+            return -1;
+        }
+
+        return nodeDb.getSelfNodeId();
+    }
+
     private void initializeHandlers() {
         dispatcher.registerHandler(new MessageLoggingHandler(nodeDb));
-        dispatcher.registerHandler(new MyInfoHandler(nodeDb, new InternalDispatcher()));
-        dispatcher.registerHandler(new NodeInfoHandler(nodeDb, new InternalDispatcher()));
-        dispatcher.registerHandler(new PositionHandler(nodeDb, new InternalDispatcher()));
-        dispatcher.registerHandler(new TelemetryHandler(nodeDb, new InternalDispatcher()));
-        dispatcher.registerHandler(new RoutingHandler(nodeDb, new InternalDispatcher()));
-        dispatcher.registerHandler(new TextMessageHandler(nodeDb, new InternalDispatcher()));
+        dispatcher.registerHandler(new AdminHandler(nodeDb, internalDispatcher, adminService));
+        dispatcher.registerHandler(new MyInfoHandler(nodeDb, internalDispatcher));
+        dispatcher.registerHandler(new NodeInfoHandler(nodeDb, internalDispatcher));
+        dispatcher.registerHandler(new PositionHandler(nodeDb, internalDispatcher));
+        dispatcher.registerHandler(new TelemetryHandler(nodeDb, internalDispatcher));
+        dispatcher.registerHandler(new RoutingHandler(nodeDb, internalDispatcher));
+        dispatcher.registerHandler(new TextMessageHandler(nodeDb, internalDispatcher));
     }
 
     /**
@@ -114,9 +131,10 @@ public class MeshtasticClient {
     /**
      * Sends a Private Message (DM). DMs almost always go over the Primary
      * channel (0).
+     *
      * @param nodeId
      * @param text
-     * @return 
+     * @return
      */
     public CompletableFuture<Boolean> sendDirectText(int nodeId, String text) {
         return sendText(nodeId, 0, text);
@@ -124,9 +142,10 @@ public class MeshtasticClient {
 
     /**
      * Broadcasts to a specific channel.
+     *
      * @param channelIndex
      * @param text
-     * @return 
+     * @return
      */
     public CompletableFuture<Boolean> sendChannelText(int channelIndex, String text) {
         return sendText(MeshConstants.ID_BROADCAST, channelIndex, text);
@@ -183,6 +202,33 @@ public class MeshtasticClient {
     // -------------------------------------------------------------------------
     // Core Engine
     // -------------------------------------------------------------------------
+    /**
+     * Specialized version of executeRequest for Admin operations.
+     *
+     * * @param destinationId The nodeId (or 0xFFFFFFFF for local)
+     * @param adminMsg The specific AdminMessage (get_config, set_owner, etc)
+     * @return A future containing the MeshPacket response from the radio
+     */
+    public CompletableFuture<MeshPacket> executeAdminRequest(int destinationId, AdminMessage adminMsg) {
+
+        /**
+         * public record MeshRequest<T>( int destinationId, PortNum port,
+         * Message payload, byte[] rawData, int channelIndex, boolean wantAck,
+         * Class<T> responseType )          *
+         *
+         */
+        
+        return executeRequest(new MeshRequest<>(
+                destinationId, // Target Node
+                PortNum.ADMIN_APP, // Port 100
+                adminMsg, // The Proto Object
+                null, // No destination app needed
+                0, // Admin usually happens on Primary channel
+                false, // MUST want ACK for Admin ops
+                MeshPacket.class // We expect a MeshPacket back
+        ));
+    }
+
     private <T> CompletableFuture<MeshPacket> executeRequest(MeshRequest<T> request) {
         CompletableFuture<MeshPacket> future = new CompletableFuture<>();
 
@@ -202,13 +248,19 @@ public class MeshtasticClient {
                 int myPacketId = ThreadLocalRandom.current().nextInt(1, Integer.MAX_VALUE);
 
                 MeshPacket packet = MeshPacket.newBuilder()
+                        .setFrom(getSelfNodeId())
                         .setTo(request.destinationId())
                         .setDecoded(Data.newBuilder()
                                 .setPortnum(request.port())
                                 .setPayload(payload)
+                                // 2. THIS IS THE TRIGGER: Tells the Admin Module a reply is expected
+                                .setWantResponse(true)
                                 .build())
                         .setWantAck(request.wantAck())
                         .setChannel(request.channelIndex())
+                        .setPriority(MeshPacket.Priority.RELIABLE)
+                        .setHopLimit(3)
+                        .setHopStart(3)
                         .setId(myPacketId)
                         .build();
 
@@ -388,8 +440,9 @@ public class MeshtasticClient {
     // -------------------------------------------------------------------------
     /**
      * Explicitly requests NodeInfo from a specific node.
+     *
      * @param nodeId
-     * @return 
+     * @return
      */
     public CompletableFuture<MeshPacket> refreshNodeInfo(int nodeId) {
         log.info("[UTIL] Requesting NodeInfo for {}", nodeId);
@@ -406,8 +459,9 @@ public class MeshtasticClient {
 
     /**
      * Explicitly requests a Position update from a specific node.
+     *
      * @param nodeId
-     * @return 
+     * @return
      */
     public CompletableFuture<MeshPacket> requestPosition(int nodeId) {
         log.info("[UTIL] Requesting Position from {}", nodeId);
@@ -424,8 +478,9 @@ public class MeshtasticClient {
 
     /**
      * Explicitly requests Telemetry (battery, etc) from a specific node.
+     *
      * @param nodeId
-     * @return 
+     * @return
      */
     public CompletableFuture<MeshPacket> requestTelemetry(int nodeId) {
         log.info("[UTIL] Requesting Telemetry from {}", nodeId);

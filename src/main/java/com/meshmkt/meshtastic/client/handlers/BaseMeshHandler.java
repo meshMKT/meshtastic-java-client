@@ -74,7 +74,9 @@ public abstract class BaseMeshHandler implements MeshtasticMessageHandler {
      * @param ctx
      * @return 
      */
-    protected abstract boolean handlePacket(MeshProtos.MeshPacket packet, PacketContext ctx);
+    protected boolean handlePacket(MeshProtos.MeshPacket packet, PacketContext ctx) {
+        return false;
+    }
 
     /**
      *

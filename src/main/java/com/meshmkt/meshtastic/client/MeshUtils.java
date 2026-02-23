@@ -42,9 +42,24 @@ public final class MeshUtils {
     }
 
     /**
-     * Converts !ddac (hex) or 371903 (decimal) to the raw integer ID
-     * @param input
+     * Converts byte array to Hex String
+     * 
+     * @param bytes
      * @return 
+     */
+    public static String bytesToHex(byte[] bytes) {
+        StringBuilder sb = new StringBuilder();
+        for (byte b : bytes) {
+            sb.append(String.format("%02x", b));
+        }
+        return sb.toString();
+    }
+
+    /**
+     * Converts !ddac (hex) or 371903 (decimal) to the raw integer ID
+     *
+     * @param input
+     * @return
      */
     public static int parseId(String input) {
         if (input == null) {
@@ -68,8 +83,9 @@ public final class MeshUtils {
     // --- Identity & Naming ---
     /**
      * Formats a raw 32-bit Node ID into the standard Meshtastic hex string.
+     *
      * @param nodeId
-     * @return 
+     * @return
      */
     public static String formatId(int nodeId) {
         if (nodeId == 0) {
@@ -80,8 +96,9 @@ public final class MeshUtils {
 
     /**
      * Resolves the best possible display name from a MeshNode record.
+     *
      * @param node
-     * @return 
+     * @return
      */
     public static String resolveName(MeshNode node) {
         Objects.requireNonNull(node, "MeshNode cannot be null");
@@ -97,9 +114,10 @@ public final class MeshUtils {
 
     /**
      * Resolves a name using raw components.
+     *
      * @param nodeId
      * @param user
-     * @return 
+     * @return
      */
     public static String resolveName(int nodeId, MeshProtos.User user) {
         if (user != null) {
@@ -156,8 +174,9 @@ public final class MeshUtils {
 
     /**
      * Formats total seconds into a hierarchical string (e.g., "1d 4h 20m 5s").
+     *
      * @param totalSeconds
-     * @return 
+     * @return
      */
     public static String formatUptime(int totalSeconds) {
         if (totalSeconds <= 0) {
@@ -189,8 +208,9 @@ public final class MeshUtils {
 
     /**
      * Calculates seconds elapsed since a given millisecond timestamp.
+     *
      * @param lastSeenMs
-     * @return 
+     * @return
      */
     public static long getSecondsSince(long lastSeenMs) {
         if (lastSeenMs <= 0) {
@@ -200,7 +220,6 @@ public final class MeshUtils {
     }
 
     // --- Geographic Mathematics ---
-
     /**
      *
      * @param scaledInt
@@ -231,7 +250,6 @@ public final class MeshUtils {
     }
 
     // --- Unit Conversions ---
-
     /**
      *
      * @param km
@@ -278,7 +296,6 @@ public final class MeshUtils {
     }
 
     // --- Logical Categorization ---
-
     /**
      *
      * @param rawPercent
@@ -332,8 +349,9 @@ public final class MeshUtils {
 
     /**
      * Resolves a symbolic representation for the node's operational role.
+     *
      * @param role
-     * @return 
+     * @return
      */
     public static String getRoleSymbol(ConfigProtos.Config.DeviceConfig.Role role) {
         if (role == null) {
