@@ -94,6 +94,10 @@ public class MeshtasticClient {
         startHeartbeatTask();
     }
 
+    public AdminService getAdminService() {
+        return adminService;
+    }
+    
     public int getSelfNodeId() {
         if (nodeDb == null) {
             return -1;

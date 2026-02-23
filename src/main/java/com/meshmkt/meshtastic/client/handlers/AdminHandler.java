@@ -42,7 +42,7 @@ public class AdminHandler extends BaseMeshHandler {
                 log.info("[DIAGNOSTIC] Payload: {}", msg);
 
                 // Feed it to the service to see if the model finally populates
-                adminService.updateSessionKey(msg);
+                adminService.updateFromRadio(msg);
 
                 return true;
             } catch (Exception e) {
