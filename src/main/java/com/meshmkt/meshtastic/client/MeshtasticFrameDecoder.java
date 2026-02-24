@@ -8,9 +8,9 @@ import lombok.extern.slf4j.Slf4j;
 /**
  * <h2>Meshtastic Frame Decoder</h2>
  * <p>
- * A high-performance stream parser for the Meshtastic Serial Protocol. This
- * class identifies valid frames from a raw byte stream, validates the framing
- * envelope, and dispatches a decoded {@link MeshProtos.FromRadio} object.
+ * A stream parser for the Meshtastic framed protocol.
+ * This class identifies valid frames from a raw byte stream, validates the framing
+ * envelope, and dispatches raw protobuf payload bytes to a consumer.
  * </p>
  *
  * <h3>Protocol Specification:</h3>
@@ -50,27 +50,36 @@ public class MeshtasticFrameDecoder {
     private long lastByteTime = 0;
 
     /**
-     * @param packetConsumer Receives a fully validated and decoded FromRadio
-     * object.
+     * Fully resets parser state and counters so the next byte is treated as a fresh stream start.
+     * This is required after any desync condition, not just state transitions.
+     */
+    private void resetParser() {
+        state = State.LOOKING_FOR_START1;
+        lengthPos = 0;
+        payloadPos = 0;
+        expectedLength = 0;
+    }
+
+    /**
+     * @param packetConsumer receives payload bytes for each fully framed packet.
      */
     public MeshtasticFrameDecoder(Consumer<byte[]> packetConsumer) {
         this.packetConsumer = packetConsumer;
     }
 
     /**
-     * Processes a single byte from the serial stream. This method handles
-     * signed-to-unsigned conversion and state transitions.
+     * Processes one incoming byte from the stream and advances the framing state machine.
+     * This method is designed for incremental feed from serial/tcp read loops.
      *
-     * * @param b The raw byte from the hardware interface.
-     * @param b
+     * @param b raw byte from the transport stream.
      */
     public void processByte(byte b) {
 
         long now = System.currentTimeMillis();
         
-        // if we were mid-packet but the radio went quite, we are out of sync
+        // If mid-packet data pauses for too long, drop partial state and resync.
         if (state != State.LOOKING_FOR_START1 && (now - lastByteTime > 200)) {
-            state = State.LOOKING_FOR_START1;
+            resetParser();
         }
         lastByteTime = now;
         
@@ -107,7 +116,8 @@ public class MeshtasticFrameDecoder {
                         payloadPos = 0;
                         yield State.READING_PAYLOAD;
                     }
-                    // Invalid length detected, resyncing
+                    // Invalid length detected, resync immediately.
+                    resetParser();
                     yield State.LOOKING_FOR_START1;
                 }
             }
@@ -118,8 +128,7 @@ public class MeshtasticFrameDecoder {
                     // Packet fully buffered, proceed to decode
                     dispatchPacket();
 
-                    // IMPORTANT: Reset payloadPos to 0 here to prevent 
-                    // accidental carry-over if the next packet is weird.
+                    // Defensive reset to avoid carry-over if subsequent bytes are malformed.
                     payloadPos = 0;
                     
                     yield State.LOOKING_FOR_START1;
@@ -130,8 +139,7 @@ public class MeshtasticFrameDecoder {
     }
 
     /**
-     * Extracts the payload from the internal buffer and hands it to the
-     * consumer.
+     * Copies the completed payload from internal buffer and dispatches to the consumer.
      */
     private void dispatchPacket() {
         try {
@@ -141,10 +149,9 @@ public class MeshtasticFrameDecoder {
             // This is now purely a byte-level handoff.
             packetConsumer.accept(payload);
         } catch (Exception e) {
-            // If parsing fails in the handler, we MUST force
-            // a new search
-            log.error("Desync deteced, resetting decoder", e);
-            this.state = State.LOOKING_FOR_START1;
+            // Any consumer exception is treated as a decode-path failure; force parser resync.
+            log.error("Desync detected, resetting decoder", e);
+            resetParser();
         }
     }
 }

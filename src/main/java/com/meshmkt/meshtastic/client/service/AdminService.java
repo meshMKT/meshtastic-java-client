@@ -252,7 +252,7 @@ public class AdminService {
                     if (allowRetry) {
                         log.warn("[ADMIN] Channel {} set failed/verification failed; refreshing session key and retrying once: {}",
                                 index, ex.getMessage());
-                        return refreshMetadata().thenCompose(metadata -> setChannel(index, updatedChannel, false));
+                        return setChannel(index, updatedChannel, false);
                     }
                     return CompletableFuture.completedFuture(false);
                 });
