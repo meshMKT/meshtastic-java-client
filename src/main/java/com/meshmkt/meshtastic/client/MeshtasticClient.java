@@ -12,7 +12,6 @@ import com.meshmkt.meshtastic.client.event.PositionUpdateEvent;
 import com.meshmkt.meshtastic.client.event.TelemetryUpdateEvent;
 import com.meshmkt.meshtastic.client.handlers.AdminHandler;
 import com.meshmkt.meshtastic.client.handlers.LocalStateHandler;
-import com.meshmkt.meshtastic.client.handlers.MessageLoggingHandler;
 import com.meshmkt.meshtastic.client.handlers.NodeInfoHandler;
 import com.meshmkt.meshtastic.client.handlers.PositionHandler;
 import com.meshmkt.meshtastic.client.handlers.RoutingHandler;
@@ -31,18 +30,20 @@ import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
 import org.meshtastic.proto.AdminProtos.AdminMessage;
 
 /**
- * MeshtasticClient
- *
- * Orchestrates serial communication with the Meshtastic radio. * FIXES APPLIED:
- * 1. Sequential "Drip-Feed" Support: executeRequest now returns a future that
- * only completes when the radio confirms the Packet ID via a Routing ACK. 2.
- * Packet ID Correlation: We set a random ID on outbound packets. The radio
- * returns this ID in the 'decoded.request_id' field of a ROUTING_APP packet. 3.
- * Thread Safety: Uses ConcurrentHashMap and Atomic types for stability.
+ * Orchestrates transport lifecycle, request correlation, startup synchronization, and event fan-out.
+ * <p>
+ * Layering intent:
+ * </p>
+ * <ul>
+ * <li>Transport classes manage framing, physical IO, and reconnect behavior.</li>
+ * <li>Handlers decode protocol payloads and update state/event streams.</li>
+ * <li>This client exposes higher-level async operations and sequencing rules.</li>
+ * </ul>
  */
 public class MeshtasticClient {
 
@@ -60,7 +61,11 @@ public class MeshtasticClient {
     private volatile int startupSyncPhase = 0;
     private volatile boolean sawMyInfoInCurrentPhase = false;
     private volatile CompletableFuture<Void> startupSyncBarrier = CompletableFuture.completedFuture(null);
-    private volatile long lastRebootSignalAtMs = 0L;
+    /**
+     * Single-flight guard for reboot-triggered resync orchestration.
+     * Prevents overlapping cleanup/reprime when duplicate reboot signals are received.
+     */
+    private final AtomicBoolean rebootResyncInProgress = new AtomicBoolean(false);
     // This ensures only one request is "In-Flight" to the radio at a time
     private final Semaphore radioLock = new Semaphore(1);
     
@@ -71,11 +76,27 @@ public class MeshtasticClient {
      * The Correlation Map. Maps our generated Packet ID -> The Future waiting
      * for hardware confirmation.
      */
-    private final Map<Integer, CompletableFuture<MeshPacket>> pendingRequests = new ConcurrentHashMap<>();
+    /**
+     * Correlation registry keyed by outbound packet ID. Each entry carries both the waiting future and
+     * correlation behavior (for example, admin reads that must wait for ADMIN_APP payloads).
+     */
+    private final Map<Integer, PendingRequest> pendingRequests = new ConcurrentHashMap<>();
     private static final long STARTUP_SYNC_TIMEOUT_SECONDS = 45;
     private static final int NODELESS_WANT_CONFIG_ID = 69420;
     private static final int FULL_WANT_CONFIG_ID = 69421;
     private volatile ScheduledFuture<?> heartbeatFuture;
+
+    /**
+     * Correlation metadata for one in-flight outbound request.
+     *
+     * @param future waiting completion target.
+     * @param expectAdminAppResponse when true, a ROUTING ACK with NONE is not terminal; wait for ADMIN_APP reply.
+     */
+    private record PendingRequest(
+            CompletableFuture<MeshPacket> future,
+            boolean expectAdminAppResponse
+    ) {
+    }
 
     /**
      *
@@ -121,7 +142,6 @@ public class MeshtasticClient {
     }
 
     private void initializeHandlers() {
-        dispatcher.registerHandler(new MessageLoggingHandler(nodeDb));
         dispatcher.registerHandler(new AdminHandler(nodeDb, internalDispatcher, adminService));
         dispatcher.registerHandler(new LocalStateHandler(nodeDb, internalDispatcher, adminService));
         dispatcher.registerHandler(new NodeInfoHandler(nodeDb, internalDispatcher, adminService));
@@ -134,14 +154,14 @@ public class MeshtasticClient {
     /**
      * Wrapper for mesh requests.
      */
-    public record MeshRequest<T>(
+    public record MeshRequest(
             int destinationId,
             PortNum port,
             Message payload,
             byte[] rawData,
             int channelIndex,
             boolean wantAck,
-            Class<T> responseType
+            boolean expectAdminAppResponse
             ) {
 
     }
@@ -196,14 +216,14 @@ public class MeshtasticClient {
 
         byte[] chunkBytes = chunks.get(index).getBytes(StandardCharsets.UTF_8);
 
-        MeshRequest<Boolean> request = new MeshRequest<>(
+        MeshRequest request = new MeshRequest(
                 destinationId,
                 PortNum.TEXT_MESSAGE_APP,
                 null,
                 chunkBytes,
                 channelIndex, // Used by executeRequest to set .setChannel()
                 true, // Want ACK to clear the radioLock
-                Boolean.class
+                false // Text messages use routing-level correlation.
         );
 
         executeRequest(request).thenAccept(packet -> {
@@ -228,26 +248,42 @@ public class MeshtasticClient {
      * @return A future containing the MeshPacket response from the radio
      */
     public CompletableFuture<MeshPacket> executeAdminRequest(int destinationId, AdminMessage adminMsg) {
+        return executeAdminRequest(destinationId, adminMsg, isAdminReadRequest(adminMsg));
+    }
 
-        /**
-         * public record MeshRequest<T>( int destinationId, PortNum port,
-         * Message payload, byte[] rawData, int channelIndex, boolean wantAck,
-         * Class<T> responseType )          *
-         *
-         */
-        
-        return executeRequest(new MeshRequest<>(
+    /**
+     * Specialized version of executeRequest for Admin operations with explicit response mode.
+     *
+     * @param destinationId target node id.
+     * @param adminMsg admin payload.
+     * @param expectAdminAppResponse when true, request completes only on correlated ADMIN_APP response.
+     * @return future for correlated terminal response.
+     */
+    public CompletableFuture<MeshPacket> executeAdminRequest(int destinationId,
+                                                             AdminMessage adminMsg,
+                                                             boolean expectAdminAppResponse) {
+        return executeRequest(new MeshRequest(
                 destinationId, // Target Node
                 PortNum.ADMIN_APP, // Port 100
                 adminMsg, // The Proto Object
                 null, // No destination app needed
                 0, // Admin usually happens on Primary channel
-                false, // Admin waits for app response correlation, not routing ACK
-                MeshPacket.class // We expect a MeshPacket back
+                false, // Admin requests do not use link-level ACK for completion.
+                expectAdminAppResponse
         ));
     }
 
-    private <T> CompletableFuture<MeshPacket> executeRequest(MeshRequest<T> request) {
+    /**
+     * Heuristic for admin calls: all GET_* requests are treated as read calls that should wait for ADMIN_APP
+     * payloads instead of completing on a ROUTING NONE status.
+     */
+    private boolean isAdminReadRequest(AdminMessage adminMsg) {
+        return adminMsg != null
+                && adminMsg.getPayloadVariantCase() != null
+                && adminMsg.getPayloadVariantCase().name().startsWith("GET_");
+    }
+
+    private CompletableFuture<MeshPacket> executeRequest(MeshRequest request) {
         CompletableFuture<MeshPacket> future = new CompletableFuture<>();
 
         requestExecutor.execute(() -> {
@@ -297,7 +333,10 @@ public class MeshtasticClient {
                 // even when routing ACK is disabled.
                 boolean awaitCorrelation = request.wantAck() || request.port() == PortNum.ADMIN_APP;
                 if (awaitCorrelation) {
-                    pendingRequests.put(myPacketId, future);
+                    pendingRequests.put(myPacketId, new PendingRequest(
+                            future,
+                            request.port() == PortNum.ADMIN_APP && request.expectAdminAppResponse()
+                    ));
                 }
 
                 log.info("[TX] Lock Acquired. Sending ID: {} | Port: {}", myPacketId, request.port());
@@ -360,18 +399,66 @@ public class MeshtasticClient {
         MeshPacket incoming = fromRadio.getPacket();
         Data decoded = incoming.getDecoded();
 
-        log.info("correlateResponse - Incoming FromRadio: {}", fromRadio);
-        log.info("correlateResponse - Incoming MeshPacket: {}", incoming);
+        log.debug("correlateResponse - Packet from={} to={} id={} request_id={} port={}",
+                incoming.getFrom(), incoming.getTo(), incoming.getId(), decoded.getRequestId(), decoded.getPortnum());
 
         // Some responses include the original request id in decoded.request_id.
         // We complete the pending request immediately when we see that correlation.
         int confirmedId = decoded.getRequestId();
         if (confirmedId != 0) {
-            CompletableFuture<MeshPacket> pending = pendingRequests.remove(confirmedId);
+            PendingRequest pending = pendingRequests.get(confirmedId);
             if (pending != null) {
-                log.info("[CORRELATOR] Match found for Packet ID: {} via port {}. Releasing queue.",
-                        confirmedId, decoded.getPortnum());
-                pending.complete(incoming);
+                if (decoded.getPortnum() == PortNum.ROUTING_APP) {
+                    handleRoutingCorrelation(confirmedId, pending, incoming);
+                    return;
+                }
+
+                if (pending.expectAdminAppResponse() && decoded.getPortnum() != PortNum.ADMIN_APP) {
+                    // Read-style admin request: ignore unrelated correlated traffic until ADMIN_APP arrives.
+                    return;
+                }
+
+                if (pendingRequests.remove(confirmedId, pending)) {
+                    log.info("[CORRELATOR] Match found for Packet ID: {} via port {}. Releasing queue.",
+                            confirmedId, decoded.getPortnum());
+                    pending.future().complete(incoming);
+                }
+            }
+        }
+    }
+
+    /**
+     * Handles correlated ROUTING_APP responses.
+     * <p>
+     * Rules:
+     * </p>
+     * <ul>
+     * <li>Routing error != NONE is terminal failure for all request types.</li>
+     * <li>Routing NONE is terminal success for non-admin-read requests.</li>
+     * <li>Routing NONE is non-terminal for admin-read requests; wait for ADMIN_APP payload.</li>
+     * </ul>
+     */
+    private void handleRoutingCorrelation(int confirmedId, PendingRequest pending, MeshPacket incoming) {
+        try {
+            org.meshtastic.proto.MeshProtos.Routing routing = org.meshtastic.proto.MeshProtos.Routing
+                    .parseFrom(incoming.getDecoded().getPayload());
+
+            if (routing.getErrorReason() != org.meshtastic.proto.MeshProtos.Routing.Error.NONE) {
+                if (pendingRequests.remove(confirmedId, pending)) {
+                    pending.future().completeExceptionally(new IllegalStateException(
+                            "Routing rejected request " + confirmedId + " with status " + routing.getErrorReason()));
+                }
+                return;
+            }
+
+            if (!pending.expectAdminAppResponse() && pendingRequests.remove(confirmedId, pending)) {
+                log.info("[CORRELATOR] Match found for Packet ID: {} via ROUTING_APP. Releasing queue.", confirmedId);
+                pending.future().complete(incoming);
+            }
+        } catch (Exception ex) {
+            if (pendingRequests.remove(confirmedId, pending)) {
+                pending.future().completeExceptionally(new IllegalStateException(
+                        "Failed to parse ROUTING_APP correlation for request " + confirmedId, ex));
             }
         }
     }
@@ -396,6 +483,7 @@ public class MeshtasticClient {
             @Override
             public void onConnected() {
                 connected = true;
+                rebootResyncInProgress.set(false);
                 startStartupSync();
             }
 
@@ -438,14 +526,15 @@ public class MeshtasticClient {
             transport = null;
         }
         connected = false;
+        rebootResyncInProgress.set(false);
         stopHeartbeatTask();
         cancelAllPending();
     }
 
     private void cancelAllPending() {
         // 1. Clear the mapping so no late ACKs try to trigger logic
-        pendingRequests.forEach((id, future) -> {
-            future.cancel(true);
+        pendingRequests.forEach((id, pending) -> {
+            pending.future().cancel(true);
         });
         pendingRequests.clear();
 
@@ -545,28 +634,40 @@ public class MeshtasticClient {
     }
 
     private void handleRebootSignal(FromRadio fromRadio) {
+        // Only react to explicit reboot markers.
         if (!fromRadio.hasRebooted()) {
             return;
         }
 
-        long now = System.currentTimeMillis();
-        if (now - lastRebootSignalAtMs < 3000) {
+        // If startup sync is already running, this reboot marker is redundant.
+        // We avoid interrupting an active phase handshake with another reset/reprime cycle.
+        if (startupSyncPhase != 0) {
+            log.debug("[SYNC] Reboot signal received during active startup sync phase {}. Ignoring duplicate resync trigger.",
+                    startupSyncPhase);
             return;
         }
-        lastRebootSignalAtMs = now;
+
+        // State-based single-flight guard: no arbitrary time windows.
+        // Duplicate reboot events are ignored while one reboot resync orchestration is in progress.
+        if (!rebootResyncInProgress.compareAndSet(false, true)) {
+            log.debug("[SYNC] Reboot signal received while reboot resync is already in progress. Ignoring duplicate.");
+            return;
+        }
 
         log.warn("[SYNC] Radio reboot detected. Resetting state and re-syncing.");
         stopHeartbeatTask();
         cancelAllPending();
-        adminService.getRadioModel().reset();
+        adminService.getSnapshot().reset();
         primeStartupSync();
-
-        // Give the radio a moment to come fully back up before requesting config.
-        scheduler.schedule(() -> {
-            if (isConnected()) {
-                startStartupSync();
-            }
-        }, 2, TimeUnit.SECONDS);
+        /*
+         * Event-driven restart:
+         * - If transport is still connected after reboot signal handling, restart sync immediately.
+         * - If link drops during reboot, onConnected() will run startup sync when the transport reconnects.
+         */
+        if (isConnected()) {
+            startStartupSync();
+            rebootResyncInProgress.set(false);
+        }
     }
 
     private void sendToRadio(ToRadio toRadio) {
@@ -589,6 +690,7 @@ public class MeshtasticClient {
      */
     public void shutdown() {
         disconnect();
+        dispatcher.shutdown();
         scheduler.shutdown();
         requestExecutor.shutdown();
         listenerExecutor.shutdown();
@@ -605,14 +707,14 @@ public class MeshtasticClient {
      */
     public CompletableFuture<MeshPacket> refreshNodeInfo(int nodeId) {
         log.info("[UTIL] Requesting NodeInfo for {}", nodeId);
-        return executeRequest(new MeshRequest<>(
+        return executeRequest(new MeshRequest(
                 nodeId,
                 PortNum.NODEINFO_APP,
                 null, // No payload needed for request
                 new byte[0],
                 0,
                 true,
-                MeshPacket.class
+                false
         ));
     }
 
@@ -624,14 +726,14 @@ public class MeshtasticClient {
      */
     public CompletableFuture<MeshPacket> requestPosition(int nodeId) {
         log.info("[UTIL] Requesting Position from {}", nodeId);
-        return executeRequest(new MeshRequest<>(
+        return executeRequest(new MeshRequest(
                 nodeId,
                 PortNum.POSITION_APP,
                 null,
                 new byte[0],
                 0,
                 true,
-                MeshPacket.class
+                false
         ));
     }
 
@@ -643,14 +745,14 @@ public class MeshtasticClient {
      */
     public CompletableFuture<MeshPacket> requestTelemetry(int nodeId) {
         log.info("[UTIL] Requesting Telemetry from {}", nodeId);
-        return executeRequest(new MeshRequest<>(
+        return executeRequest(new MeshRequest(
                 nodeId,
                 PortNum.TELEMETRY_APP,
                 null,
                 new byte[0],
                 0,
                 true,
-                MeshPacket.class
+                false
         ));
     }
 

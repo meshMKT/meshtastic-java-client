@@ -6,6 +6,8 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.net.InetSocketAddress;
 import java.net.Socket;
+import java.util.concurrent.atomic.AtomicBoolean;
+import lombok.extern.slf4j.Slf4j;
 
 /**
  * <h2>TCP Transport</h2>
@@ -14,12 +16,17 @@ import java.net.Socket;
  * to use the Template Method pattern for framing and notifications.
  * </p>
  */
+@Slf4j
 public class TcpTransport extends StreamTransport {
 
     private final TcpConfig config;
     private Socket socket;
     private OutputStream outputStream;
     private volatile boolean connected = false;
+    /**
+     * Guards reconnect thread creation so repeated faults do not spawn overlapping retry loops.
+     */
+    private final AtomicBoolean retryLoopActive = new AtomicBoolean(false);
 
     /**
      *
@@ -103,20 +110,28 @@ public class TcpTransport extends StreamTransport {
     }
 
     private void startRetryLoop() {
+        if (!retryLoopActive.compareAndSet(false, true)) {
+            return;
+        }
+
         Thread retryThread = new Thread(() -> {
-            System.out.println(">>> TCP Link lost. Retrying " + config.getHost() + "...");
-            while (running && !isConnected()) {
-                try {
-                    Thread.sleep(5000); // 5-second backoff
-                    attemptConnection();
-                    if (isConnected()) {
-                        System.out.println(">>> TCP Link Restored!");
-                        notifyConnected();
-                        break;
+            try {
+                log.info(">>> TCP Link lost. Retrying {}...", config.getHost());
+                while (running && !isConnected()) {
+                    try {
+                        Thread.sleep(5000); // 5-second backoff
+                        attemptConnection();
+                        if (isConnected()) {
+                            log.info(">>> TCP Link Restored!");
+                            notifyConnected();
+                            break;
+                        }
+                    } catch (Exception e) {
+                        // Stay in loop until connection is restored or transport stopped.
                     }
-                } catch (Exception e) {
-                    // Stay in loop until connection is restored or transport stopped
                 }
+            } finally {
+                retryLoopActive.set(false);
             }
         }, "TcpRetryThread");
         retryThread.setDaemon(true);

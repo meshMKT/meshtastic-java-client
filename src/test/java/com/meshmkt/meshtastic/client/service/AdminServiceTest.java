@@ -202,5 +202,12 @@ class AdminServiceTest {
             }
             return CompletableFuture.completedFuture(next);
         }
+
+        @Override
+        public CompletableFuture<MeshProtos.MeshPacket> executeAdminRequest(int destinationId,
+                                                                            AdminMessage adminMsg,
+                                                                            boolean expectAdminAppResponse) {
+            return executeAdminRequest(destinationId, adminMsg);
+        }
     }
 }

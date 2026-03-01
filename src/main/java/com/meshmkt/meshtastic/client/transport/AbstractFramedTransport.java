@@ -86,10 +86,21 @@ public abstract class AbstractFramedTransport implements MeshtasticTransport {
             return;
         }
 
-        // Drop it into the outbox to help buffering
-        log.info("write - adding incoming bytes to txQueue");
-        txQueue.offer(protobufData);
-        log.info("write - bytes added to txQueue");
+        // Apply bounded backpressure instead of silently dropping writes when queue is full.
+        // If enqueue cannot complete quickly, we log and notify so callers can observe congestion behavior.
+        log.debug("write - adding bytes to txQueue");
+        try {
+            boolean enqueued = txQueue.offer(protobufData, 1, TimeUnit.SECONDS);
+            if (!enqueued) {
+                log.warn("write - txQueue full, dropping outbound frame ({} bytes)", protobufData.length);
+                notifyError(new IllegalStateException("Outbound queue saturated; frame dropped"));
+            } else {
+                log.debug("write - bytes added to txQueue");
+            }
+        } catch (InterruptedException ex) {
+            Thread.currentThread().interrupt();
+            notifyError(new IllegalStateException("Interrupted while queueing outbound frame", ex));
+        }
     }
 
     /**
@@ -117,23 +128,23 @@ public abstract class AbstractFramedTransport implements MeshtasticTransport {
     private void processTxQueue() {
         while (running && !Thread.currentThread().isInterrupted()) {
             try {
-                log.info("processTxQueue - Checking for txQueue data");
+                log.debug("processTxQueue - Checking for txQueue data");
                 byte[] protobufData = txQueue.take(); // Wait for a packet
-                log.info("processTxQeueu - Found data to process");
+                log.debug("processTxQeueu - Found data to process");
 
-                log.info("processTxQueue - Sending bytes to radio");
+                log.debug("processTxQueue - Sending bytes to radio");
                 sendRawBytes(protobufData);
-                log.info("processTxQueue - Bytes sent to radio");
+                log.debug("processTxQueue - Bytes sent to radio");
 
-                log.info("processTxQueue - Sending activity event");
+                log.debug("processTxQueue - Sending activity event");
                 asyncNotify(TransportConnectionListener::onTrafficTransmitted);
-                log.info("processTxQueue - Activity event sent");
+                log.debug("processTxQueue - Activity event sent");
 
                 /// Use the configurable delay
             if (outboundPacingDelay > 0) {
-                    log.info("processTxQueue - Sleeping for {}ms", outboundPacingDelay);
+                    log.debug("processTxQueue - Sleeping for {}ms", outboundPacingDelay);
                     Thread.sleep(outboundPacingDelay);
-                    log.info("processTxQueue - Sleep finished");
+                    log.debug("processTxQueue - Sleep finished");
                 }
 
             } catch (InterruptedException e) {
@@ -158,7 +169,7 @@ public abstract class AbstractFramedTransport implements MeshtasticTransport {
                 try {
                     action.accept(listener);
                 } catch (Exception e) {
-                    System.err.println("Listener Error [" + listener.getClass().getSimpleName() + "]: " + e.getMessage());
+                    log.warn("Listener Error [{}]: {}", listener.getClass().getSimpleName(), e.getMessage());
                 }
             }
         });

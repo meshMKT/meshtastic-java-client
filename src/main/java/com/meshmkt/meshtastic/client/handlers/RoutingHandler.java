@@ -36,9 +36,7 @@ public class RoutingHandler extends BaseMeshHandler {
         try {
             MeshProtos.Routing routing = MeshProtos.Routing.parseFrom(packet.getDecoded().getPayload());
 
-            // Even routing packets help us know a node is "Online"
-            nodeDb.updateSignal(ctx);
-
+            // Signal liveness is already recorded centrally in BaseMeshHandler before per-port handling.
             MessageStatusEvent event = MessageStatusEvent.of(packet, ctx, nodeDb.getSelfNodeId(), routing);
 
             log.info("[ROUTING] Status: {} from !{} for Packet: {}",

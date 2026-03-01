@@ -15,6 +15,30 @@ import org.meshtastic.proto.MeshProtos;
  * </p>
  */
 public abstract class BaseMeshHandler implements MeshtasticMessageHandler {
+    /**
+     * No-op dispatcher used by pure logging/diagnostic handlers that do not emit events.
+     */
+    private static final MeshEventDispatcher NO_OP_DISPATCHER = new MeshEventDispatcher() {
+        @Override
+        public void onChatMessage(com.meshmkt.meshtastic.client.event.ChatMessageEvent event) {
+        }
+
+        @Override
+        public void onPositionUpdate(com.meshmkt.meshtastic.client.event.PositionUpdateEvent event) {
+        }
+
+        @Override
+        public void onTelemetryUpdate(com.meshmkt.meshtastic.client.event.TelemetryUpdateEvent event) {
+        }
+
+        @Override
+        public void onNodeDiscovery(com.meshmkt.meshtastic.client.event.NodeDiscoveryEvent event) {
+        }
+
+        @Override
+        public void onMessageStatusUpdate(com.meshmkt.meshtastic.client.event.MessageStatusEvent event) {
+        }
+    };
 
     /**
      * Shared node database used to resolve names and update signal/state data.
@@ -29,11 +53,11 @@ public abstract class BaseMeshHandler implements MeshtasticMessageHandler {
 
     /**
      * @param nodeDb shared node database.
-     * @param dispatcher shared event dispatcher.
+     * @param dispatcher shared event dispatcher. Null is accepted and normalized to a no-op dispatcher.
      */
     protected BaseMeshHandler(NodeDatabase nodeDb, MeshEventDispatcher dispatcher) {
         this.nodeDb = nodeDb;
-        this.dispatcher = dispatcher;
+        this.dispatcher = dispatcher != null ? dispatcher : NO_OP_DISPATCHER;
     }
 
     @Override

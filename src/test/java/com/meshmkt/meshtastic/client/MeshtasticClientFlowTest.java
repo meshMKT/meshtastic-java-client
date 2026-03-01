@@ -14,6 +14,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.List;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.function.Predicate;
@@ -64,6 +65,33 @@ class MeshtasticClientFlowTest {
         MeshProtos.ToRadio phase2 = awaitToRadio(transport, tr -> tr.hasWantConfigId() && tr.getWantConfigId() == 69421,
                 Duration.ofSeconds(2));
         assertEquals(69421, phase2.getWantConfigId());
+    }
+
+    /**
+     * Verifies reboot signals are ignored while startup sync is already active to avoid duplicate resync loops.
+     */
+    @Test
+    void rebootSignalIsIgnoredDuringActiveStartupSync() throws Exception {
+        FakeTransport transport = new FakeTransport();
+        client = new MeshtasticClient(new InMemoryNodeDatabase());
+        client.connect(transport);
+
+        assertNotNull(awaitToRadio(transport,
+                tr -> tr.hasWantConfigId() && tr.getWantConfigId() == 69420,
+                Duration.ofSeconds(2)));
+
+        // Reboot signal arrives while phase 1 is active; it should not reset the current startup handshake.
+        transport.emitParsedPacket(MeshProtos.FromRadio.newBuilder().setRebooted(true).build().toByteArray());
+
+        // Existing phase-1 handshake should still progress directly to phase 2.
+        transport.emitParsedPacket(MeshProtos.FromRadio.newBuilder()
+                .setMyInfo(MeshProtos.MyNodeInfo.newBuilder().setMyNodeNum(1234).build())
+                .build().toByteArray());
+        transport.emitParsedPacket(MeshProtos.FromRadio.newBuilder().setConfigCompleteId(69420).build().toByteArray());
+
+        assertNotNull(awaitToRadio(transport,
+                tr -> tr.hasWantConfigId() && tr.getWantConfigId() == 69421,
+                Duration.ofSeconds(2)));
     }
 
     /**
@@ -139,6 +167,48 @@ class MeshtasticClientFlowTest {
 
         MeshProtos.MeshPacket completed = future.get(2, TimeUnit.SECONDS);
         assertEquals(requestId, completed.getDecoded().getRequestId());
+    }
+
+    /**
+     * Verifies correlated ROUTING_APP error statuses fail admin requests instead of reporting success.
+     */
+    @Test
+    void adminRequestFailsOnRoutingErrorStatus() throws Exception {
+        FakeTransport transport = new FakeTransport();
+        client = new MeshtasticClient(new InMemoryNodeDatabase());
+        client.connect(transport);
+        completeStartupSync(transport, 7331);
+
+        CompletableFuture<MeshProtos.MeshPacket> future = client.executeAdminRequest(
+                client.getSelfNodeId(),
+                AdminMessage.newBuilder().setSetOwner(MeshProtos.User.newBuilder().setLongName("Nope").build()).build(),
+                false);
+
+        MeshProtos.ToRadio outbound = awaitToRadio(transport,
+                tr -> tr.hasPacket() && tr.getPacket().getDecoded().getPortnum() == Portnums.PortNum.ADMIN_APP,
+                Duration.ofSeconds(2));
+
+        int requestId = outbound.getPacket().getId();
+        MeshProtos.Routing routing = MeshProtos.Routing.newBuilder()
+                .setErrorReason(MeshProtos.Routing.Error.ADMIN_PUBLIC_KEY_UNAUTHORIZED)
+                .build();
+
+        MeshProtos.MeshPacket routingError = MeshProtos.MeshPacket.newBuilder()
+                .setFrom(client.getSelfNodeId())
+                .setTo(client.getSelfNodeId())
+                .setDecoded(MeshProtos.Data.newBuilder()
+                        .setPortnum(Portnums.PortNum.ROUTING_APP)
+                        .setRequestId(requestId)
+                        .setPayload(routing.toByteString())
+                        .build())
+                .setId(900003)
+                .build();
+
+        transport.emitParsedPacket(MeshProtos.FromRadio.newBuilder().setPacket(routingError).build().toByteArray());
+
+        ExecutionException ex = assertThrows(ExecutionException.class, () -> future.get(2, TimeUnit.SECONDS));
+        assertTrue(ex.getCause() instanceof IllegalStateException);
+        assertTrue(ex.getCause().getMessage().contains("ADMIN_PUBLIC_KEY_UNAUTHORIZED"));
     }
 
     /**

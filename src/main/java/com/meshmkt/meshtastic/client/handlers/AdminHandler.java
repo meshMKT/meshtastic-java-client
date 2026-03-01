@@ -32,8 +32,8 @@ public class AdminHandler extends BaseMeshHandler {
     protected boolean handlePacket(MeshPacket packet, PacketContext ctx) {
         int portNum = packet.getDecoded().getPortnumValue();
 
-        // Log EVERY packet's port to see the sequence
-        log.info("[DIAGNOSTIC] Observed Packet | Port: {} | From: {} | ID: {}",
+        // Keep admin-path diagnostics available without adding INFO-volume to normal runtime.
+        log.debug("[DIAGNOSTIC] Observed Packet | Port: {} | From: {} | ID: {}",
                 packet.getDecoded().getPortnum(),
                 MeshUtils.formatId(ctx.getFrom()),
                 MeshUtils.formatId(packet.getId()));
@@ -42,10 +42,10 @@ public class AdminHandler extends BaseMeshHandler {
             try {
                 AdminMessage msg = AdminMessage.parseFrom(packet.getDecoded().getPayload());
 
-                log.info("[DIAGNOSTIC] >>> ADMIN PAYLOAD DETECTED <<<");
-                log.info("[DIAGNOSTIC] Variant: {}", msg.getPayloadVariantCase());
-                log.info("[DIAGNOSTIC] Has Session Key: {}", !msg.getSessionPasskey().isEmpty());
-                log.info("[DIAGNOSTIC] Payload: {}", msg);
+                log.debug("[DIAGNOSTIC] >>> ADMIN PAYLOAD DETECTED <<<");
+                log.debug("[DIAGNOSTIC] Variant: {}", msg.getPayloadVariantCase());
+                log.debug("[DIAGNOSTIC] Has Session Key: {}", !msg.getSessionPasskey().isEmpty());
+                log.debug("[DIAGNOSTIC] Payload: {}", msg);
 
                 // Feed it to the service to see if the model finally populates
                 adminService.ingestAdminMessage(msg);

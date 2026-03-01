@@ -232,7 +232,8 @@ public class AdminService {
 
         return preflight.thenCompose(unused -> {
             AdminMessage request = withSessionIfPresent(AdminMessage.newBuilder().setSetChannel(channelWithIndex)).build();
-            return client.executeAdminRequest(client.getSelfNodeId(), request);
+            // Channel write is a mutating operation: routing NONE is terminal success, routing errors fail fast.
+            return client.executeAdminRequest(client.getSelfNodeId(), request, false);
         })
                 .thenCompose(packet -> refreshChannel(index).thenApply(appliedChannel -> {
                     boolean applied = channelWithIndex.getRole() == appliedChannel.getRole()
@@ -266,7 +267,7 @@ public class AdminService {
      */
     public CompletableFuture<Void> setConfig(Config config) {
         AdminMessage request = withSessionIfPresent(AdminMessage.newBuilder().setSetConfig(config)).build();
-        return client.executeAdminRequest(client.getSelfNodeId(), request).thenAccept(packet -> applyConfig(config));
+        return client.executeAdminRequest(client.getSelfNodeId(), request, false).thenAccept(packet -> applyConfig(config));
     }
 
     /**
@@ -286,7 +287,7 @@ public class AdminService {
         AdminMessage request = withSessionIfPresent(AdminMessage.newBuilder().setSetOwner(updatedUser)).build();
 
         log.info("[ADMIN] Requesting rename for !{} to {}", Integer.toHexString(targetNodeId), longName);
-        return client.executeAdminRequest(targetNodeId, request)
+        return client.executeAdminRequest(targetNodeId, request, false)
                 .thenApply(packet -> {
                     applyOwner(updatedUser);
                     log.info("[ADMIN] Rename accepted by radio for !{}", Integer.toHexString(targetNodeId));
@@ -305,7 +306,7 @@ public class AdminService {
                 .setFactoryResetDevice(0)
                 .build();
         log.warn("[ADMIN] Sending Full Factory Reset command!");
-        return client.executeAdminRequest(client.getSelfNodeId(), request).thenAccept(packet -> {
+        return client.executeAdminRequest(client.getSelfNodeId(), request, false).thenAccept(packet -> {
         });
     }
 
@@ -320,7 +321,7 @@ public class AdminService {
                 AdminMessage.newBuilder().setRebootSeconds(seconds == 0 ? 1 : seconds)).build();
 
         log.info("[ADMIN] Requesting radio reboot in {} seconds...", seconds);
-        return client.executeAdminRequest(client.getSelfNodeId(), request).thenApply(packet -> true);
+        return client.executeAdminRequest(client.getSelfNodeId(), request, false).thenApply(packet -> true);
     }
 
     /**
@@ -482,7 +483,8 @@ public class AdminService {
     }
 
     private <T> CompletableFuture<T> executeAndParse(AdminMessage request, Function<AdminMessage, T> extractor) {
-        return client.executeAdminRequest(client.getSelfNodeId(), request)
+        // Read operations must wait for correlated ADMIN_APP payloads, not just ROUTING NONE status.
+        return client.executeAdminRequest(client.getSelfNodeId(), request, true)
                 .thenApply(this::parseAdminMessage)
                 .thenApply(msg -> {
                     updateSessionKey(msg);
