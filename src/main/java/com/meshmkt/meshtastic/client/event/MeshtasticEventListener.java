@@ -9,31 +9,41 @@ public interface MeshtasticEventListener {
      * Fired when a text message is received from the mesh.
      * @param event
      */
-    void onTextMessage(ChatMessageEvent event);
+    default void onTextMessage(ChatMessageEvent event) {
+        // No-op by default. Override only when needed.
+    }
 
     /**
      * Fired when a node reports a new GPS location.
      * @param event
      */
-    void onPositionUpdate(PositionUpdateEvent event);
+    default void onPositionUpdate(PositionUpdateEvent event) {
+        // No-op by default. Override only when needed.
+    }
 
     /**
      * Fired when battery or environment data arrives.
      * @param event
      */
-    void onTelemetryUpdate(TelemetryUpdateEvent event);
+    default void onTelemetryUpdate(TelemetryUpdateEvent event) {
+        // No-op by default. Override only when needed.
+    }
 
     /**
      * Fired when a new node is discovered or updated (names/HW).
      * @param event
      */
-    void onNodeDiscovery(NodeDiscoveryEvent event);
+    default void onNodeDiscovery(NodeDiscoveryEvent event) {
+        // No-op by default. Override only when needed.
+    }
 
     /**
      * * Fired when a message acknowledgment (ACK) or error arrives. This allows
      * you to track if your sent messages were successful.
      * @param event
      */
-    void onMessageStatusUpdate(MessageStatusEvent event);
+    default void onMessageStatusUpdate(MessageStatusEvent event) {
+        // No-op by default. Override only when needed.
+    }
 
 }

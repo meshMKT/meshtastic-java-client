@@ -2,6 +2,7 @@ package com.meshmkt.meshtastic.client;
 
 import com.google.protobuf.ByteString;
 import com.meshmkt.meshtastic.client.storage.InMemoryNodeDatabase;
+import com.meshmkt.meshtastic.client.storage.MeshNode;
 import com.meshmkt.meshtastic.client.support.FakeTransport;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -335,22 +336,6 @@ class MeshtasticClientFlowTest {
         CountDownLatch latch = new CountDownLatch(1);
         client.addEventListener(new com.meshmkt.meshtastic.client.event.MeshtasticEventListener() {
             @Override
-            public void onTextMessage(com.meshmkt.meshtastic.client.event.ChatMessageEvent event) {
-            }
-
-            @Override
-            public void onPositionUpdate(com.meshmkt.meshtastic.client.event.PositionUpdateEvent event) {
-            }
-
-            @Override
-            public void onTelemetryUpdate(com.meshmkt.meshtastic.client.event.TelemetryUpdateEvent event) {
-            }
-
-            @Override
-            public void onNodeDiscovery(com.meshmkt.meshtastic.client.event.NodeDiscoveryEvent event) {
-            }
-
-            @Override
             public void onMessageStatusUpdate(com.meshmkt.meshtastic.client.event.MessageStatusEvent event) {
                 latch.countDown();
             }
@@ -372,6 +357,135 @@ class MeshtasticClientFlowTest {
 
         transport.emitParsedPacket(MeshProtos.FromRadio.newBuilder().setPacket(packet).build().toByteArray());
         assertTrue(latch.await(2, TimeUnit.SECONDS), "Expected routing event to reach listener");
+    }
+
+    /**
+     * Verifies payload-level request helpers return the latest node snapshot when correlation succeeds
+     * but no matching payload arrives before timeout.
+     */
+    @Test
+    void telemetryAwaitPayloadFallsBackToSnapshotAfterTimeout() throws Exception {
+        FakeTransport transport = new FakeTransport();
+        client = new MeshtasticClient(new InMemoryNodeDatabase());
+        client.connect(transport);
+        completeStartupSync(transport, 1111);
+
+        int nodeId = 0x00be35f0;
+        long nowSec = System.currentTimeMillis() / 1000L;
+        MeshProtos.NodeInfo snapshot = MeshProtos.NodeInfo.newBuilder()
+                .setNum(nodeId)
+                .setLastHeard((int) nowSec)
+                .setUser(MeshProtos.User.newBuilder()
+                        .setLongName("Snapshot Node")
+                        .setShortName("snap")
+                        .build())
+                .build();
+        transport.emitParsedPacket(MeshProtos.FromRadio.newBuilder().setNodeInfo(snapshot).build().toByteArray());
+
+        CompletableFuture<MeshNode> future = client.requestTelemetryAwaitPayloadOrSnapshot(nodeId, Duration.ofMillis(200));
+
+        MeshProtos.ToRadio outbound = awaitToRadio(transport,
+                tr -> tr.hasPacket() && tr.getPacket().getDecoded().getPortnum() == Portnums.PortNum.TELEMETRY_APP,
+                Duration.ofSeconds(2));
+        int requestId = outbound.getPacket().getId();
+
+        transport.emitParsedPacket(MeshProtos.FromRadio.newBuilder()
+                .setPacket(buildRoutingAck(client.getSelfNodeId(), requestId, 901000))
+                .build().toByteArray());
+
+        MeshNode node = future.get(2, TimeUnit.SECONDS);
+        assertEquals(nodeId, node.getNodeId());
+        assertEquals(MeshNode.NodeStatus.CACHED, node.getCalculatedStatus());
+    }
+
+    /**
+     * Verifies payload-level request helpers fail with timeout when no payload arrives
+     * and no node snapshot exists for fallback.
+     */
+    @Test
+    void telemetryAwaitPayloadTimesOutWhenSnapshotMissing() throws Exception {
+        FakeTransport transport = new FakeTransport();
+        client = new MeshtasticClient(new InMemoryNodeDatabase());
+        client.connect(transport);
+        completeStartupSync(transport, 2222);
+
+        int nodeId = 0x00ba0ddc;
+        CompletableFuture<MeshNode> future = client.requestTelemetryAwaitPayload(nodeId, Duration.ofMillis(200));
+
+        MeshProtos.ToRadio outbound = awaitToRadio(transport,
+                tr -> tr.hasPacket() && tr.getPacket().getDecoded().getPortnum() == Portnums.PortNum.TELEMETRY_APP,
+                Duration.ofSeconds(2));
+        int requestId = outbound.getPacket().getId();
+
+        transport.emitParsedPacket(MeshProtos.FromRadio.newBuilder()
+                .setPacket(buildRoutingAck(client.getSelfNodeId(), requestId, 901001))
+                .build().toByteArray());
+
+        ExecutionException ex = assertThrows(ExecutionException.class, () -> future.get(2, TimeUnit.SECONDS));
+        assertTrue(ex.getCause() instanceof TimeoutException);
+    }
+
+    /**
+     * Verifies payload-level request helpers propagate request-layer failures immediately
+     * when correlation/transport cannot even accept the request.
+     */
+    @Test
+    void telemetryAwaitPayloadPropagatesRequestFailureBeforeAcceptance() {
+        client = new MeshtasticClient(new InMemoryNodeDatabase());
+
+        CompletableFuture<MeshNode> future = client.requestTelemetryAwaitPayload(0x12345678, Duration.ofSeconds(1));
+
+        ExecutionException ex = assertThrows(ExecutionException.class, () -> future.get(2, TimeUnit.SECONDS));
+        assertTrue(ex.getCause() instanceof IllegalStateException);
+        Throwable requestLayer = ex.getCause().getCause() != null ? ex.getCause().getCause() : ex.getCause();
+        assertTrue(requestLayer instanceof IllegalStateException,
+                "Expected request-layer IllegalStateException but got: " + requestLayer);
+        assertTrue(requestLayer.getMessage().contains("Transport disconnected before send"));
+    }
+
+    /**
+     * Verifies strict payload awaits fail immediately when routing later reports NO_RESPONSE
+     * for the same correlated request id.
+     */
+    @Test
+    void telemetryAwaitPayloadFailsEarlyOnRoutingNoResponse() throws Exception {
+        FakeTransport transport = new FakeTransport();
+        client = new MeshtasticClient(new InMemoryNodeDatabase());
+        client.connect(transport);
+        completeStartupSync(transport, 3030);
+
+        int nodeId = 0x699c5400;
+        CompletableFuture<MeshNode> future = client.requestTelemetryAwaitPayload(nodeId, Duration.ofSeconds(5));
+
+        MeshProtos.ToRadio outbound = awaitToRadio(transport,
+                tr -> tr.hasPacket() && tr.getPacket().getDecoded().getPortnum() == Portnums.PortNum.TELEMETRY_APP,
+                Duration.ofSeconds(2));
+        int requestId = outbound.getPacket().getId();
+
+        // First routing NONE correlates request acceptance.
+        transport.emitParsedPacket(MeshProtos.FromRadio.newBuilder()
+                .setPacket(buildRoutingAck(client.getSelfNodeId(), requestId, 901100))
+                .build().toByteArray());
+
+        // Then routing NO_RESPONSE should fail strict payload wait immediately.
+        MeshProtos.Routing noResponse = MeshProtos.Routing.newBuilder()
+                .setErrorReason(MeshProtos.Routing.Error.NO_RESPONSE)
+                .build();
+        MeshProtos.MeshPacket routingError = MeshProtos.MeshPacket.newBuilder()
+                .setFrom(client.getSelfNodeId())
+                .setTo(client.getSelfNodeId())
+                .setDecoded(MeshProtos.Data.newBuilder()
+                        .setPortnum(Portnums.PortNum.ROUTING_APP)
+                        .setRequestId(requestId)
+                        .setPayload(noResponse.toByteString())
+                        .build())
+                .setId(901101)
+                .build();
+        transport.emitParsedPacket(MeshProtos.FromRadio.newBuilder().setPacket(routingError).build().toByteArray());
+
+        ExecutionException ex = assertThrows(ExecutionException.class, () -> future.get(2, TimeUnit.SECONDS));
+        assertTrue(ex.getCause() instanceof IllegalStateException);
+        assertTrue(ex.getCause().getMessage().contains("NO_RESPONSE"));
     }
 
     private void completeStartupSync(FakeTransport transport, int selfNodeId) {
@@ -413,5 +527,21 @@ class MeshtasticClientFlowTest {
             }
             Thread.sleep(10L);
         }
+    }
+
+    /**
+     * Builds a minimal ROUTING_APP ACK packet that correlates by {@code request_id}.
+     */
+    private static MeshProtos.MeshPacket buildRoutingAck(int selfNodeId, int requestId, int packetId) {
+        return MeshProtos.MeshPacket.newBuilder()
+                .setFrom(selfNodeId)
+                .setTo(selfNodeId)
+                .setDecoded(MeshProtos.Data.newBuilder()
+                        .setPortnum(Portnums.PortNum.ROUTING_APP)
+                        .setRequestId(requestId)
+                        .setPayload(ByteString.copyFrom(new byte[]{0x18, 0x00}))
+                        .build())
+                .setId(packetId)
+                .build();
     }
 }

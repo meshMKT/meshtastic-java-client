@@ -18,6 +18,7 @@ import com.meshmkt.meshtastic.client.handlers.RoutingHandler;
 import com.meshmkt.meshtastic.client.handlers.TelemetryHandler;
 import com.meshmkt.meshtastic.client.handlers.TextMessageHandler;
 import com.meshmkt.meshtastic.client.service.AdminService;
+import com.meshmkt.meshtastic.client.storage.MeshNode;
 import com.meshmkt.meshtastic.client.storage.NodeDatabase;
 import com.meshmkt.meshtastic.client.transport.MeshtasticTransport;
 import com.meshmkt.meshtastic.client.transport.TransportConnectionListener;
@@ -27,11 +28,15 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
+import java.util.function.Function;
+import java.util.function.Supplier;
 import org.meshtastic.proto.AdminProtos.AdminMessage;
 
 /**
@@ -82,6 +87,7 @@ public class MeshtasticClient {
      */
     private final Map<Integer, PendingRequest> pendingRequests = new ConcurrentHashMap<>();
     private static final long STARTUP_SYNC_TIMEOUT_SECONDS = 45;
+    private static final Duration DEFAULT_PAYLOAD_WAIT_TIMEOUT = Duration.ofSeconds(30);
     private static final int NODELESS_WANT_CONFIG_ID = 69420;
     private static final int FULL_WANT_CONFIG_ID = 69421;
     private volatile ScheduledFuture<?> heartbeatFuture;
@@ -700,13 +706,32 @@ public class MeshtasticClient {
     // Node Utilities
     // -------------------------------------------------------------------------
     /**
-     * Explicitly requests NodeInfo from a specific node.
+     * Legacy alias for {@link #requestNodeInfo(int)}.
+     * <p>
+     * This method completes when the outbound request is accepted/correlated, not
+     * when a {@code NODEINFO_APP} payload has been parsed and applied.
+     * </p>
      *
-     * @param nodeId
-     * @return
+     * @param nodeId destination node ID.
+     * @return future completed when request correlation succeeds.
      */
+    @Deprecated
     public CompletableFuture<MeshPacket> refreshNodeInfo(int nodeId) {
-        log.info("[UTIL] Requesting NodeInfo for {}", nodeId);
+        return requestNodeInfo(nodeId);
+    }
+
+    /**
+     * Sends a {@code NODEINFO_APP} request to a specific node.
+     * <p>
+     * Completion semantics: this future completes when request correlation succeeds
+     * (transport/routing acceptance), not when the node info payload is received.
+     * </p>
+     *
+     * @param nodeId destination node ID.
+     * @return future completed on request acceptance/correlation.
+     */
+    public CompletableFuture<MeshPacket> requestNodeInfo(int nodeId) {
+        log.info("[UTIL] Requesting NodeInfo from {}", MeshUtils.formatId(nodeId));
         return executeRequest(new MeshRequest(
                 nodeId,
                 PortNum.NODEINFO_APP,
@@ -719,13 +744,91 @@ public class MeshtasticClient {
     }
 
     /**
-     * Explicitly requests a Position update from a specific node.
+     * Sends a {@code NODEINFO_APP} request and waits for a live node-discovery payload.
      *
-     * @param nodeId
-     * @return
+     * @param nodeId destination node ID.
+     * @return future completed only when matching live payload is observed.
+     */
+    public CompletableFuture<MeshNode> requestNodeInfoAwaitPayload(int nodeId) {
+        return requestNodeInfoAwaitPayload(nodeId, DEFAULT_PAYLOAD_WAIT_TIMEOUT);
+    }
+
+    /**
+     * Sends a {@code NODEINFO_APP} request and waits for a live node-discovery payload.
+     * <p>
+     * Completion semantics: this future completes only after a matching
+     * {@code NODEINFO_APP} packet is handled and node state is observable in the node database.
+     * </p>
+     *
+     * @param nodeId destination node ID.
+     * @param timeout maximum duration to wait for live payload arrival.
+     * @return future completed only when matching live payload is observed.
+     */
+    public CompletableFuture<MeshNode> requestNodeInfoAwaitPayload(int nodeId, Duration timeout) {
+        return requestAndAwaitNodeUpdate(
+                nodeId,
+                timeout,
+                "NODEINFO_APP",
+                false,
+                () -> requestNodeInfo(nodeId),
+                completion -> new MeshtasticEventListener() {
+                    @Override
+                    public void onNodeDiscovery(NodeDiscoveryEvent event) {
+                        if (event.getNodeId() == nodeId && event.getRawPacket() != null) {
+                            completeWithNodeSnapshot(completion, nodeId, "NODEINFO_APP");
+                        }
+                    }
+                }
+        );
+    }
+
+    /**
+     * Sends a {@code NODEINFO_APP} request and waits for live payload, with snapshot fallback on timeout.
+     *
+     * @param nodeId destination node ID.
+     * @return future completed with live payload snapshot or latest cached snapshot when payload timeout occurs.
+     */
+    public CompletableFuture<MeshNode> requestNodeInfoAwaitPayloadOrSnapshot(int nodeId) {
+        return requestNodeInfoAwaitPayloadOrSnapshot(nodeId, DEFAULT_PAYLOAD_WAIT_TIMEOUT);
+    }
+
+    /**
+     * Sends a {@code NODEINFO_APP} request and waits for live payload, with snapshot fallback on timeout.
+     *
+     * @param nodeId destination node ID.
+     * @param timeout maximum duration to wait for live payload arrival.
+     * @return future completed with live payload snapshot or latest cached snapshot when payload timeout occurs.
+     */
+    public CompletableFuture<MeshNode> requestNodeInfoAwaitPayloadOrSnapshot(int nodeId, Duration timeout) {
+        return requestAndAwaitNodeUpdate(
+                nodeId,
+                timeout,
+                "NODEINFO_APP",
+                true,
+                () -> requestNodeInfo(nodeId),
+                completion -> new MeshtasticEventListener() {
+                    @Override
+                    public void onNodeDiscovery(NodeDiscoveryEvent event) {
+                        if (event.getNodeId() == nodeId && event.getRawPacket() != null) {
+                            completeWithNodeSnapshot(completion, nodeId, "NODEINFO_APP");
+                        }
+                    }
+                }
+        );
+    }
+
+    /**
+     * Sends a {@code POSITION_APP} request to a specific node.
+     * <p>
+     * Completion semantics: this future completes when request correlation succeeds
+     * (transport/routing acceptance), not when position payload arrives.
+     * </p>
+     *
+     * @param nodeId destination node ID.
+     * @return future completed on request acceptance/correlation.
      */
     public CompletableFuture<MeshPacket> requestPosition(int nodeId) {
-        log.info("[UTIL] Requesting Position from {}", nodeId);
+        log.info("[UTIL] Requesting Position from {}", MeshUtils.formatId(nodeId));
         return executeRequest(new MeshRequest(
                 nodeId,
                 PortNum.POSITION_APP,
@@ -738,13 +841,87 @@ public class MeshtasticClient {
     }
 
     /**
-     * Explicitly requests Telemetry (battery, etc) from a specific node.
+     * Sends a {@code POSITION_APP} request and waits for a matching position update.
      *
-     * @param nodeId
-     * @return
+     * @param nodeId destination node ID.
+     * @return future completed only when matching live payload is observed.
+     */
+    public CompletableFuture<MeshNode> requestPositionAwaitPayload(int nodeId) {
+        return requestPositionAwaitPayload(nodeId, DEFAULT_PAYLOAD_WAIT_TIMEOUT);
+    }
+
+    /**
+     * Sends a {@code POSITION_APP} request and waits for a matching position update.
+     *
+     * @param nodeId destination node ID.
+     * @param timeout maximum duration to wait for live payload arrival.
+     * @return future completed only when matching live payload is observed.
+     */
+    public CompletableFuture<MeshNode> requestPositionAwaitPayload(int nodeId, Duration timeout) {
+        return requestAndAwaitNodeUpdate(
+                nodeId,
+                timeout,
+                "POSITION_APP",
+                false,
+                () -> requestPosition(nodeId),
+                completion -> new MeshtasticEventListener() {
+                    @Override
+                    public void onPositionUpdate(PositionUpdateEvent event) {
+                        if (event.getNodeId() == nodeId && event.getRawPacket() != null) {
+                            completeWithNodeSnapshot(completion, nodeId, "POSITION_APP");
+                        }
+                    }
+                }
+        );
+    }
+
+    /**
+     * Sends a {@code POSITION_APP} request and waits for live payload, with snapshot fallback on timeout.
+     *
+     * @param nodeId destination node ID.
+     * @return future completed with live payload snapshot or latest cached snapshot when payload timeout occurs.
+     */
+    public CompletableFuture<MeshNode> requestPositionAwaitPayloadOrSnapshot(int nodeId) {
+        return requestPositionAwaitPayloadOrSnapshot(nodeId, DEFAULT_PAYLOAD_WAIT_TIMEOUT);
+    }
+
+    /**
+     * Sends a {@code POSITION_APP} request and waits for live payload, with snapshot fallback on timeout.
+     *
+     * @param nodeId destination node ID.
+     * @param timeout maximum duration to wait for live payload arrival.
+     * @return future completed with live payload snapshot or latest cached snapshot when payload timeout occurs.
+     */
+    public CompletableFuture<MeshNode> requestPositionAwaitPayloadOrSnapshot(int nodeId, Duration timeout) {
+        return requestAndAwaitNodeUpdate(
+                nodeId,
+                timeout,
+                "POSITION_APP",
+                true,
+                () -> requestPosition(nodeId),
+                completion -> new MeshtasticEventListener() {
+                    @Override
+                    public void onPositionUpdate(PositionUpdateEvent event) {
+                        if (event.getNodeId() == nodeId && event.getRawPacket() != null) {
+                            completeWithNodeSnapshot(completion, nodeId, "POSITION_APP");
+                        }
+                    }
+                }
+        );
+    }
+
+    /**
+     * Sends a {@code TELEMETRY_APP} request to a specific node.
+     * <p>
+     * Completion semantics: this future completes when request correlation succeeds
+     * (transport/routing acceptance), not when telemetry payload arrives.
+     * </p>
+     *
+     * @param nodeId destination node ID.
+     * @return future completed on request acceptance/correlation.
      */
     public CompletableFuture<MeshPacket> requestTelemetry(int nodeId) {
-        log.info("[UTIL] Requesting Telemetry from {}", nodeId);
+        log.info("[UTIL] Requesting Telemetry from {}", MeshUtils.formatId(nodeId));
         return executeRequest(new MeshRequest(
                 nodeId,
                 PortNum.TELEMETRY_APP,
@@ -754,6 +931,202 @@ public class MeshtasticClient {
                 true,
                 false
         ));
+    }
+
+    /**
+     * Sends a {@code TELEMETRY_APP} request and waits for a matching telemetry update.
+     *
+     * @param nodeId destination node ID.
+     * @return future completed only when matching live payload is observed.
+     */
+    public CompletableFuture<MeshNode> requestTelemetryAwaitPayload(int nodeId) {
+        return requestTelemetryAwaitPayload(nodeId, DEFAULT_PAYLOAD_WAIT_TIMEOUT);
+    }
+
+    /**
+     * Sends a {@code TELEMETRY_APP} request and waits for a matching telemetry update.
+     *
+     * @param nodeId destination node ID.
+     * @param timeout maximum duration to wait for live payload arrival.
+     * @return future completed only when matching live payload is observed.
+     */
+    public CompletableFuture<MeshNode> requestTelemetryAwaitPayload(int nodeId, Duration timeout) {
+        return requestAndAwaitNodeUpdate(
+                nodeId,
+                timeout,
+                "TELEMETRY_APP",
+                false,
+                () -> requestTelemetry(nodeId),
+                completion -> new MeshtasticEventListener() {
+                    @Override
+                    public void onTelemetryUpdate(TelemetryUpdateEvent event) {
+                        if (event.getNodeId() == nodeId && event.getRawPacket() != null) {
+                            completeWithNodeSnapshot(completion, nodeId, "TELEMETRY_APP");
+                        }
+                    }
+                }
+        );
+    }
+
+    /**
+     * Sends a {@code TELEMETRY_APP} request and waits for live payload, with snapshot fallback on timeout.
+     *
+     * @param nodeId destination node ID.
+     * @return future completed with live payload snapshot or latest cached snapshot when payload timeout occurs.
+     */
+    public CompletableFuture<MeshNode> requestTelemetryAwaitPayloadOrSnapshot(int nodeId) {
+        return requestTelemetryAwaitPayloadOrSnapshot(nodeId, DEFAULT_PAYLOAD_WAIT_TIMEOUT);
+    }
+
+    /**
+     * Sends a {@code TELEMETRY_APP} request and waits for live payload, with snapshot fallback on timeout.
+     *
+     * @param nodeId destination node ID.
+     * @param timeout maximum duration to wait for live payload arrival.
+     * @return future completed with live payload snapshot or latest cached snapshot when payload timeout occurs.
+     */
+    public CompletableFuture<MeshNode> requestTelemetryAwaitPayloadOrSnapshot(int nodeId, Duration timeout) {
+        return requestAndAwaitNodeUpdate(
+                nodeId,
+                timeout,
+                "TELEMETRY_APP",
+                true,
+                () -> requestTelemetry(nodeId),
+                completion -> new MeshtasticEventListener() {
+                    @Override
+                    public void onTelemetryUpdate(TelemetryUpdateEvent event) {
+                        if (event.getNodeId() == nodeId && event.getRawPacket() != null) {
+                            completeWithNodeSnapshot(completion, nodeId, "TELEMETRY_APP");
+                        }
+                    }
+                }
+        );
+    }
+
+    /**
+     * Shared request+await helper for payload-level convenience APIs.
+     *
+     * @param nodeId destination node ID.
+     * @param timeout wait duration for payload-level completion.
+     * @param payloadName diagnostic payload name for timeout/error reporting.
+     * @param allowSnapshotFallbackOnTimeout when {@code true}, accepted requests may return latest snapshot on payload timeout.
+     * @param requestSupplier supplier that starts the outbound request.
+     * @param listenerFactory factory creating the one-shot listener that completes the payload future.
+     * @return future completed with node snapshot after payload-level event is observed.
+     */
+    private CompletableFuture<MeshNode> requestAndAwaitNodeUpdate(
+            int nodeId,
+            Duration timeout,
+            String payloadName,
+            boolean allowSnapshotFallbackOnTimeout,
+            Supplier<CompletableFuture<MeshPacket>> requestSupplier,
+            Function<CompletableFuture<MeshNode>, MeshtasticEventListener> listenerFactory) {
+        Duration effectiveTimeout = (timeout == null || timeout.isZero() || timeout.isNegative())
+                ? DEFAULT_PAYLOAD_WAIT_TIMEOUT : timeout;
+
+        CompletableFuture<MeshNode> payloadFuture = new CompletableFuture<>();
+        AtomicBoolean requestAccepted = new AtomicBoolean(false);
+        AtomicInteger correlatedRequestId = new AtomicInteger(0);
+        MeshtasticEventListener payloadListener = listenerFactory.apply(payloadFuture);
+        MeshtasticEventListener listener = new MeshtasticEventListener() {
+            @Override
+            public void onTextMessage(ChatMessageEvent event) {
+                payloadListener.onTextMessage(event);
+            }
+
+            @Override
+            public void onPositionUpdate(PositionUpdateEvent event) {
+                payloadListener.onPositionUpdate(event);
+            }
+
+            @Override
+            public void onTelemetryUpdate(TelemetryUpdateEvent event) {
+                payloadListener.onTelemetryUpdate(event);
+            }
+
+            @Override
+            public void onNodeDiscovery(NodeDiscoveryEvent event) {
+                payloadListener.onNodeDiscovery(event);
+            }
+
+            @Override
+            public void onMessageStatusUpdate(MessageStatusEvent event) {
+                payloadListener.onMessageStatusUpdate(event);
+                int trackedRequestId = correlatedRequestId.get();
+                if (trackedRequestId != 0
+                        && event.getPacketId() == trackedRequestId
+                        && !event.isSuccess()
+                        && !payloadFuture.isDone()) {
+                    payloadFuture.completeExceptionally(new IllegalStateException(
+                            payloadName + " request failed for " + MeshUtils.formatId(nodeId)
+                                    + " with routing status " + event.getError()));
+                }
+            }
+        };
+        addEventListener(listener);
+
+        ScheduledFuture<?> timeoutFuture = scheduler.schedule(() -> {
+            if (payloadFuture.isDone()) {
+                return;
+            }
+
+            if (requestAccepted.get() && allowSnapshotFallbackOnTimeout) {
+                // Request succeeded at protocol layer, but target did not emit the expected payload in time.
+                // Return best-known snapshot so callers can continue with stale-but-usable state.
+                nodeDb.getNode(nodeId).ifPresentOrElse(
+                        payloadFuture::complete,
+                        () -> payloadFuture.completeExceptionally(new TimeoutException(
+                                "Timed out waiting for " + payloadName + " from " + MeshUtils.formatId(nodeId)))
+                );
+            } else {
+                payloadFuture.completeExceptionally(new TimeoutException(
+                        "Timed out waiting for " + payloadName + " from " + MeshUtils.formatId(nodeId)));
+            }
+        }, effectiveTimeout.toMillis(), TimeUnit.MILLISECONDS);
+
+        payloadFuture.whenComplete((node, err) -> {
+            timeoutFuture.cancel(false);
+            removeEventListener(listener);
+        });
+
+        CompletableFuture<MeshPacket> requestFuture;
+        try {
+            requestFuture = requestSupplier.get();
+        } catch (Exception ex) {
+            payloadFuture.completeExceptionally(ex);
+            return payloadFuture;
+        }
+
+        requestFuture.exceptionally(ex -> {
+            payloadFuture.completeExceptionally(new IllegalStateException(
+                    "Request failed before " + payloadName + " payload arrived from " + MeshUtils.formatId(nodeId),
+                    ex));
+            return null;
+        });
+
+        return requestFuture.thenCompose(packet -> {
+            requestAccepted.set(true);
+            int requestId = packet.hasDecoded() && packet.getDecoded().getRequestId() != 0
+                    ? packet.getDecoded().getRequestId()
+                    : packet.getId();
+            correlatedRequestId.set(requestId);
+            return payloadFuture;
+        });
+    }
+
+    /**
+     * Completes a payload waiter using the latest node snapshot if available.
+     *
+     * @param completion completion target for payload-level API methods.
+     * @param nodeId destination node ID.
+     * @param payloadName payload label for error reporting.
+     */
+    private void completeWithNodeSnapshot(CompletableFuture<MeshNode> completion, int nodeId, String payloadName) {
+        nodeDb.getNode(nodeId).ifPresentOrElse(
+                completion::complete,
+                () -> completion.completeExceptionally(new IllegalStateException(
+                        payloadName + " event observed but node snapshot was missing for " + MeshUtils.formatId(nodeId)))
+        );
     }
 
     private synchronized void startHeartbeatTask() {
@@ -827,6 +1200,15 @@ public class MeshtasticClient {
      */
     public void addEventListener(MeshtasticEventListener l) {
         listeners.add(l);
+    }
+
+    /**
+     * Removes a previously registered listener.
+     *
+     * @param l listener to remove.
+     */
+    public void removeEventListener(MeshtasticEventListener l) {
+        listeners.remove(l);
     }
 
     private void notifyListeners(Consumer<MeshtasticEventListener> action) {

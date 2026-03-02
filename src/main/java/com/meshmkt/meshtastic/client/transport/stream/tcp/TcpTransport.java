@@ -116,13 +116,13 @@ public class TcpTransport extends StreamTransport {
 
         Thread retryThread = new Thread(() -> {
             try {
-                log.info(">>> TCP Link lost. Retrying {}...", config.getHost());
+                log.trace(">>> TCP Link lost. Retrying {}...", config.getHost());
                 while (running && !isConnected()) {
                     try {
                         Thread.sleep(5000); // 5-second backoff
                         attemptConnection();
                         if (isConnected()) {
-                            log.info(">>> TCP Link Restored!");
+                            log.trace(">>> TCP Link Restored!");
                             notifyConnected();
                             break;
                         }

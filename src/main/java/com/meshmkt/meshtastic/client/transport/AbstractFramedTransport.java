@@ -88,14 +88,14 @@ public abstract class AbstractFramedTransport implements MeshtasticTransport {
 
         // Apply bounded backpressure instead of silently dropping writes when queue is full.
         // If enqueue cannot complete quickly, we log and notify so callers can observe congestion behavior.
-        log.debug("write - adding bytes to txQueue");
+        log.trace("write - adding bytes to txQueue");
         try {
             boolean enqueued = txQueue.offer(protobufData, 1, TimeUnit.SECONDS);
             if (!enqueued) {
                 log.warn("write - txQueue full, dropping outbound frame ({} bytes)", protobufData.length);
                 notifyError(new IllegalStateException("Outbound queue saturated; frame dropped"));
             } else {
-                log.debug("write - bytes added to txQueue");
+                log.trace("write - bytes added to txQueue");
             }
         } catch (InterruptedException ex) {
             Thread.currentThread().interrupt();
@@ -128,23 +128,23 @@ public abstract class AbstractFramedTransport implements MeshtasticTransport {
     private void processTxQueue() {
         while (running && !Thread.currentThread().isInterrupted()) {
             try {
-                log.debug("processTxQueue - Checking for txQueue data");
+                log.trace("processTxQueue - Checking for txQueue data");
                 byte[] protobufData = txQueue.take(); // Wait for a packet
-                log.debug("processTxQeueu - Found data to process");
+                log.trace("processTxQeueu - Found data to process");
 
-                log.debug("processTxQueue - Sending bytes to radio");
+                log.trace("processTxQueue - Sending bytes to radio");
                 sendRawBytes(protobufData);
-                log.debug("processTxQueue - Bytes sent to radio");
+                log.trace("processTxQueue - Bytes sent to radio");
 
-                log.debug("processTxQueue - Sending activity event");
+                log.trace("processTxQueue - Sending activity event");
                 asyncNotify(TransportConnectionListener::onTrafficTransmitted);
-                log.debug("processTxQueue - Activity event sent");
+                log.trace("processTxQueue - Activity event sent");
 
                 /// Use the configurable delay
             if (outboundPacingDelay > 0) {
-                    log.debug("processTxQueue - Sleeping for {}ms", outboundPacingDelay);
+                    log.trace("processTxQueue - Sleeping for {}ms", outboundPacingDelay);
                     Thread.sleep(outboundPacingDelay);
-                    log.debug("processTxQueue - Sleep finished");
+                    log.trace("processTxQueue - Sleep finished");
                 }
 
             } catch (InterruptedException e) {

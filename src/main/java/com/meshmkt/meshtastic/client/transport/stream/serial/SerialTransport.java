@@ -115,7 +115,7 @@ public class SerialTransport extends StreamTransport {
             throw new IOException("Port is closed");
         }
 
-        log.info("PHYSICAL WRITE: {} bytes to port {}", framedData.length, descriptorFor(port));
+        log.trace("PHYSICAL WRITE: {} bytes to port {}", framedData.length, descriptorFor(port));
         int written = port.writeBytes(framedData, framedData.length);
         if (written < 0) {
             throw new IOException("Serial write failed.");
@@ -144,20 +144,20 @@ public class SerialTransport extends StreamTransport {
 
         Thread retryThread = new Thread(() -> {
             try {
-                log.info(">>> Serial link lost. Searching for radio (preferred: {})...", activePortDescriptor);
+                log.trace(">>> Serial link lost. Searching for radio (preferred: {})...", activePortDescriptor);
                 while (running && !isConnected()) {
                     try {
                         Thread.sleep(5000);
-                        log.debug("Serial reconnect attempt (preferred: {})", activePortDescriptor);
+                        log.trace("Serial reconnect attempt (preferred: {})", activePortDescriptor);
                         connect();
                         if (isConnected()) {
-                            log.info(">>> Radio Found! Link Restored on {}.", activePortDescriptor);
+                            log.trace(">>> Radio Found! Link Restored on {}.", activePortDescriptor);
                             notifyConnected();
                             break;
                         }
                     } catch (Exception e) {
                         // Keep retrying and emit reason to simplify field debugging for descriptor churn cases.
-                        log.debug("Serial reconnect attempt failed: {}", e.getMessage());
+                        log.trace("Serial reconnect attempt failed: {}", e.getMessage());
                     }
                 }
             } finally {
