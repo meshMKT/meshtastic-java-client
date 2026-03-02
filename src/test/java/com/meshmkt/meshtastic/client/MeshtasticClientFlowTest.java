@@ -4,6 +4,7 @@ import com.google.protobuf.ByteString;
 import com.meshmkt.meshtastic.client.storage.InMemoryNodeDatabase;
 import com.meshmkt.meshtastic.client.storage.MeshNode;
 import com.meshmkt.meshtastic.client.support.FakeTransport;
+import com.meshmkt.meshtastic.client.event.StartupState;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.meshtastic.proto.AdminProtos.AdminMessage;
@@ -52,6 +53,8 @@ class MeshtasticClientFlowTest {
         client = new MeshtasticClient(new InMemoryNodeDatabase());
         client.connect(transport);
 
+        assertEquals(StartupState.SYNC_LOCAL_CONFIG, client.getStartupState());
+
         MeshProtos.ToRadio phase1 = awaitToRadio(transport, tr -> tr.hasWantConfigId() && tr.getWantConfigId() == 69420,
                 Duration.ofSeconds(2));
         assertEquals(69420, phase1.getWantConfigId());
@@ -66,6 +69,40 @@ class MeshtasticClientFlowTest {
         MeshProtos.ToRadio phase2 = awaitToRadio(transport, tr -> tr.hasWantConfigId() && tr.getWantConfigId() == 69421,
                 Duration.ofSeconds(2));
         assertEquals(69421, phase2.getWantConfigId());
+
+        transport.emitParsedPacket(MeshProtos.FromRadio.newBuilder().setConfigCompleteId(69421).build().toByteArray());
+        assertEquals(StartupState.READY, client.getStartupState());
+        assertTrue(client.isReady());
+    }
+
+    /**
+     * Verifies startup lifecycle listener receives SYNC -> READY transitions and DISCONNECTED on disconnect.
+     */
+    @Test
+    void startupStateChangeEventsAreEmitted() throws Exception {
+        FakeTransport transport = new FakeTransport();
+        client = new MeshtasticClient(new InMemoryNodeDatabase());
+
+        CountDownLatch readyLatch = new CountDownLatch(1);
+        CountDownLatch disconnectedLatch = new CountDownLatch(1);
+        client.addEventListener(new com.meshmkt.meshtastic.client.event.MeshtasticEventListener() {
+            @Override
+            public void onStartupStateChanged(StartupState previousState, StartupState newState) {
+                if (newState == StartupState.READY) {
+                    readyLatch.countDown();
+                }
+                if (newState == StartupState.DISCONNECTED) {
+                    disconnectedLatch.countDown();
+                }
+            }
+        });
+
+        client.connect(transport);
+        completeStartupSync(transport, 4321);
+        assertTrue(readyLatch.await(2, TimeUnit.SECONDS), "Expected READY startup state event");
+
+        client.disconnect();
+        assertTrue(disconnectedLatch.await(2, TimeUnit.SECONDS), "Expected DISCONNECTED startup state event");
     }
 
     /**
@@ -145,7 +182,7 @@ class MeshtasticClientFlowTest {
         client.connect(transport);
         completeStartupSync(transport, 7777);
 
-        CompletableFuture<MeshProtos.MeshPacket> future = client.refreshNodeInfo(424242);
+        CompletableFuture<MeshProtos.MeshPacket> future = client.requestNodeInfo(424242);
 
         MeshProtos.ToRadio outbound = awaitToRadio(transport,
                 tr -> tr.hasPacket() && tr.getPacket().getDecoded().getPortnum() == Portnums.PortNum.NODEINFO_APP,
@@ -222,7 +259,7 @@ class MeshtasticClientFlowTest {
         client.connect(transport);
         completeStartupSync(transport, 8888);
 
-        CompletableFuture<MeshProtos.MeshPacket> future = client.refreshNodeInfo(1337);
+        CompletableFuture<MeshProtos.MeshPacket> future = client.requestNodeInfo(1337);
         assertNotNull(awaitToRadio(transport,
                 tr -> tr.hasPacket() && tr.getPacket().getDecoded().getPortnum() == Portnums.PortNum.NODEINFO_APP,
                 Duration.ofSeconds(2)));
@@ -242,7 +279,7 @@ class MeshtasticClientFlowTest {
         client.connect(transport);
         completeStartupSync(transport, 9999);
 
-        CompletableFuture<MeshProtos.MeshPacket> future = client.refreshNodeInfo(1337);
+        CompletableFuture<MeshProtos.MeshPacket> future = client.requestNodeInfo(1337);
         assertNotNull(awaitToRadio(transport,
                 tr -> tr.hasPacket() && tr.getPacket().getDecoded().getPortnum() == Portnums.PortNum.NODEINFO_APP,
                 Duration.ofSeconds(2)));
@@ -298,7 +335,7 @@ class MeshtasticClientFlowTest {
         assertTrue(newTransport.isConnected());
         completeStartupSync(newTransport, 6002);
 
-        CompletableFuture<MeshProtos.MeshPacket> future = client.refreshNodeInfo(12345);
+        CompletableFuture<MeshProtos.MeshPacket> future = client.requestNodeInfo(12345);
         MeshProtos.ToRadio writeOnNew = awaitToRadio(newTransport,
                 tr -> tr.hasPacket() && tr.getPacket().getDecoded().getPortnum() == Portnums.PortNum.NODEINFO_APP,
                 Duration.ofSeconds(2));

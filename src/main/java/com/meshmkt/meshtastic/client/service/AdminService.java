@@ -2,13 +2,13 @@ package com.meshmkt.meshtastic.client.service;
 
 import com.google.protobuf.ByteString;
 import com.meshmkt.meshtastic.client.MeshUtils;
-import com.meshmkt.meshtastic.client.MeshtasticClient;
 import com.meshmkt.meshtastic.client.model.RadioModel;
 import lombok.extern.slf4j.Slf4j;
 import org.meshtastic.proto.AdminProtos.AdminMessage;
 import org.meshtastic.proto.AdminProtos.AdminMessage.ConfigType;
 import org.meshtastic.proto.AdminProtos.AdminMessage.ModuleConfigType;
 import org.meshtastic.proto.ChannelProtos.Channel;
+import org.meshtastic.proto.ChannelProtos.ChannelSettings;
 import org.meshtastic.proto.ConfigProtos.Config;
 import org.meshtastic.proto.MeshProtos.DeviceMetadata;
 import org.meshtastic.proto.MeshProtos.FromRadio;
@@ -18,9 +18,18 @@ import org.meshtastic.proto.MeshProtos.User;
 import org.meshtastic.proto.ModuleConfigProtos.ModuleConfig;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Comparator;
+import java.util.EnumMap;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
+import java.time.Duration;
+import java.nio.charset.StandardCharsets;
 import java.util.function.Function;
 import java.util.stream.IntStream;
 
@@ -38,23 +47,61 @@ import java.util.stream.IntStream;
  * All incoming radio data is funneled through ingest methods and applied by a single set of private
  * {@code apply...} mutators to keep model updates consistent.
  * </p>
+ * <p>
+ * Write-operation completion semantics:
+ * </p>
+ * <ul>
+ * <li>{@link #setChannel(int, Channel)}: accepted + read-back verified (default behavior).</li>
+ * <li>{@link #setChannel(int, Channel, boolean)}: caller chooses accepted-only vs verified-applied.</li>
+ * <li>{@link #setConfig(Config)}: accepted-only.</li>
+ * <li>{@link #setConfig(Config, boolean)} and {@link #setConfigAndVerify(Config)}: caller chooses or forces verification.</li>
+ * <li>{@link #setModuleConfig(ModuleConfig)}: accepted-only.</li>
+ * <li>{@link #setModuleConfig(ModuleConfig, boolean)} and {@link #setModuleConfigAndVerify(ModuleConfig)}:
+ * caller chooses or forces verification.</li>
+ * <li>{@link #setOwner(int, String, String)}: accepted-only.</li>
+ * <li>{@link #setOwner(int, String, String, boolean)} and {@link #setOwnerAndVerify(int, String, String)}:
+ * accepted-only or verified-applied.</li>
+ * </ul>
  */
 @Slf4j
 public class AdminService {
 
     private static final int MAX_CHANNEL_SLOTS = 8;
+    private static final Duration OWNER_VERIFY_TIMEOUT = Duration.ofSeconds(10);
+    private static final List<ConfigType> CORE_CONFIG_TYPES = List.of(
+            ConfigType.LORA_CONFIG,
+            ConfigType.DEVICE_CONFIG,
+            ConfigType.DISPLAY_CONFIG,
+            ConfigType.NETWORK_CONFIG
+    );
+    private static final List<ModuleConfigType> SUPPORTED_MODULE_CONFIG_TYPES = List.of(
+            ModuleConfigType.MQTT_CONFIG,
+            ModuleConfigType.SERIAL_CONFIG,
+            ModuleConfigType.EXTNOTIF_CONFIG,
+            ModuleConfigType.STOREFORWARD_CONFIG,
+            ModuleConfigType.RANGETEST_CONFIG,
+            ModuleConfigType.TELEMETRY_CONFIG,
+            ModuleConfigType.CANNEDMSG_CONFIG,
+            ModuleConfigType.AUDIO_CONFIG,
+            ModuleConfigType.REMOTEHARDWARE_CONFIG,
+            ModuleConfigType.NEIGHBORINFO_CONFIG,
+            ModuleConfigType.AMBIENTLIGHTING_CONFIG,
+            ModuleConfigType.DETECTIONSENSOR_CONFIG,
+            ModuleConfigType.PAXCOUNTER_CONFIG,
+            ModuleConfigType.STATUSMESSAGE_CONFIG
+    );
 
-    private final MeshtasticClient client;
+    private final AdminRequestGateway gateway;
     private final RadioModel radioModel = new RadioModel();
     private ByteString lastSessionPasskey = ByteString.EMPTY;
 
     /**
-     * Creates a new admin service bound to one client instance.
+     * Creates a new admin service bound to one request gateway instance.
      *
-     * @param client meshtastic client runtime.
+     * @param gateway admin request gateway runtime.
      */
-    public AdminService(MeshtasticClient client) {
-        this.client = client;
+    public AdminService(AdminRequestGateway gateway) {
+        this.gateway = gateway;
     }
 
     /**
@@ -64,16 +111,6 @@ public class AdminService {
      */
     public RadioModel getSnapshot() {
         return radioModel;
-    }
-
-    /**
-     * Backward-compatible alias for {@link #getSnapshot()}.
-     *
-     * @return current radio model cache.
-     */
-    @Deprecated
-    public RadioModel getRadioModel() {
-        return getSnapshot();
     }
 
     /**
@@ -87,11 +124,41 @@ public class AdminService {
     public CompletableFuture<RadioModel> refreshCore() {
         return refreshMetadata()
                 .thenCompose(metadata -> refreshOwner())
-                .thenCompose(owner -> refreshConfig(ConfigType.LORA_CONFIG))
-                .thenCompose(cfg -> refreshConfig(ConfigType.DEVICE_CONFIG))
-                .thenCompose(cfg -> refreshConfig(ConfigType.DISPLAY_CONFIG))
-                .thenCompose(cfg -> refreshConfig(ConfigType.NETWORK_CONFIG))
-                .thenApply(cfg -> radioModel);
+                .thenCompose(owner -> refreshCoreConfigs())
+                .thenApply(configs -> radioModel);
+    }
+
+    /**
+     * Refreshes settings usually needed by a channels/security page.
+     * <p>
+     * Includes channel slots, security config, and MQTT module config.
+     * </p>
+     *
+     * @return future completing with the updated model.
+     */
+    public CompletableFuture<RadioModel> refreshChannelsAndSecurity() {
+        return refreshChannels()
+                .thenCompose(channels -> refreshSecurityConfig())
+                .thenCompose(config -> refreshMqttConfig())
+                .thenApply(moduleConfig -> radioModel);
+    }
+
+    /**
+     * Refreshes all supported module config sections.
+     *
+     * @return future completing with the updated model.
+     */
+    public CompletableFuture<RadioModel> refreshModules() {
+        return refreshAllModuleConfigs().thenApply(moduleConfigs -> radioModel);
+    }
+
+    /**
+     * Refreshes the core config group used by most settings UIs.
+     *
+     * @return future completing with immutable map of refreshed config payloads keyed by type.
+     */
+    public CompletableFuture<Map<ConfigType, Config>> refreshCoreConfigs() {
+        return refreshConfigs(CORE_CONFIG_TYPES);
     }
 
     /**
@@ -139,8 +206,7 @@ public class AdminService {
      */
     public CompletableFuture<Config> refreshConfig(ConfigType type) {
         CompletableFuture<Void> preflight = type == ConfigType.SESSIONKEY_CONFIG
-                ? refreshMetadata().thenAccept(metadata -> {
-                })
+                ? refreshMetadata().thenApply(metadata -> null)
                 : CompletableFuture.completedFuture(null);
 
         return preflight.thenCompose(unused -> {
@@ -154,6 +220,39 @@ public class AdminService {
                 return config;
             });
         });
+    }
+
+    /**
+     * Refreshes the security config section.
+     *
+     * @return future completing with parsed security config payload.
+     */
+    public CompletableFuture<Config> refreshSecurityConfig() {
+        return refreshConfig(ConfigType.SECURITY_CONFIG);
+    }
+
+    /**
+     * Refreshes an explicit set of config types sequentially.
+     * <p>
+     * Sequential ordering avoids flooding slower radios with many settings queries at once.
+     * </p>
+     *
+     * @param types config types to refresh. Null and duplicate entries are ignored.
+     * @return future completing with immutable map of refreshed config payloads keyed by type.
+     */
+    public CompletableFuture<Map<ConfigType, Config>> refreshConfigs(List<ConfigType> types) {
+        Set<ConfigType> uniqueTypes = normalizeDistinct(types);
+        CompletableFuture<Map<ConfigType, Config>> chain
+                = CompletableFuture.completedFuture(new EnumMap<>(ConfigType.class));
+
+        for (ConfigType type : uniqueTypes) {
+            chain = chain.thenCompose(refreshed -> refreshConfig(type).thenApply(config -> {
+                refreshed.put(type, config);
+                return refreshed;
+            }));
+        }
+
+        return chain.thenApply(Map::copyOf);
     }
 
     /**
@@ -210,50 +309,114 @@ public class AdminService {
     }
 
     /**
-     * Writes an updated channel to a slot.
+     * Refreshes MQTT module settings.
+     *
+     * @return future completing with parsed MQTT module config payload.
+     */
+    public CompletableFuture<ModuleConfig> refreshMqttConfig() {
+        return refreshModuleConfig(ModuleConfigType.MQTT_CONFIG);
+    }
+
+    /**
+     * Refreshes an explicit set of module config types sequentially.
      * <p>
-     * Success is verified by reading the slot back from the radio and comparing role/settings.
-     * This reflects protocol state, which can be ahead of what the device's local UI currently redraws.
+     * Sequential ordering avoids flooding slower radios with many settings queries at once.
+     * </p>
+     *
+     * @param types module config types to refresh. Null and duplicate entries are ignored.
+     * @return future completing with immutable map of refreshed module config payloads keyed by type.
+     */
+    public CompletableFuture<Map<ModuleConfigType, ModuleConfig>> refreshModuleConfigs(List<ModuleConfigType> types) {
+        Set<ModuleConfigType> uniqueTypes = normalizeDistinct(types);
+        CompletableFuture<Map<ModuleConfigType, ModuleConfig>> chain
+                = CompletableFuture.completedFuture(new EnumMap<>(ModuleConfigType.class));
+
+        for (ModuleConfigType type : uniqueTypes) {
+            chain = chain.thenCompose(refreshed -> refreshModuleConfig(type).thenApply(config -> {
+                refreshed.put(type, config);
+                return refreshed;
+            }));
+        }
+
+        return chain.thenApply(Map::copyOf);
+    }
+
+    /**
+     * Refreshes all currently supported module config sections.
+     *
+     * @return future completing with immutable map of refreshed module config payloads keyed by type.
+     */
+    public CompletableFuture<Map<ModuleConfigType, ModuleConfig>> refreshAllModuleConfigs() {
+        return refreshModuleConfigs(SUPPORTED_MODULE_CONFIG_TYPES);
+    }
+
+    /**
+     * Writes an updated channel to a slot and verifies by read-back.
+     * <p>
+     * This method preserves the legacy/default behavior where channel writes are considered successful only when
+     * read-back role/settings match the requested payload.
      * </p>
      *
      * @param index channel slot index ({@code 0..7}).
      * @param updatedChannel channel payload.
-     * @return future completing with {@code true} when accepted by the radio.
+     * @return future completing with {@code true} when accepted and verified-applied.
      */
     public CompletableFuture<Boolean> setChannel(int index, Channel updatedChannel) {
-        return setChannel(index, updatedChannel, true);
+        return setChannel(index, updatedChannel, true, true);
     }
 
-    private CompletableFuture<Boolean> setChannel(int index, Channel updatedChannel, boolean allowRetry) {
+    /**
+     * Writes an updated channel to a slot and optionally verifies by read-back.
+     *
+     * @param index channel slot index ({@code 0..7}).
+     * @param updatedChannel channel payload.
+     * @param verifyApplied when {@code true}, performs read-back verification.
+     * @return future completing with {@code true} when accepted and verification passed (if enabled).
+     */
+    public CompletableFuture<Boolean> setChannel(int index, Channel updatedChannel, boolean verifyApplied) {
+        return setChannel(index, updatedChannel, verifyApplied, verifyApplied);
+    }
+
+    private CompletableFuture<Boolean> setChannel(int index,
+                                                  Channel updatedChannel,
+                                                  boolean verifyApplied,
+                                                  boolean allowRetry) {
         validateChannelIndex(index);
         Channel channelWithIndex = updatedChannel.toBuilder().setIndex(index).build();
-        CompletableFuture<Void> preflight = refreshMetadata().thenAccept(metadata -> {
-        });
+        CompletableFuture<Void> preflight = refreshMetadata().thenApply(metadata -> null);
 
         return preflight.thenCompose(unused -> {
             AdminMessage request = withSessionIfPresent(AdminMessage.newBuilder().setSetChannel(channelWithIndex)).build();
             // Channel write is a mutating operation: routing NONE is terminal success, routing errors fail fast.
-            return client.executeAdminRequest(client.getSelfNodeId(), request, false);
+            return gateway.executeAdminRequest(gateway.getSelfNodeId(), request, false);
         })
-                .thenCompose(packet -> refreshChannel(index).thenApply(appliedChannel -> {
-                    boolean applied = channelWithIndex.getRole() == appliedChannel.getRole()
-                            && channelWithIndex.getSettings().equals(appliedChannel.getSettings());
-
-                    if (applied) {
-                        log.info("[ADMIN] Channel {} updated successfully", index);
-                    } else if (allowRetry) {
-                        throw new IllegalStateException("Channel write not reflected on radio; retrying once");
-                    } else {
-                        log.warn("[ADMIN] Channel {} update did not apply on radio (requested role={}, observed role={})",
-                                index, channelWithIndex.getRole(), appliedChannel.getRole());
+                .thenCompose(packet -> {
+                    if (!verifyApplied) {
+                        applyChannel(channelWithIndex);
+                        log.info("[ADMIN] Channel {} request accepted by radio", index);
+                        return CompletableFuture.completedFuture(true);
                     }
-                    return applied;
-                }))
+
+                    return refreshChannel(index).thenApply(appliedChannel -> {
+                        boolean applied = channelWithIndex.getRole() == appliedChannel.getRole()
+                                && channelWithIndex.getSettings().equals(appliedChannel.getSettings());
+
+                        if (applied) {
+                            log.info("[ADMIN] Channel {} updated successfully", index);
+                        } else if (allowRetry) {
+                            throw new IllegalStateException("Channel write not reflected on radio; retrying once");
+                        } else {
+                            log.warn("[ADMIN] Channel {} update did not apply on radio (requested role={}, observed role={})",
+                                    index, channelWithIndex.getRole(), appliedChannel.getRole());
+                        }
+                        return applied;
+                    });
+                })
                 .exceptionallyCompose(ex -> {
                     if (allowRetry) {
                         log.warn("[ADMIN] Channel {} set failed/verification failed; refreshing session key and retrying once: {}",
                                 index, ex.getMessage());
-                        return setChannel(index, updatedChannel, false);
+                        return setChannel(index, updatedChannel, verifyApplied, false);
                     }
                     return CompletableFuture.completedFuture(false);
                 });
@@ -266,8 +429,308 @@ public class AdminService {
      * @return future completing when accepted by the radio.
      */
     public CompletableFuture<Void> setConfig(Config config) {
+        return setConfig(config, false).thenAccept(applied -> {
+        });
+    }
+
+    /**
+     * Writes one config payload and forces read-back verification.
+     *
+     * @param config config payload.
+     * @return future completing with {@code true} when accepted and verified-applied.
+     */
+    public CompletableFuture<Boolean> setConfigAndVerify(Config config) {
+        return setConfig(config, true);
+    }
+
+    /**
+     * Writes one config payload to the radio, optionally verifying by read-back.
+     * <p>
+     * Verification is performed by re-requesting the affected config type(s) and comparing section payloads.
+     * </p>
+     *
+     * @param config config payload.
+     * @param verifyApplied when {@code true}, performs read-back verification before completing.
+     * @return future completing with {@code true} if request was accepted and verification passed (when enabled).
+     */
+    public CompletableFuture<Boolean> setConfig(Config config, boolean verifyApplied) {
+        Objects.requireNonNull(config, "config must not be null");
+
         AdminMessage request = withSessionIfPresent(AdminMessage.newBuilder().setSetConfig(config)).build();
-        return client.executeAdminRequest(client.getSelfNodeId(), request, false).thenAccept(packet -> applyConfig(config));
+        return gateway.executeAdminRequest(gateway.getSelfNodeId(), request, false)
+                .thenCompose(packet -> {
+                    applyConfig(config);
+                    if (!verifyApplied) {
+                        return CompletableFuture.completedFuture(true);
+                    }
+
+                    List<ConfigType> impactedTypes = extractConfigTypes(config);
+                    if (impactedTypes.isEmpty()) {
+                        return CompletableFuture.completedFuture(false);
+                    }
+
+                    return refreshConfigs(impactedTypes)
+                            .thenApply(observed -> isConfigApplied(config, observed));
+                });
+    }
+
+    /**
+     * Writes one module config payload to the radio.
+     *
+     * @param moduleConfig module config payload.
+     * @return future completing when accepted by the radio.
+     */
+    public CompletableFuture<Void> setModuleConfig(ModuleConfig moduleConfig) {
+        return setModuleConfig(moduleConfig, false).thenAccept(applied -> {
+        });
+    }
+
+    /**
+     * Writes one module config payload and forces read-back verification.
+     *
+     * @param moduleConfig module config payload.
+     * @return future completing with {@code true} when accepted and verified-applied.
+     */
+    public CompletableFuture<Boolean> setModuleConfigAndVerify(ModuleConfig moduleConfig) {
+        return setModuleConfig(moduleConfig, true);
+    }
+
+    /**
+     * Writes one module config payload to the radio, optionally verifying by read-back.
+     *
+     * @param moduleConfig module config payload.
+     * @param verifyApplied when {@code true}, performs read-back verification before completing.
+     * @return future completing with {@code true} if request was accepted and verification passed (when enabled).
+     */
+    public CompletableFuture<Boolean> setModuleConfig(ModuleConfig moduleConfig, boolean verifyApplied) {
+        Objects.requireNonNull(moduleConfig, "moduleConfig must not be null");
+
+        ModuleConfigType moduleType = toModuleConfigType(moduleConfig);
+        if (moduleType == null) {
+            return CompletableFuture.failedFuture(
+                    new IllegalArgumentException("moduleConfig must include a concrete payload variant"));
+        }
+
+        AdminMessage request = withSessionIfPresent(AdminMessage.newBuilder().setSetModuleConfig(moduleConfig)).build();
+        return gateway.executeAdminRequest(gateway.getSelfNodeId(), request, false)
+                .thenCompose(packet -> {
+                    applyModuleConfig(moduleConfig);
+                    if (!verifyApplied) {
+                        return CompletableFuture.completedFuture(true);
+                    }
+
+                    return refreshModuleConfig(moduleType)
+                            .thenApply(observed -> isModuleConfigApplied(moduleConfig, observed));
+                });
+    }
+
+    /**
+     * Writes MQTT module settings to the local radio.
+     *
+     * @param mqttConfig MQTT module config payload.
+     * @param verifyApplied when {@code true}, verifies by read-back.
+     * @return future completing with write/verification result.
+     */
+    public CompletableFuture<Boolean> setMqttConfig(ModuleConfig.MQTTConfig mqttConfig, boolean verifyApplied) {
+        Objects.requireNonNull(mqttConfig, "mqttConfig must not be null");
+        ModuleConfig moduleConfig = ModuleConfig.newBuilder().setMqtt(mqttConfig).build();
+        return setModuleConfig(moduleConfig, verifyApplied);
+    }
+
+    /**
+     * Writes MQTT module settings using accepted-only completion semantics.
+     *
+     * @param mqttConfig MQTT module config payload.
+     * @return future completing when accepted by the radio.
+     */
+    public CompletableFuture<Void> setMqttConfig(ModuleConfig.MQTTConfig mqttConfig) {
+        return setMqttConfig(mqttConfig, false).thenAccept(applied -> {
+        });
+    }
+
+    /**
+     * Writes MQTT module settings and forces read-back verification.
+     *
+     * @param mqttConfig MQTT module config payload.
+     * @return future completing with {@code true} when accepted and verified-applied.
+     */
+    public CompletableFuture<Boolean> setMqttConfigAndVerify(ModuleConfig.MQTTConfig mqttConfig) {
+        return setMqttConfig(mqttConfig, true);
+    }
+
+    /**
+     * Writes security config to the local radio.
+     *
+     * @param securityConfig security config payload.
+     * @param verifyApplied when {@code true}, verifies by read-back.
+     * @return future completing with write/verification result.
+     */
+    public CompletableFuture<Boolean> setSecurityConfig(Config.SecurityConfig securityConfig, boolean verifyApplied) {
+        Objects.requireNonNull(securityConfig, "securityConfig must not be null");
+        Config config = Config.newBuilder().setSecurity(securityConfig).build();
+        return setConfig(config, verifyApplied);
+    }
+
+    /**
+     * Writes security config using accepted-only completion semantics.
+     *
+     * @param securityConfig security config payload.
+     * @return future completing when accepted by the radio.
+     */
+    public CompletableFuture<Void> setSecurityConfig(Config.SecurityConfig securityConfig) {
+        return setSecurityConfig(securityConfig, false).thenAccept(applied -> {
+        });
+    }
+
+    /**
+     * Writes security config to the local radio and forces read-back verification.
+     *
+     * @param securityConfig security config payload.
+     * @return future completing with {@code true} when accepted and verified-applied.
+     */
+    public CompletableFuture<Boolean> setSecurityConfigAndVerify(Config.SecurityConfig securityConfig) {
+        return setSecurityConfig(securityConfig, true);
+    }
+
+    /**
+     * Updates only the channel display name for a slot.
+     * <p>
+     * The method reuses cached channel state when available; otherwise it refreshes the slot first so unchanged
+     * settings are preserved.
+     * </p>
+     *
+     * @param index channel slot index ({@code 0..7}).
+     * @param channelName new channel name.
+     * @param verifyApplied when {@code true}, verifies by read-back.
+     * @return future completing with write/verification result.
+     */
+    public CompletableFuture<Boolean> setChannelName(int index, String channelName, boolean verifyApplied) {
+        Objects.requireNonNull(channelName, "channelName must not be null");
+        return resolveChannelForUpdate(index)
+                .thenCompose(baseChannel -> {
+                    ChannelSettings settings = baseChannel.getSettings().toBuilder().setName(channelName).build();
+                    Channel updated = baseChannel.toBuilder().setSettings(settings).build();
+                    return setChannel(index, updated, verifyApplied);
+                });
+    }
+
+    /**
+     * Updates only the channel display name and verifies by read-back.
+     *
+     * @param index channel slot index ({@code 0..7}).
+     * @param channelName new channel name.
+     * @return future completing with write/verification result.
+     */
+    public CompletableFuture<Boolean> setChannelName(int index, String channelName) {
+        return setChannelName(index, channelName, true);
+    }
+
+    /**
+     * Updates only the channel PSK for a slot.
+     *
+     * @param index channel slot index ({@code 0..7}).
+     * @param psk channel PSK bytes.
+     * @param verifyApplied when {@code true}, verifies by read-back.
+     * @return future completing with write/verification result.
+     */
+    public CompletableFuture<Boolean> setChannelPsk(int index, ByteString psk, boolean verifyApplied) {
+        Objects.requireNonNull(psk, "psk must not be null");
+        return resolveChannelForUpdate(index)
+                .thenCompose(baseChannel -> {
+                    ChannelSettings settings = baseChannel.getSettings().toBuilder().setPsk(psk).build();
+                    Channel updated = baseChannel.toBuilder().setSettings(settings).build();
+                    return setChannel(index, updated, verifyApplied);
+                });
+    }
+
+    /**
+     * Updates only the channel PSK and verifies by read-back.
+     *
+     * @param index channel slot index ({@code 0..7}).
+     * @param psk channel PSK bytes.
+     * @return future completing with write/verification result.
+     */
+    public CompletableFuture<Boolean> setChannelPsk(int index, ByteString psk) {
+        return setChannelPsk(index, psk, true);
+    }
+
+    /**
+     * Updates only the channel PSK for a slot.
+     *
+     * @param index channel slot index ({@code 0..7}).
+     * @param psk channel PSK bytes.
+     * @param verifyApplied when {@code true}, verifies by read-back.
+     * @return future completing with write/verification result.
+     */
+    public CompletableFuture<Boolean> setChannelPsk(int index, byte[] psk, boolean verifyApplied) {
+        Objects.requireNonNull(psk, "psk must not be null");
+        return setChannelPsk(index, ByteString.copyFrom(psk), verifyApplied);
+    }
+
+    /**
+     * Updates only the channel PSK from a UTF-8 password string.
+     *
+     * @param index channel slot index ({@code 0..7}).
+     * @param password UTF-8 password value to store as PSK bytes.
+     * @param verifyApplied when {@code true}, verifies by read-back.
+     * @return future completing with write/verification result.
+     */
+    public CompletableFuture<Boolean> setChannelPassword(int index, String password, boolean verifyApplied) {
+        Objects.requireNonNull(password, "password must not be null");
+        return setChannelPsk(index, ByteString.copyFrom(password, StandardCharsets.UTF_8), verifyApplied);
+    }
+
+    /**
+     * Updates only the channel PSK from a UTF-8 password string and verifies by read-back.
+     *
+     * @param index channel slot index ({@code 0..7}).
+     * @param password UTF-8 password value to store as PSK bytes.
+     * @return future completing with write/verification result.
+     */
+    public CompletableFuture<Boolean> setChannelPassword(int index, String password) {
+        return setChannelPassword(index, password, true);
+    }
+
+    /**
+     * Updates the primary channel PSK.
+     *
+     * @param psk channel PSK bytes.
+     * @param verifyApplied when {@code true}, verifies by read-back.
+     * @return future completing with write/verification result.
+     */
+    public CompletableFuture<Boolean> setPrimaryChannelPsk(ByteString psk, boolean verifyApplied) {
+        return setChannelPsk(0, psk, verifyApplied);
+    }
+
+    /**
+     * Updates the primary channel PSK and verifies by read-back.
+     *
+     * @param psk channel PSK bytes.
+     * @return future completing with write/verification result.
+     */
+    public CompletableFuture<Boolean> setPrimaryChannelPsk(ByteString psk) {
+        return setPrimaryChannelPsk(psk, true);
+    }
+
+    /**
+     * Updates the primary channel PSK from a UTF-8 password string.
+     *
+     * @param password UTF-8 password value to store as PSK bytes.
+     * @param verifyApplied when {@code true}, verifies by read-back.
+     * @return future completing with write/verification result.
+     */
+    public CompletableFuture<Boolean> setPrimaryChannelPassword(String password, boolean verifyApplied) {
+        return setChannelPassword(0, password, verifyApplied);
+    }
+
+    /**
+     * Updates the primary channel PSK from a UTF-8 password string and verifies by read-back.
+     *
+     * @param password UTF-8 password value to store as PSK bytes.
+     * @return future completing with write/verification result.
+     */
+    public CompletableFuture<Boolean> setPrimaryChannelPassword(String password) {
+        return setPrimaryChannelPassword(password, true);
     }
 
     /**
@@ -279,6 +742,41 @@ public class AdminService {
      * @return future completing with {@code true} when accepted by the radio.
      */
     public CompletableFuture<Boolean> setOwner(int targetNodeId, String longName, String shortName) {
+        return setOwner(targetNodeId, longName, shortName, false);
+    }
+
+    /**
+     * Updates node identity values and forces verification.
+     *
+     * @param targetNodeId target node id.
+     * @param longName new long name.
+     * @param shortName new short name.
+     * @return future completing with {@code true} when accepted and verified-applied.
+     */
+    public CompletableFuture<Boolean> setOwnerAndVerify(int targetNodeId, String longName, String shortName) {
+        return setOwner(targetNodeId, longName, shortName, true);
+    }
+
+    /**
+     * Updates node identity values and optionally verifies they were applied.
+     * <p>
+     * Verification behavior:
+     * </p>
+     * <ul>
+     * <li>For the local node, verification performs {@link #refreshOwner()} and compares returned names.</li>
+     * <li>For remote nodes, verification waits for a node-info snapshot and compares names.</li>
+     * </ul>
+     *
+     * @param targetNodeId target node id.
+     * @param longName new long name.
+     * @param shortName new short name.
+     * @param verifyApplied when {@code true}, performs read-back verification before completing.
+     * @return future completing with {@code true} when accepted and verification passed (if enabled).
+     */
+    public CompletableFuture<Boolean> setOwner(int targetNodeId,
+                                               String longName,
+                                               String shortName,
+                                               boolean verifyApplied) {
         User updatedUser = User.newBuilder()
                 .setLongName(longName)
                 .setShortName(shortName)
@@ -287,11 +785,14 @@ public class AdminService {
         AdminMessage request = withSessionIfPresent(AdminMessage.newBuilder().setSetOwner(updatedUser)).build();
 
         log.info("[ADMIN] Requesting rename for !{} to {}", Integer.toHexString(targetNodeId), longName);
-        return client.executeAdminRequest(targetNodeId, request, false)
-                .thenApply(packet -> {
+        return gateway.executeAdminRequest(targetNodeId, request, false)
+                .thenCompose(packet -> {
                     applyOwner(updatedUser);
                     log.info("[ADMIN] Rename accepted by radio for !{}", Integer.toHexString(targetNodeId));
-                    return true;
+                    if (!verifyApplied) {
+                        return CompletableFuture.completedFuture(true);
+                    }
+                    return verifyOwnerApplied(targetNodeId, longName, shortName);
                 });
     }
 
@@ -306,7 +807,7 @@ public class AdminService {
                 .setFactoryResetDevice(0)
                 .build();
         log.warn("[ADMIN] Sending Full Factory Reset command!");
-        return client.executeAdminRequest(client.getSelfNodeId(), request, false).thenAccept(packet -> {
+        return gateway.executeAdminRequest(gateway.getSelfNodeId(), request, false).thenAccept(packet -> {
         });
     }
 
@@ -321,7 +822,7 @@ public class AdminService {
                 AdminMessage.newBuilder().setRebootSeconds(seconds == 0 ? 1 : seconds)).build();
 
         log.info("[ADMIN] Requesting radio reboot in {} seconds...", seconds);
-        return client.executeAdminRequest(client.getSelfNodeId(), request, false).thenApply(packet -> true);
+        return gateway.executeAdminRequest(gateway.getSelfNodeId(), request, false).thenApply(packet -> true);
     }
 
     /**
@@ -352,6 +853,65 @@ public class AdminService {
             applyMetadata(msg.getGetDeviceMetadataResponse());
             log.info("[ADMIN] Model Updated: Device Metadata");
         }
+    }
+
+    /**
+     * Returns a cached config snapshot for one type.
+     *
+     * @param type config type key.
+     * @return optional cached config payload.
+     */
+    public Optional<Config> getConfigSnapshot(ConfigType type) {
+        return radioModel.getConfig(type);
+    }
+
+    /**
+     * Returns all cached config snapshots keyed by config type.
+     *
+     * @return immutable config snapshot map.
+     */
+    public Map<ConfigType, Config> getConfigSnapshots() {
+        return radioModel.getConfigs();
+    }
+
+    /**
+     * Returns a cached module config snapshot for one type.
+     *
+     * @param type module config type key.
+     * @return optional cached module config payload.
+     */
+    public Optional<ModuleConfig> getModuleConfigSnapshot(ModuleConfigType type) {
+        return radioModel.getModuleConfig(type);
+    }
+
+    /**
+     * Returns all cached module config snapshots keyed by module config type.
+     *
+     * @return immutable module config snapshot map.
+     */
+    public Map<ModuleConfigType, ModuleConfig> getModuleConfigSnapshots() {
+        return radioModel.getModuleConfigs();
+    }
+
+    /**
+     * Returns cached channels sorted by channel index.
+     *
+     * @return immutable channel list sorted ascending by index.
+     */
+    public List<Channel> getChannelSnapshots() {
+        return radioModel.getChannels().values().stream()
+                .sorted(Comparator.comparingInt(Channel::getIndex))
+                .toList();
+    }
+
+    /**
+     * Returns one cached channel snapshot by index.
+     *
+     * @param index channel slot index ({@code 0..7}).
+     * @return optional cached channel payload.
+     */
+    public Optional<Channel> getChannelSnapshot(int index) {
+        return radioModel.getChannel(index);
     }
 
     /**
@@ -418,6 +978,9 @@ public class AdminService {
         if (cfg == null) {
             return;
         }
+        for (ConfigType type : extractConfigTypes(cfg)) {
+            radioModel.putConfig(type, cfg);
+        }
         if (cfg.hasLora()) {
             radioModel.setLoraConfig(cfg.getLora());
         }
@@ -441,7 +1004,7 @@ public class AdminService {
     private void applyModuleConfig(ModuleConfig moduleConfig) {
         ModuleConfigType type = toModuleConfigType(moduleConfig);
         if (type != null) {
-            radioModel.getModuleConfigs().put(type, moduleConfig);
+            radioModel.putModuleConfig(type, moduleConfig);
         }
     }
 
@@ -475,6 +1038,141 @@ public class AdminService {
         };
     }
 
+    /**
+     * Maps a config payload oneof variant to its admin config type key.
+     *
+     * @param cfg config payload.
+     * @return list containing the affected config type, or empty when payload has no variant.
+     */
+    private List<ConfigType> extractConfigTypes(Config cfg) {
+        if (cfg == null) {
+            return List.of();
+        }
+
+        ConfigType type = switch (cfg.getPayloadVariantCase()) {
+            case DEVICE -> ConfigType.DEVICE_CONFIG;
+            case POSITION -> ConfigType.POSITION_CONFIG;
+            case POWER -> ConfigType.POWER_CONFIG;
+            case NETWORK -> ConfigType.NETWORK_CONFIG;
+            case DISPLAY -> ConfigType.DISPLAY_CONFIG;
+            case LORA -> ConfigType.LORA_CONFIG;
+            case BLUETOOTH -> ConfigType.BLUETOOTH_CONFIG;
+            case SECURITY -> ConfigType.SECURITY_CONFIG;
+            case SESSIONKEY -> ConfigType.SESSIONKEY_CONFIG;
+            case DEVICE_UI -> ConfigType.DEVICEUI_CONFIG;
+            case PAYLOADVARIANT_NOT_SET -> null;
+        };
+        return type == null ? List.of() : List.of(type);
+    }
+
+    /**
+     * Verifies whether requested config section payloads match read-back payloads.
+     *
+     * @param requested requested config payload.
+     * @param observedByType refreshed config payloads keyed by type.
+     * @return {@code true} when all affected sections match.
+     */
+    private boolean isConfigApplied(Config requested, Map<ConfigType, Config> observedByType) {
+        List<ConfigType> impactedTypes = extractConfigTypes(requested);
+        if (impactedTypes.isEmpty()) {
+            return false;
+        }
+
+        for (ConfigType type : impactedTypes) {
+            Config observed = observedByType.get(type);
+            if (observed == null) {
+                return false;
+            }
+            boolean sectionMatches = switch (type) {
+                case DEVICE_CONFIG -> requested.hasDevice() && observed.hasDevice()
+                        && requested.getDevice().equals(observed.getDevice());
+                case POSITION_CONFIG -> requested.hasPosition() && observed.hasPosition()
+                        && requested.getPosition().equals(observed.getPosition());
+                case POWER_CONFIG -> requested.hasPower() && observed.hasPower()
+                        && requested.getPower().equals(observed.getPower());
+                case NETWORK_CONFIG -> requested.hasNetwork() && observed.hasNetwork()
+                        && requested.getNetwork().equals(observed.getNetwork());
+                case DISPLAY_CONFIG -> requested.hasDisplay() && observed.hasDisplay()
+                        && requested.getDisplay().equals(observed.getDisplay());
+                case LORA_CONFIG -> requested.hasLora() && observed.hasLora()
+                        && requested.getLora().equals(observed.getLora());
+                case BLUETOOTH_CONFIG -> requested.hasBluetooth() && observed.hasBluetooth()
+                        && requested.getBluetooth().equals(observed.getBluetooth());
+                case SECURITY_CONFIG -> requested.hasSecurity() && observed.hasSecurity()
+                        && requested.getSecurity().equals(observed.getSecurity());
+                case SESSIONKEY_CONFIG -> requested.hasSessionkey() && observed.hasSessionkey()
+                        && requested.getSessionkey().equals(observed.getSessionkey());
+                case DEVICEUI_CONFIG -> requested.hasDeviceUi() && observed.hasDeviceUi()
+                        && requested.getDeviceUi().equals(observed.getDeviceUi());
+                case UNRECOGNIZED -> false;
+            };
+            if (!sectionMatches) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /**
+     * Verifies whether requested module config payload matches read-back payload.
+     *
+     * @param requested requested module config payload.
+     * @param observed observed module config payload.
+     * @return {@code true} when the requested payload variant and value match.
+     */
+    private boolean isModuleConfigApplied(ModuleConfig requested, ModuleConfig observed) {
+        if (requested == null || observed == null) {
+            return false;
+        }
+
+        if (requested.getPayloadVariantCase() != observed.getPayloadVariantCase()) {
+            return false;
+        }
+
+        return switch (requested.getPayloadVariantCase()) {
+            case MQTT -> requested.getMqtt().equals(observed.getMqtt());
+            case SERIAL -> requested.getSerial().equals(observed.getSerial());
+            case EXTERNAL_NOTIFICATION -> requested.getExternalNotification().equals(observed.getExternalNotification());
+            case STORE_FORWARD -> requested.getStoreForward().equals(observed.getStoreForward());
+            case RANGE_TEST -> requested.getRangeTest().equals(observed.getRangeTest());
+            case TELEMETRY -> requested.getTelemetry().equals(observed.getTelemetry());
+            case CANNED_MESSAGE -> requested.getCannedMessage().equals(observed.getCannedMessage());
+            case AUDIO -> requested.getAudio().equals(observed.getAudio());
+            case REMOTE_HARDWARE -> requested.getRemoteHardware().equals(observed.getRemoteHardware());
+            case NEIGHBOR_INFO -> requested.getNeighborInfo().equals(observed.getNeighborInfo());
+            case AMBIENT_LIGHTING -> requested.getAmbientLighting().equals(observed.getAmbientLighting());
+            case DETECTION_SENSOR -> requested.getDetectionSensor().equals(observed.getDetectionSensor());
+            case PAXCOUNTER -> requested.getPaxcounter().equals(observed.getPaxcounter());
+            case STATUSMESSAGE -> requested.getStatusmessage().equals(observed.getStatusmessage());
+            case PAYLOADVARIANT_NOT_SET -> false;
+        };
+    }
+
+    /**
+     * Verifies owner/name write visibility using the best available read-back path.
+     *
+     * @param targetNodeId target node id.
+     * @param expectedLongName expected long name.
+     * @param expectedShortName expected short name.
+     * @return future completing with {@code true} when read-back values match.
+     */
+    private CompletableFuture<Boolean> verifyOwnerApplied(int targetNodeId,
+                                                          String expectedLongName,
+                                                          String expectedShortName) {
+        if (targetNodeId == gateway.getSelfNodeId()) {
+            return refreshOwner().thenApply(owner -> owner != null
+                    && Objects.equals(expectedLongName, owner.getLongName())
+                    && Objects.equals(expectedShortName, owner.getShortName()));
+        }
+
+        return gateway.requestNodeInfoAwaitPayloadOrSnapshot(targetNodeId, OWNER_VERIFY_TIMEOUT)
+                .thenApply(node -> node != null
+                        && Objects.equals(expectedLongName, node.getLongName())
+                        && Objects.equals(expectedShortName, node.getShortName()))
+                .exceptionally(ex -> false);
+    }
+
     private AdminMessage.Builder withSessionIfPresent(AdminMessage.Builder builder) {
         if (!lastSessionPasskey.isEmpty()) {
             builder.setSessionPasskey(lastSessionPasskey);
@@ -484,7 +1182,7 @@ public class AdminService {
 
     private <T> CompletableFuture<T> executeAndParse(AdminMessage request, Function<AdminMessage, T> extractor) {
         // Read operations must wait for correlated ADMIN_APP payloads, not just ROUTING NONE status.
-        return client.executeAdminRequest(client.getSelfNodeId(), request, true)
+        return gateway.executeAdminRequest(gateway.getSelfNodeId(), request, true)
                 .thenApply(this::parseAdminMessage)
                 .thenApply(msg -> {
                     updateSessionKey(msg);
@@ -511,6 +1209,35 @@ public class AdminService {
         if (index < 0 || index >= MAX_CHANNEL_SLOTS) {
             throw new IllegalArgumentException("Channel index out of range (expected 0-7): " + index);
         }
+    }
+
+    /**
+     * Resolves a channel payload to use as the base for patch-style channel updates.
+     *
+     * @param index channel slot index ({@code 0..7}).
+     * @return future completing with cached or freshly read channel payload.
+     */
+    private CompletableFuture<Channel> resolveChannelForUpdate(int index) {
+        validateChannelIndex(index);
+        return getChannelSnapshot(index)
+                .map(CompletableFuture::completedFuture)
+                .orElseGet(() -> refreshChannel(index));
+    }
+
+    /**
+     * Normalizes an input list by removing nulls and preserving first-seen order.
+     *
+     * @param input raw type list.
+     * @param <T> enum key type.
+     * @return insertion-ordered distinct set.
+     */
+    private static <T> Set<T> normalizeDistinct(List<T> input) {
+        if (input == null || input.isEmpty()) {
+            return Collections.emptySet();
+        }
+        Set<T> distinct = new LinkedHashSet<>();
+        input.stream().filter(Objects::nonNull).forEach(distinct::add);
+        return distinct;
     }
 
     private static <T> CompletableFuture<List<T>> sequence(List<CompletableFuture<T>> futures) {

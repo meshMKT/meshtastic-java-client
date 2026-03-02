@@ -9,6 +9,7 @@ import com.meshmkt.meshtastic.client.event.MeshtasticEventListener;
 import com.meshmkt.meshtastic.client.event.MessageStatusEvent;
 import com.meshmkt.meshtastic.client.event.NodeDiscoveryEvent;
 import com.meshmkt.meshtastic.client.event.PositionUpdateEvent;
+import com.meshmkt.meshtastic.client.event.StartupState;
 import com.meshmkt.meshtastic.client.event.TelemetryUpdateEvent;
 import com.meshmkt.meshtastic.client.handlers.AdminHandler;
 import com.meshmkt.meshtastic.client.handlers.LocalStateHandler;
@@ -17,6 +18,7 @@ import com.meshmkt.meshtastic.client.handlers.PositionHandler;
 import com.meshmkt.meshtastic.client.handlers.RoutingHandler;
 import com.meshmkt.meshtastic.client.handlers.TelemetryHandler;
 import com.meshmkt.meshtastic.client.handlers.TextMessageHandler;
+import com.meshmkt.meshtastic.client.service.AdminRequestGateway;
 import com.meshmkt.meshtastic.client.service.AdminService;
 import com.meshmkt.meshtastic.client.storage.MeshNode;
 import com.meshmkt.meshtastic.client.storage.NodeDatabase;
@@ -50,7 +52,7 @@ import org.meshtastic.proto.AdminProtos.AdminMessage;
  * <li>This client exposes higher-level async operations and sequencing rules.</li>
  * </ul>
  */
-public class MeshtasticClient {
+public class MeshtasticClient implements AdminRequestGateway {
 
     private static final Logger log = LoggerFactory.getLogger(MeshtasticClient.class);
 
@@ -62,6 +64,7 @@ public class MeshtasticClient {
     private final NodeDatabase nodeDb;
 
     private volatile boolean connected = false;
+    private volatile StartupState startupState = StartupState.DISCONNECTED;
     private int currentSyncId;
     private volatile int startupSyncPhase = 0;
     private volatile boolean sawMyInfoInCurrentPhase = false;
@@ -138,7 +141,26 @@ public class MeshtasticClient {
     public AdminService getAdminService() {
         return adminService;
     }
+
+    /**
+     * Returns the current startup lifecycle state.
+     *
+     * @return current startup state snapshot.
+     */
+    public StartupState getStartupState() {
+        return startupState;
+    }
+
+    /**
+     * Returns whether startup synchronization has completed.
+     *
+     * @return {@code true} when startup state is {@link StartupState#READY}.
+     */
+    public boolean isReady() {
+        return startupState == StartupState.READY;
+    }
     
+    @Override
     public int getSelfNodeId() {
         if (nodeDb == null) {
             return -1;
@@ -265,6 +287,7 @@ public class MeshtasticClient {
      * @param expectAdminAppResponse when true, request completes only on correlated ADMIN_APP response.
      * @return future for correlated terminal response.
      */
+    @Override
     public CompletableFuture<MeshPacket> executeAdminRequest(int destinationId,
                                                              AdminMessage adminMsg,
                                                              boolean expectAdminAppResponse) {
@@ -496,6 +519,7 @@ public class MeshtasticClient {
             @Override
             public void onDisconnected() {
                 connected = false;
+                setStartupState(StartupState.DISCONNECTED);
                 stopHeartbeatTask();
                 cancelAllPending();
             }
@@ -503,6 +527,7 @@ public class MeshtasticClient {
             @Override
             public void onError(Throwable err) {
                 connected = false;
+                setStartupState(StartupState.DISCONNECTED);
                 stopHeartbeatTask();
                 cancelAllPending();
             }
@@ -532,6 +557,7 @@ public class MeshtasticClient {
             transport = null;
         }
         connected = false;
+        setStartupState(StartupState.DISCONNECTED);
         rebootResyncInProgress.set(false);
         stopHeartbeatTask();
         cancelAllPending();
@@ -570,6 +596,7 @@ public class MeshtasticClient {
         currentSyncId = (startupSyncPhase == 1) ? NODELESS_WANT_CONFIG_ID : FULL_WANT_CONFIG_ID;
         final int expectedNonce = currentSyncId;
         final int expectedPhase = startupSyncPhase;
+        setStartupState(startupSyncPhase == 1 ? StartupState.SYNC_LOCAL_CONFIG : StartupState.SYNC_MESH_CONFIG);
 
         log.info("[SYNC] Starting phase {} with want_config_id={}", expectedPhase, expectedNonce);
         sendToRadio(ToRadio.newBuilder().setWantConfigId(expectedNonce).build());
@@ -620,6 +647,7 @@ public class MeshtasticClient {
         if (startupSyncPhase == 2) {
             log.info("[SYNC] Phase 2 complete (full config/node sync).");
             startupSyncPhase = 0;
+            setStartupState(StartupState.READY);
             startHeartbeatTask();
             CompletableFuture<Void> barrier = startupSyncBarrier;
             if (barrier != null && !barrier.isDone()) {
@@ -706,21 +734,6 @@ public class MeshtasticClient {
     // Node Utilities
     // -------------------------------------------------------------------------
     /**
-     * Legacy alias for {@link #requestNodeInfo(int)}.
-     * <p>
-     * This method completes when the outbound request is accepted/correlated, not
-     * when a {@code NODEINFO_APP} payload has been parsed and applied.
-     * </p>
-     *
-     * @param nodeId destination node ID.
-     * @return future completed when request correlation succeeds.
-     */
-    @Deprecated
-    public CompletableFuture<MeshPacket> refreshNodeInfo(int nodeId) {
-        return requestNodeInfo(nodeId);
-    }
-
-    /**
      * Sends a {@code NODEINFO_APP} request to a specific node.
      * <p>
      * Completion semantics: this future completes when request correlation succeeds
@@ -799,6 +812,7 @@ public class MeshtasticClient {
      * @param timeout maximum duration to wait for live payload arrival.
      * @return future completed with live payload snapshot or latest cached snapshot when payload timeout occurs.
      */
+    @Override
     public CompletableFuture<MeshNode> requestNodeInfoAwaitPayloadOrSnapshot(int nodeId, Duration timeout) {
         return requestAndAwaitNodeUpdate(
                 nodeId,
@@ -1220,5 +1234,19 @@ public class MeshtasticClient {
                 }
             });
         }
+    }
+
+    /**
+     * Updates startup lifecycle state and publishes a listener event when state changes.
+     *
+     * @param nextState new startup state.
+     */
+    private void setStartupState(StartupState nextState) {
+        StartupState previous = this.startupState;
+        if (previous == nextState) {
+            return;
+        }
+        this.startupState = nextState;
+        notifyListeners(l -> l.onStartupStateChanged(previous, nextState));
     }
 }

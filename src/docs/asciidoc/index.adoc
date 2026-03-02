@@ -1,0 +1,326 @@
+= Meshtastic Java Client API Guide
+:toc: left
+:toclevels: 3
+:sectnums:
+:icons: font
+:source-highlighter: rouge
+
+Version: {project-version}
+
+== Overview
+
+`{project-name}` is an async Java client for Meshtastic radios that provides:
+
+- transport and reconnect management
+- startup synchronization
+- strongly-typed event dispatching
+- node database + snapshot status model
+- admin/config/channel APIs through `AdminService`
+
+Javadocs are generated at link:{javadocs-url}[API Javadocs].
+
+== Quick Start
+
+[source,java]
+----
+NodeDatabase db = new InMemoryNodeDatabase();
+MeshtasticClient client = new MeshtasticClient(db);
+
+SerialConfig cfg = SerialConfig.builder()
+        .portName("/dev/cu.usbmodem80B54ED11F101")
+        .build();
+
+client.connect(new SerialTransport(cfg));
+----
+
+== Startup Flow (Recommended)
+
+Use startup state events to drive UI readiness and progress indicators.
+
+[source,java]
+----
+client.addListener(new MeshtasticEventListener() {
+    @Override
+    public void onStartupStateChanged(StartupState previousState, StartupState newState) {
+        switch (newState) {
+            case SYNC_LOCAL_CONFIG -> statusLabel.setText("Reading local radio...");
+            case SYNC_MESH_CONFIG -> statusLabel.setText("Reading mesh state...");
+            case READY -> statusLabel.setText("Ready");
+            case DISCONNECTED -> statusLabel.setText("Disconnected");
+        }
+    }
+});
+
+client.connect(new SerialTransport(cfg));
+----
+
+For tab gating, use `client.isReady()` and keep settings/message actions disabled until `READY`.
+
+== Architecture Diagram
+
+[plantuml,client-startup-flow,svg]
+----
+@startuml
+title Client Startup and Settings Refresh
+
+actor UI
+participant "MeshtasticClient" as Client
+participant "Transport" as Transport
+participant "AdminService" as Admin
+participant "RadioModel" as Model
+
+UI -> Client: connect(transport)
+Client -> Transport: start()
+Transport --> Client: connected event
+Client -> Client: startup state = SYNC_LOCAL_CONFIG
+Client -> Transport: want_config_id = 69420
+Transport --> Client: my_info/config/channel snapshots
+Client -> Client: startup state = SYNC_MESH_CONFIG
+Client -> Transport: want_config_id = 69421
+Transport --> Client: node + mesh snapshots
+Client -> Client: startup state = READY
+Client --> UI: onStartupStateChanged(..., READY)
+
+UI -> Admin: refreshChannelsAndSecurity()
+Admin -> Client: executeAdminRequest(GET_CHANNEL x8)
+Admin -> Client: executeAdminRequest(GET_CONFIG SECURITY)
+Admin -> Client: executeAdminRequest(GET_MODULE_CONFIG MQTT)
+Admin -> Model: apply snapshots
+Admin --> UI: completed future
+UI -> Admin: getChannelSnapshots()/getConfigSnapshot()/getModuleConfigSnapshot()
+
+@enduml
+----
+
+== Core API Patterns
+
+=== Fire-and-forget Request Correlation
+
+Use request methods when you need transport/routing acceptance only:
+
+[source,java]
+----
+client.requestNodeInfo(nodeId);
+client.requestPosition(nodeId);
+client.requestTelemetry(nodeId);
+----
+
+=== Payload-Await Requests
+
+Use payload-await methods when the caller must wait for live payload-driven node updates:
+
+[source,java]
+----
+client.requestNodeInfoAwaitPayload(nodeId);
+client.requestPositionAwaitPayload(nodeId);
+client.requestTelemetryAwaitPayload(nodeId);
+----
+
+[plantuml,request-correlation-lifecycle,svg]
+----
+@startuml
+title Request Correlation Lifecycle
+
+actor Caller
+participant "MeshtasticClient" as Client
+participant "Transport" as Transport
+participant "Correlator" as Corr
+participant "Handlers" as Handlers
+
+Caller -> Client: requestXxx(...)
+Client -> Corr: register pending request(id, mode)
+Client -> Transport: send packet(id)
+
+Transport --> Client: ROUTING_APP ack (request_id=id)
+alt routing-level request (fire-and-forget)
+  Client -> Corr: complete pending request on routing ack
+  Client --> Caller: future complete
+else payload-await request
+  Client -> Corr: keep pending request open
+  Transport --> Handlers: correlated payload (ADMIN_APP / NODEINFO / TELEMETRY / POSITION)
+  Handlers --> Client: dispatch + node/model update
+  Client -> Corr: complete pending request on payload
+  Client --> Caller: future complete
+end
+
+@enduml
+----
+
+=== Admin Service Access
+
+`AdminService` is obtained from the client:
+
+[source,java]
+----
+AdminService admin = client.getAdminService();
+----
+
+== Settings Page Patterns
+
+=== Read-on-open (Snapshot + Refresh)
+
+Render from snapshot immediately, then refresh only the page-specific state:
+
+[source,java]
+----
+AdminService admin = client.getAdminService();
+
+// Immediate render from cached state
+renderChannels(admin.getChannelSnapshots());
+renderConfig(admin.getConfigSnapshots());
+renderModules(admin.getModuleConfigSnapshots());
+
+// On-demand refresh for a channels/security page
+admin.refreshChannelsAndSecurity().thenAccept(model -> {
+    renderChannels(admin.getChannelSnapshots());
+    renderSecurity(admin.getConfigSnapshot(ConfigType.SECURITY_CONFIG).orElse(null));
+    renderMqtt(admin.getModuleConfigSnapshot(ModuleConfigType.MQTT_CONFIG).orElse(null));
+});
+----
+
+=== Module/Config Refresh by Section
+
+[source,java]
+----
+admin.refreshCore();            // metadata + owner + core config blocks
+admin.refreshCoreConfigs();     // lora/device/display/network
+admin.refreshModules();         // all supported module config sections
+admin.refreshMqttConfig();      // mqtt only
+admin.refreshSecurityConfig();  // security only
+----
+
+== Admin Write Semantics
+
+Admin write methods use explicit completion semantics:
+
+- `setChannel(index, channel)`: accepted + verified-applied by readback
+- `setChannel(index, channel, false)`: accepted-only
+- `setConfig(config)`: accepted-only
+- `setConfigAndVerify(config)`: accepted + verified-applied
+- `setModuleConfig(moduleConfig)`: accepted-only
+- `setModuleConfigAndVerify(moduleConfig)`: accepted + verified-applied
+- `setOwner(id, longName, shortName)`: accepted-only
+- `setOwnerAndVerify(id, longName, shortName)`: accepted + verified-applied
+
+[plantuml,admin-write-verification-flow,svg]
+----
+@startuml
+title Admin Write: Accepted-Only vs Verify-Applied
+
+actor UI
+participant "AdminService" as Admin
+participant "MeshtasticClient" as Client
+participant "Radio" as Radio
+
+UI -> Admin: setConfig(payload, verifyApplied)
+Admin -> Client: executeAdminRequest(SET_CONFIG, expectAdminResponse=false)
+Client -> Radio: ADMIN_APP set_config
+Radio --> Client: ROUTING_APP status (NONE/error)
+Client --> Admin: request accepted/failure
+
+alt verifyApplied = false
+  Admin --> UI: complete success on acceptance
+else verifyApplied = true
+  Admin -> Client: executeAdminRequest(GET_CONFIG(type), expectAdminResponse=true)
+  Client -> Radio: ADMIN_APP get_config
+  Radio --> Client: ADMIN_APP get_config_response
+  Client --> Admin: parsed payload
+  Admin -> Admin: compare requested vs observed section
+  Admin --> UI: true/false
+end
+
+@enduml
+----
+
+== Common Admin Operations
+
+=== Channel Helpers
+
+[source,java]
+----
+// Name update (default verifies by readback)
+admin.setChannelName(2, "meshMKT");
+
+// Password/PSK update
+admin.setChannelPassword(2, "shared-secret");
+admin.setPrimaryChannelPassword("primary-secret");
+----
+
+=== Security + MQTT Helpers
+
+[source,java]
+----
+Config.SecurityConfig security = Config.SecurityConfig.newBuilder()
+        .setAdminChannelEnabled(true)
+        .build();
+admin.setSecurityConfigAndVerify(security);
+
+ModuleConfig.MQTTConfig mqtt = ModuleConfig.MQTTConfig.newBuilder()
+        .setEnabled(true)
+        .setAddress("mqtt.example.com")
+        .setUsername("mesh-user")
+        .build();
+admin.setMqttConfigAndVerify(mqtt);
+----
+
+== Snapshot-Driven UI
+
+Use snapshot getters for render and refresh methods for on-demand reads:
+
+[source,java]
+----
+RadioModel model = admin.getSnapshot();
+Map<Integer, Channel> channels = model.getChannels();
+Map<ConfigType, Config> configs = admin.getConfigSnapshots();
+----
+
+== Reconnect and Resync Lifecycle
+
+On serial link loss, transport reconnection and startup sync are re-run automatically:
+
+[plantuml,reconnect-resync-lifecycle,svg]
+----
+@startuml
+title Reconnect and Resync Lifecycle
+
+participant "SerialTransport" as Transport
+participant "MeshtasticClient" as Client
+participant "AdminService" as Admin
+participant "NodeDatabase" as DB
+actor UI
+
+Transport --> Client: onDisconnected
+Client -> Client: cleanup pending requests\nrelease radio lock\nstate = DISCONNECTED
+Client --> UI: onStartupStateChanged(..., DISCONNECTED)
+
+loop retry until serial port returns
+  Transport -> Transport: scan/reopen preferred port
+end
+
+Transport --> Client: onConnected
+Client -> Client: state = SYNC_LOCAL_CONFIG
+Client -> Transport: want_config_id=69420
+Transport --> Client: local snapshots (my_info/config/channel/module/metadata)
+Client -> Admin: ingest startup snapshots
+Client -> DB: update local identity/state
+
+Client -> Client: state = SYNC_MESH_CONFIG
+Client -> Transport: want_config_id=69421
+Transport --> Client: mesh snapshots
+Client -> DB: update nodes
+
+Client -> Client: state = READY
+Client --> UI: onStartupStateChanged(..., READY)
+
+@enduml
+----
+
+== Build Outputs
+
+When running `mvn package`, artifacts include:
+
+- `target/{project-name}-{project-version}.jar`
+- `target/{project-name}-{project-version}-sources.jar`
+- `target/{project-name}-{project-version}-javadoc.jar`
+- HTML docs under `target/docs`
+- PDF docs under `target/docs`

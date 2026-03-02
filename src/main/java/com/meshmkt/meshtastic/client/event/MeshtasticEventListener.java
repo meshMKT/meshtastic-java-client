@@ -46,4 +46,14 @@ public interface MeshtasticEventListener {
         // No-op by default. Override only when needed.
     }
 
+    /**
+     * Fired when the client startup lifecycle state changes.
+     *
+     * @param previousState previous startup state.
+     * @param newState new startup state.
+     */
+    default void onStartupStateChanged(StartupState previousState, StartupState newState) {
+        // No-op by default. Override only when needed.
+    }
+
 }
