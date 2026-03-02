@@ -1,5 +1,6 @@
 package com.meshmkt.meshtastic.client.handlers;
 
+import com.meshmkt.meshtastic.client.MeshUtils;
 import com.meshmkt.meshtastic.client.storage.NodeDatabase;
 import com.meshmkt.meshtastic.client.storage.PacketContext;
 import org.meshtastic.proto.MeshProtos;
@@ -35,7 +36,10 @@ public class MessageLoggingHandler extends BaseMeshHandler {
         String text = packet.getDecoded().getPayload().toString(StandardCharsets.UTF_8);
         String from = resolveName(packet.getFrom());
 
-        log.info("[CHAT] {}: {}", from, text);
+        log.info("[CHAT] from={} ({}) text=\"{}\"",
+                MeshUtils.formatId(packet.getFrom()),
+                from,
+                text);
         return false;
     }
 }

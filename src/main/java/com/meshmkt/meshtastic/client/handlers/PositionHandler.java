@@ -1,5 +1,6 @@
 package com.meshmkt.meshtastic.client.handlers;
 
+import com.meshmkt.meshtastic.client.MeshUtils;
 import com.meshmkt.meshtastic.client.event.MeshEventDispatcher;
 import com.meshmkt.meshtastic.client.event.PositionUpdateEvent;
 import com.meshmkt.meshtastic.client.storage.NodeDatabase;
@@ -40,10 +41,44 @@ public class PositionHandler extends BaseMeshHandler {
 
             // 2. Fetch the updated node to get the new distance for logging
             nodeDb.getNode(packet.getFrom()).ifPresent(node -> {
-                log.info("[POS] {} is {}km away | SNR: {}dB",
+                log.info("[POS] from={} ({}) dist={}km snr={}dB hops={} via_mqtt={}",
+                        MeshUtils.formatId(node.getNodeId()),
                         resolveName(node.getNodeId()),
                         String.format("%.2f", node.getDistanceKm()),
-                        ctx.getSnr());
+                        ctx.getSnr(),
+                        ctx.getHopsAway(),
+                        ctx.isViaMqtt());
+
+                // Debug telemetry to verify distance math inputs and transport metadata.
+                double remoteLat = MeshUtils.toDecimal(pos.getLatitudeI());
+                double remoteLon = MeshUtils.toDecimal(pos.getLongitudeI());
+                nodeDb.getSelfNode().ifPresentOrElse(self -> {
+                    double selfLat = (self.getPosition() != null)
+                            ? MeshUtils.toDecimal(self.getPosition().getLatitudeI()) : 0.0;
+                    double selfLon = (self.getPosition() != null)
+                            ? MeshUtils.toDecimal(self.getPosition().getLongitudeI()) : 0.0;
+                    log.debug(
+                            "[POS-DEBUG] from={} name={} hops={} via_mqtt={} remote=({},{}) self=({},{}) dist_km={}",
+                            MeshUtils.formatId(node.getNodeId()),
+                            resolveName(node.getNodeId()),
+                            ctx.getHopsAway(),
+                            ctx.isViaMqtt(),
+                            remoteLat,
+                            remoteLon,
+                            selfLat,
+                            selfLon,
+                            String.format("%.2f", node.getDistanceKm())
+                    );
+                }, () -> log.debug(
+                        "[POS-DEBUG] from={} name={} hops={} via_mqtt={} remote=({},{}) self=(unknown) dist_km={}",
+                        MeshUtils.formatId(node.getNodeId()),
+                        resolveName(node.getNodeId()),
+                        ctx.getHopsAway(),
+                        ctx.isViaMqtt(),
+                        remoteLat,
+                        remoteLon,
+                        String.format("%.2f", node.getDistanceKm())
+                ));
             });
 
             // 3. Dispatch Event: The Event class will handle coordinate conversion for the UI
@@ -51,7 +86,10 @@ public class PositionHandler extends BaseMeshHandler {
 
             return true;
         } catch (Exception e) {
-            log.error("Failed to process Position packet", e);
+            log.error("[POS] Failed to parse/process payload from={} packet_id={}",
+                    MeshUtils.formatId(packet.getFrom()),
+                    packet.getId(),
+                    e);
             return false;
         }
     }

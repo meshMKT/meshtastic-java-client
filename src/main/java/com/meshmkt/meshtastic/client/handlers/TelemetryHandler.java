@@ -1,5 +1,6 @@
 package com.meshmkt.meshtastic.client.handlers;
 
+import com.meshmkt.meshtastic.client.MeshUtils;
 import com.meshmkt.meshtastic.client.event.MeshEventDispatcher;
 import com.meshmkt.meshtastic.client.event.TelemetryUpdateEvent;
 import com.meshmkt.meshtastic.client.storage.NodeDatabase;
@@ -35,28 +36,36 @@ public class TelemetryHandler extends BaseMeshHandler {
     protected boolean handlePacket(MeshProtos.MeshPacket packet, PacketContext ctx) {
         try {
             TelemetryProtos.Telemetry tele = TelemetryProtos.Telemetry.parseFrom(packet.getDecoded().getPayload());
+            String fromId = MeshUtils.formatId(packet.getFrom());
             String name = resolveName(packet.getFrom());
 
             // Routes data to the correct database update point based on Telemetry type
             switch (tele.getVariantCase()) {
                 case DEVICE_METRICS:
                     nodeDb.updateMetrics(tele.getDeviceMetrics(), ctx);
-                    log.info("[TELE] {} Battery: {}%", name, tele.getDeviceMetrics().getBatteryLevel());
+                    log.debug("[TELE] from={} ({}) battery={}% snr={}dB",
+                            fromId, name, tele.getDeviceMetrics().getBatteryLevel(), ctx.getSnr());
                     break;
 
                 case ENVIRONMENT_METRICS:
                     nodeDb.updateEnvMetrics(tele.getEnvironmentMetrics(), ctx);
-                    log.info("[TELE] {} Sensor: {}°C", name, tele.getEnvironmentMetrics().getTemperature());
+                    log.debug("[TELE] from={} ({}) temp={}C snr={}dB",
+                            fromId, name, tele.getEnvironmentMetrics().getTemperature(), ctx.getSnr());
                     break;
 
                 default:
+                    log.trace("[TELE] from={} ({}) variant={} snr={}dB",
+                            fromId, name, tele.getVariantCase(), ctx.getSnr());
                     break;
             }
 
             dispatcher.onTelemetryUpdate(TelemetryUpdateEvent.of(packet, ctx, nodeDb.getSelfNodeId(), tele));
             return true;
         } catch (Exception e) {
-            log.error("Telemetry parse failed", e);
+            log.error("[TELE] Failed to parse payload from={} packet_id={}",
+                    MeshUtils.formatId(packet.getFrom()),
+                    packet.getId(),
+                    e);
             return false;
         }
     }

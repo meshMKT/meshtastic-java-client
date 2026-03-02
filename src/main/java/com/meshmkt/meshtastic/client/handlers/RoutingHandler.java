@@ -39,15 +39,27 @@ public class RoutingHandler extends BaseMeshHandler {
             // Signal liveness is already recorded centrally in BaseMeshHandler before per-port handling.
             MessageStatusEvent event = MessageStatusEvent.of(packet, ctx, nodeDb.getSelfNodeId(), routing);
 
-            log.info("[ROUTING] Status: {} from !{} for Packet: {}",
-                    routing.getErrorReason(),
-                    MeshUtils.formatId(packet.getFrom()),
-                    packet.getId());
+            String fromId = MeshUtils.formatId(packet.getFrom());
+            String fromName = resolveName(packet.getFrom());
+            MeshProtos.Routing.Error status = routing.getErrorReason();
+            int requestId = packet.getDecoded().getRequestId();
+
+            // Successful routing statuses are high-volume and best kept at DEBUG.
+            if (status == MeshProtos.Routing.Error.NONE) {
+                log.debug("[ROUTING] from={} ({}) status={} packet_id={} request_id={}",
+                        fromId, fromName, status, packet.getId(), requestId);
+            } else {
+                log.warn("[ROUTING] from={} ({}) status={} packet_id={} request_id={}",
+                        fromId, fromName, status, packet.getId(), requestId);
+            }
 
             dispatcher.onMessageStatusUpdate(event);
             return true;
         } catch (Exception e) {
-            log.error("Failed to parse Routing packet", e);
+            log.error("[ROUTING] Failed to parse packet from={} packet_id={}",
+                    MeshUtils.formatId(packet.getFrom()),
+                    packet.getId(),
+                    e);
             return false;
         }
     }

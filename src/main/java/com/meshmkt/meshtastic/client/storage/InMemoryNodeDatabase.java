@@ -1,5 +1,6 @@
 package com.meshmkt.meshtastic.client.storage;
 
+import com.meshmkt.meshtastic.client.MeshConstants;
 import com.meshmkt.meshtastic.client.MeshUtils;
 import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
@@ -88,7 +89,13 @@ public class InMemoryNodeDatabase extends AbstractNodeDatabase {
     protected void refreshDistancesRelativeto(int selfId) {
         nodes.forEach((id, record) -> {
             if (id != selfId && record.getPosition() != null) {
-                double newDist = calculateDistance(id, record.getPosition(), null);
+                /*
+                 * Preserve MQTT semantic distance when recomputing after self-position updates.
+                 * We do not have a PacketContext here, so use sticky per-node transport metadata.
+                 */
+                double newDist = record.isViaMqtt()
+                        ? MeshConstants.DISTANCE_MQTT
+                        : calculateDistance(id, record.getPosition(), null);
                 record.setDistanceKm(newDist);
                 notifyNodeUpdated(mapToDto(id, record));
             }

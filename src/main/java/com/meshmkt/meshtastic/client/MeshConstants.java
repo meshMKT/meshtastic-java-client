@@ -46,9 +46,17 @@ public final class MeshConstants {
     public static final long LIVE_THRESHOLD_SECONDS = 900;
 
     /**
-     * CACHE_THRESHOLD: How long ago the mesh (radio) heard a node for us to still 
-     * consider it "Fresh" in the list.
-     * Default: 24 hours (86400 seconds).
+     * STALE/OFFLINE boundary for node freshness.
+     * <p>
+     * Nodes newer than this threshold are considered non-offline:
+     * </p>
+     * <ul>
+     * <li>IDLE when the app has heard them this session.</li>
+     * <li>CACHED when only radio snapshot data exists.</li>
+     * </ul>
+     * <p>
+     * Older nodes are treated as OFFLINE. Default: 24 hours.
+     * </p>
      */
     public static final long STALE_NODE_THRESHOLD_SECONDS = 86400;
 

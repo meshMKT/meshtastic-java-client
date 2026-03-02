@@ -32,27 +32,26 @@ public class AdminHandler extends BaseMeshHandler {
     protected boolean handlePacket(MeshPacket packet, PacketContext ctx) {
         int portNum = packet.getDecoded().getPortnumValue();
 
-        // Keep admin-path diagnostics available without adding INFO-volume to normal runtime.
-        log.debug("[DIAGNOSTIC] Observed Packet | Port: {} | From: {} | ID: {}",
-                packet.getDecoded().getPortnum(),
-                MeshUtils.formatId(ctx.getFrom()),
-                MeshUtils.formatId(packet.getId()));
-
         if (portNum == PortNum.ADMIN_APP_VALUE) {
             try {
                 AdminMessage msg = AdminMessage.parseFrom(packet.getDecoded().getPayload());
 
-                log.debug("[DIAGNOSTIC] >>> ADMIN PAYLOAD DETECTED <<<");
-                log.debug("[DIAGNOSTIC] Variant: {}", msg.getPayloadVariantCase());
-                log.debug("[DIAGNOSTIC] Has Session Key: {}", !msg.getSessionPasskey().isEmpty());
-                log.debug("[DIAGNOSTIC] Payload: {}", msg);
+                // Admin payload flow is useful during integration but too noisy for INFO.
+                log.debug("[ADMIN-RX] from={} variant={} session_key_present={}",
+                        MeshUtils.formatId(ctx.getFrom()),
+                        msg.getPayloadVariantCase(),
+                        !msg.getSessionPasskey().isEmpty());
+                log.trace("[ADMIN-RX] payload={}", msg);
 
                 // Feed it to the service to see if the model finally populates
                 adminService.ingestAdminMessage(msg);
 
                 return true;
             } catch (Exception e) {
-                log.error("[DIAGNOSTIC] Failed to parse AdminMessage payload", e);
+                log.error("[ADMIN-RX] Failed to parse AdminMessage payload from={} packet_id={}",
+                        MeshUtils.formatId(ctx.getFrom()),
+                        packet.getId(),
+                        e);
             }
         }
         return false;

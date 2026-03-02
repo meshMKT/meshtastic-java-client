@@ -1,5 +1,6 @@
 package com.meshmkt.meshtastic.client.handlers;
 
+import com.meshmkt.meshtastic.client.MeshUtils;
 import com.meshmkt.meshtastic.client.event.ChatMessageEvent;
 import com.meshmkt.meshtastic.client.event.MeshEventDispatcher;
 import com.meshmkt.meshtastic.client.storage.NodeDatabase;
@@ -33,13 +34,17 @@ public class TextMessageHandler extends BaseMeshHandler {
     @Override
     protected boolean handlePacket(MeshProtos.MeshPacket packet, PacketContext ctx) {
         String text = packet.getDecoded().getPayload().toString(StandardCharsets.UTF_8);
+        int fromId = packet.getFrom();
+        String fromName = resolveName(fromId);
+        String toDisplay = packet.getTo() == 0xFFFFFFFF ? "BROADCAST" : MeshUtils.formatId(packet.getTo());
 
         ChatMessageEvent event = ChatMessageEvent.of(packet, ctx, nodeDb.getSelfNodeId(), text);
-
-        log.info("[CHAT] From: {} | Text: \"{}\" | SNR: {}dB",
-                resolveName(event.getNodeId()),
-                text,
-                ctx.getSnr());
+        log.info("[CHAT] from={} ({}) to={} snr={}dB text=\"{}\"",
+                MeshUtils.formatId(fromId),
+                fromName,
+                toDisplay,
+                ctx.getSnr(),
+                text);
 
         dispatcher.onChatMessage(event);
         return true;

@@ -1,5 +1,6 @@
 package com.meshmkt.meshtastic.client.storage;
 
+import com.meshmkt.meshtastic.client.MeshConstants;
 import org.junit.jupiter.api.Test;
 import org.meshtastic.proto.MeshProtos;
 
@@ -87,6 +88,49 @@ class NodeDatabaseObserverTest {
 
         db.clear();
         assertEquals(1, purges.get());
+    }
+
+    /**
+     * Verifies MQTT-origin nodes keep the MQTT sentinel distance when self location
+     * changes and global distance refresh executes.
+     */
+    @Test
+    void mqttDistanceRemainsSentinelAfterSelfPositionRefresh() {
+        InMemoryNodeDatabase db = new InMemoryNodeDatabase();
+        int selfId = 0x1;
+        int remoteId = 0x2;
+        db.setSelfNodeId(selfId);
+
+        // Seed remote node as MQTT-origin with a valid position.
+        db.updatePosition(
+                MeshProtos.Position.newBuilder().setLatitudeI(407123456).setLongitudeI(-751234567).build(),
+                PacketContext.builder()
+                        .from(remoteId)
+                        .live(true)
+                        .viaMqtt(true)
+                        .build()
+        );
+
+        assertEquals(
+                MeshConstants.DISTANCE_MQTT,
+                db.getNode(remoteId).orElseThrow().getDistanceKm()
+        );
+
+        // Move self node to trigger full distance refresh.
+        db.updatePosition(
+                MeshProtos.Position.newBuilder().setLatitudeI(407223456).setLongitudeI(-751334567).build(),
+                PacketContext.builder()
+                        .from(selfId)
+                        .live(true)
+                        .viaMqtt(false)
+                        .build()
+        );
+
+        assertEquals(
+                MeshConstants.DISTANCE_MQTT,
+                db.getNode(remoteId).orElseThrow().getDistanceKm(),
+                "MQTT nodes should keep sentinel distance after global refresh"
+        );
     }
 
     /**

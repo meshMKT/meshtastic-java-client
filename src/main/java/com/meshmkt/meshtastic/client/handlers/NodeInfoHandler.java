@@ -1,6 +1,6 @@
 package com.meshmkt.meshtastic.client.handlers;
 
-import com.meshmkt.meshtastic.client.MeshConstants;
+import com.meshmkt.meshtastic.client.MeshUtils;
 import com.meshmkt.meshtastic.client.event.MeshEventDispatcher;
 import com.meshmkt.meshtastic.client.event.NodeDiscoveryEvent;
 import com.meshmkt.meshtastic.client.service.AdminService;
@@ -50,8 +50,8 @@ public class NodeInfoHandler extends BaseMeshHandler {
             MeshProtos.User user = info.getUser();
 
             // We are just updating the 'Device' timestamp from the sync.
-            // The MeshNode's getCalculatedStatus() will see this and 
-            // return CACHED or OFFLINE based on how old that 'lastHeard' is.
+            // The MeshNode status calculator treats snapshot-only data as CACHED
+            // until the stale/offline boundary is crossed.
             PacketContext localCtx = PacketContext.builder()
                     .from(info.getNum())
                     .timestamp(info.getLastHeard() * 1000L)
@@ -96,8 +96,12 @@ public class NodeInfoHandler extends BaseMeshHandler {
         try {
             MeshProtos.User user = MeshProtos.User.parseFrom(packet.getDecoded().getPayload());
 
-            log.info("[OTA DISCOVERY] Learned about !{} ({}) | Signal: {}dB",
-                    Integer.toHexString(packet.getFrom()), user.getLongName(), ctx.getSnr());
+            log.info("[NODE] discovered from={} ({}) snr={}dB hops={} via_mqtt={}",
+                    MeshUtils.formatId(packet.getFrom()),
+                    user.getLongName(),
+                    ctx.getSnr(),
+                    ctx.getHopsAway(),
+                    ctx.isViaMqtt());
 
             // Simple update: We pass the User and the PacketContext (which contains SNR/RSSI)
             nodeDb.updateUser(user, ctx);
@@ -105,7 +109,10 @@ public class NodeInfoHandler extends BaseMeshHandler {
             dispatcher.onNodeDiscovery(NodeDiscoveryEvent.of(packet, ctx, nodeDb.getSelfNodeId(), user));
             return true;
         } catch (Exception e) {
-            log.error("Failed to parse live NodeInfo payload", e);
+            log.error("[NODE] Failed to parse NODEINFO_APP payload from={} packet_id={}",
+                    MeshUtils.formatId(packet.getFrom()),
+                    packet.getId(),
+                    e);
             return false;
         }
     }

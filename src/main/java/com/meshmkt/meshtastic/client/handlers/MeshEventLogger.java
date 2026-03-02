@@ -45,13 +45,13 @@ public class MeshEventLogger extends BaseMeshHandler {
 
         if (message.hasMyInfo()) {
             // Local radio identifying itself
-            eventLog.info("[{}] 📟 MY_INFO: Local Node is !{}",
+            eventLog.debug("[{}] [LOCAL] my_info self_id={}",
                     pcTime,
                     Integer.toHexString(message.getMyInfo().getMyNodeNum()));
         } else if (message.hasNodeInfo()) {
             // Part of the initial node-list download
             MeshProtos.NodeInfo info = message.getNodeInfo();
-            eventLog.info("[{}] 🔄 NODE_LIST: !{} ({})",
+            eventLog.debug("[{}] [LOCAL] node_info from={} ({})",
                     pcTime, Integer.toHexString(info.getNum()), resolveName(info.getNum()));
         }
         return false;
@@ -72,17 +72,18 @@ public class MeshEventLogger extends BaseMeshHandler {
         PortNum port = packet.getDecoded().getPortnum();
 
         // Line 1: Basic Routing Info
-        eventLog.info("[{}] 📦 PACKET: {} -> {} | Port: {} | ID: {}",
+        eventLog.debug("[{}] [PACKET] from={} to={} port={} packet_id={}",
                 pcTime, senderName, destName, port, packet.getId());
 
         // Line 2: Signal Metadata
-        eventLog.info("  └─ [Signal] SNR: {}dB | RSSI: {}dBm | Hops: {} | MQTT: {}",
+        eventLog.trace("[{}] [SIGNAL] snr={}dB rssi={}dBm hops={} via_mqtt={}",
+                pcTime,
                 ctx.getSnr(), ctx.getRssi(), ctx.getHopsAway(), ctx.isViaMqtt());
 
         // Line 3: Payload Decoding (Attempting to show what's inside)
         String payloadSummary = decodePayload(packet);
         if (!payloadSummary.isEmpty()) {
-            eventLog.info("  └─ [Data] {}", payloadSummary);
+            eventLog.trace("[{}] [PAYLOAD] {}", pcTime, payloadSummary);
         }
 
         return false;

@@ -136,7 +136,17 @@ public class MeshNode {
         LIVE,
 
         /**
-         *
+         * Node has been heard by this app in the current session, but not within
+         * the live activity window.
+         * <p>
+         * This is an app-observed stale state and is distinct from {@link #CACHED}.
+         * </p>
+         */
+        IDLE,
+
+        /**
+         * Node was loaded from radio snapshot/state but has not yet been heard
+         * live by this app session.
          */
         CACHED,
 
@@ -155,11 +165,19 @@ public class MeshNode {
     }
 
     /**
-     * The single source of truth for node state.
-     */
-    /**
-     * The single source of truth for node state using modern JDK 8+ Time API.
-     * @return 
+     * Calculates the effective UI status for this node.
+     * <p>
+     * Status priority:
+     * </p>
+     * <ol>
+     * <li>{@link NodeStatus#SELF}</li>
+     * <li>{@link NodeStatus#LIVE} (heard by app within live threshold)</li>
+     * <li>{@link NodeStatus#IDLE} (heard by app, outside live threshold but not stale/offline)</li>
+     * <li>{@link NodeStatus#CACHED} (never heard by app session, but present in radio snapshot)</li>
+     * <li>{@link NodeStatus#OFFLINE}</li>
+     * </ol>
+     *
+     * @return computed node status for the current time.
      */
     public NodeStatus getCalculatedStatus() {
         if (this.self) {
@@ -167,19 +185,30 @@ public class MeshNode {
         }
 
         Instant now = Instant.now();
+        Duration ageLocal = null;
+        Duration ageRadio = null;
 
-        // 1. LIVE check (Local PC reception time)
+        // Local app observation age (session-local timeline, milliseconds).
         if (this.lastSeenLocal > 0) {
-            Duration ageLocal = Duration.between(Instant.ofEpochMilli(this.lastSeenLocal), now);
+            ageLocal = Duration.between(Instant.ofEpochMilli(this.lastSeenLocal), now);
             if (ageLocal.getSeconds() < MeshConstants.LIVE_THRESHOLD_SECONDS) {
                 return NodeStatus.LIVE;
             }
         }
 
-        // 2. CACHED check (Radio-reported timestamp in seconds)
+        // Radio observation age (radio-reported timeline, seconds).
         if (this.lastSeen > 0) {
-            // Note: lastSeen is in seconds, so we use ofEpochSecond
-            Duration ageRadio = Duration.between(Instant.ofEpochSecond(this.lastSeen), now);
+            ageRadio = Duration.between(Instant.ofEpochSecond(this.lastSeen), now);
+        }
+
+        // If the app has heard this node in-session and it is no longer LIVE, it is IDLE
+        // until it crosses the stale/offline boundary.
+        if (ageLocal != null && ageLocal.getSeconds() < MeshConstants.STALE_NODE_THRESHOLD_SECONDS) {
+            return NodeStatus.IDLE;
+        }
+
+        // CACHED is reserved for snapshot-only nodes (never heard in this app session).
+        if (ageLocal == null && ageRadio != null) {
             if (ageRadio.getSeconds() < MeshConstants.STALE_NODE_THRESHOLD_SECONDS) {
                 return NodeStatus.CACHED;
             }
