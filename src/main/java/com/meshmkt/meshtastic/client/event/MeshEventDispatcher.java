@@ -34,4 +34,11 @@ public interface MeshEventDispatcher {
      * @param event
      */
     void onMessageStatusUpdate(MessageStatusEvent event);
+
+    /**
+     * Publishes local admin-model updates (owner/config/channel/module/metadata).
+     *
+     * @param event admin model update event.
+     */
+    void onAdminModelUpdate(AdminModelUpdateEvent event);
 }

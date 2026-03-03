@@ -199,6 +199,82 @@ class AdminServiceTest {
     }
 
     /**
+     * Verifies likely-active channel refresh targets only primary slot plus active cached slots.
+     */
+    @Test
+    void refreshLikelyActiveChannelsRequestsPrimaryAndActiveCachedSlotsOnly() {
+        StubGateway gateway = new StubGateway(1234);
+        AdminService service = new AdminService(gateway);
+
+        service.ingestAdminMessage(AdminMessage.newBuilder()
+                .setGetChannelResponse(Channel.newBuilder()
+                        .setIndex(0)
+                        .setRole(Channel.Role.PRIMARY)
+                        .setSettings(ChannelSettings.newBuilder().setName("Primary").build())
+                        .build())
+                .build());
+        service.ingestAdminMessage(AdminMessage.newBuilder()
+                .setGetChannelResponse(Channel.newBuilder()
+                        .setIndex(2)
+                        .setRole(Channel.Role.SECONDARY)
+                        .setSettings(ChannelSettings.newBuilder().setName("meshMKT").build())
+                        .build())
+                .build());
+        service.ingestAdminMessage(AdminMessage.newBuilder()
+                .setGetChannelResponse(Channel.newBuilder()
+                        .setIndex(5)
+                        .setRole(Channel.Role.DISABLED)
+                        .build())
+                .build());
+
+        gateway.enqueueAdminResponse(AdminMessage.newBuilder()
+                .setGetChannelResponse(Channel.newBuilder().setIndex(0).setRole(Channel.Role.PRIMARY).build())
+                .build());
+        gateway.enqueueAdminResponse(AdminMessage.newBuilder()
+                .setGetChannelResponse(Channel.newBuilder().setIndex(2).setRole(Channel.Role.SECONDARY).build())
+                .build());
+
+        List<Channel> refreshed = service.refreshLikelyActiveChannels().join();
+        assertEquals(List.of(0, 2), refreshed.stream().map(Channel::getIndex).toList());
+        assertEquals(2, gateway.requests.size());
+        assertEquals(1, gateway.requests.get(0).getGetChannelRequest());
+        assertEquals(3, gateway.requests.get(1).getGetChannelRequest());
+    }
+
+    /**
+     * Verifies explicit channel refresh deduplicates indexes, preserves request order, and sorts returned channels.
+     */
+    @Test
+    void refreshChannelsByIndexDeduplicatesAndSortsResults() {
+        StubGateway gateway = new StubGateway(1234);
+        AdminService service = new AdminService(gateway);
+
+        gateway.enqueueAdminResponse(AdminMessage.newBuilder()
+                .setGetChannelResponse(Channel.newBuilder()
+                        .setIndex(2)
+                        .setRole(Channel.Role.SECONDARY)
+                        .setSettings(ChannelSettings.newBuilder().setName("slot-2").build())
+                        .build())
+                .build());
+        gateway.enqueueAdminResponse(AdminMessage.newBuilder()
+                .setGetChannelResponse(Channel.newBuilder()
+                        .setIndex(0)
+                        .setRole(Channel.Role.PRIMARY)
+                        .setSettings(ChannelSettings.newBuilder().setName("slot-0").build())
+                        .build())
+                .build());
+
+        List<Channel> refreshed = service.refreshChannels(List.of(2, 2, 0, 2)).join();
+
+        // Request order follows first-seen deduplicated input indexes.
+        assertEquals(2, gateway.requests.size());
+        assertEquals(3, gateway.requests.get(0).getGetChannelRequest());
+        assertEquals(1, gateway.requests.get(1).getGetChannelRequest());
+        // Returned results are normalized to ascending slot index.
+        assertEquals(List.of(0, 2), refreshed.stream().map(Channel::getIndex).toList());
+    }
+
+    /**
      * Verifies owner writes can be explicitly verified for the local node via get-owner readback.
      */
     @Test

@@ -4,6 +4,7 @@ import com.google.protobuf.ByteString;
 import com.google.protobuf.InvalidProtocolBufferException;
 import com.google.protobuf.Message;
 import com.meshmkt.meshtastic.client.event.ChatMessageEvent;
+import com.meshmkt.meshtastic.client.event.AdminModelUpdateEvent;
 import com.meshmkt.meshtastic.client.event.MeshEventDispatcher;
 import com.meshmkt.meshtastic.client.event.MeshtasticEventListener;
 import com.meshmkt.meshtastic.client.event.MessageStatusEvent;
@@ -97,9 +98,22 @@ public class MeshtasticClient implements AdminRequestGateway {
     private final Map<Integer, PendingRequest> pendingRequests = new ConcurrentHashMap<>();
     private static final long STARTUP_SYNC_TIMEOUT_SECONDS = 45;
     private static final Duration DEFAULT_PAYLOAD_WAIT_TIMEOUT = Duration.ofSeconds(30);
+    private static final long DEFAULT_LOCK_RELEASE_COOLDOWN_MS = 200L;
+    private static final Duration DEFAULT_REQUEST_CORRELATION_TIMEOUT = Duration.ofSeconds(30);
     private static final int NODELESS_WANT_CONFIG_ID = 69420;
     private static final int FULL_WANT_CONFIG_ID = 69421;
     private volatile ScheduledFuture<?> heartbeatFuture;
+    /**
+     * Cooldown inserted after correlated completion before releasing the radio lock.
+     * <p>
+     * This protects slower radios from immediate back-to-back request bursts.
+     * </p>
+     */
+    private volatile long requestLockReleaseCooldownMs = DEFAULT_LOCK_RELEASE_COOLDOWN_MS;
+    /**
+     * Failsafe timeout for correlated request futures waiting on routing/admin response.
+     */
+    private volatile Duration requestCorrelationTimeout = DEFAULT_REQUEST_CORRELATION_TIMEOUT;
     /**
      * Bounded queue of inbound XMODEM control events observed from {@link FromRadio#hasXmodemPacket()}.
      * <p>
@@ -166,6 +180,51 @@ public class MeshtasticClient implements AdminRequestGateway {
      */
     public OtaService getOtaService() {
         return otaService;
+    }
+
+    /**
+     * Sets request cooldown delay inserted before radio lock release after a correlated response.
+     * <p>
+     * This is an advanced tuning knob intended for transport/firmware performance tuning.
+     * </p>
+     *
+     * @param cooldownMs cooldown in milliseconds, must be zero or positive.
+     */
+    public void setRequestLockReleaseCooldownMs(long cooldownMs) {
+        if (cooldownMs < 0) {
+            throw new IllegalArgumentException("cooldownMs must be >= 0");
+        }
+        this.requestLockReleaseCooldownMs = cooldownMs;
+    }
+
+    /**
+     * Returns the current request lock release cooldown.
+     *
+     * @return cooldown in milliseconds.
+     */
+    public long getRequestLockReleaseCooldownMs() {
+        return requestLockReleaseCooldownMs;
+    }
+
+    /**
+     * Sets failsafe timeout for correlated requests waiting on radio response.
+     *
+     * @param timeout timeout duration, must be non-null and greater than zero.
+     */
+    public void setRequestCorrelationTimeout(Duration timeout) {
+        if (timeout == null || timeout.isZero() || timeout.isNegative()) {
+            throw new IllegalArgumentException("timeout must be > 0");
+        }
+        this.requestCorrelationTimeout = timeout;
+    }
+
+    /**
+     * Returns failsafe timeout used for correlated requests.
+     *
+     * @return request correlation timeout.
+     */
+    public Duration getRequestCorrelationTimeout() {
+        return requestCorrelationTimeout;
     }
 
     /**
@@ -355,14 +414,22 @@ public class MeshtasticClient implements AdminRequestGateway {
 
     private CompletableFuture<MeshPacket> executeRequest(MeshRequest request) {
         CompletableFuture<MeshPacket> future = new CompletableFuture<>();
+        final long submittedAtNanos = System.nanoTime();
 
         requestExecutor.execute(() -> {
+            final long executorStartNanos = System.nanoTime();
             boolean lockAcquired = false;
             try {
                 ProtocolConstraints.validateChannelIndex(request.channelIndex());
                 awaitStartupSyncBarrier();
                 radioLock.acquire();
                 lockAcquired = true;
+                if (log.isTraceEnabled()) {
+                    long queueDelayMs = TimeUnit.NANOSECONDS.toMillis(executorStartNanos - submittedAtNanos);
+                    long lockWaitMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - executorStartNanos);
+                    log.trace("[TX] Request queue delay={}ms lock_wait={}ms port={} dst={}",
+                            queueDelayMs, lockWaitMs, request.port(), MeshUtils.formatId(request.destinationId()));
+                }
 
                 if (!isConnected()) {
                     radioLock.release();
@@ -426,6 +493,17 @@ public class MeshtasticClient implements AdminRequestGateway {
                         request.port(),
                         error
                 ));
+                future.whenComplete((result, error) -> {
+                    if (log.isTraceEnabled()) {
+                        long totalMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - submittedAtNanos);
+                        log.trace("[TX] Request {} completed in {}ms (port={} dst={} success={})",
+                                myPacketId,
+                                totalMs,
+                                request.port(),
+                                MeshUtils.formatId(request.destinationId()),
+                                error == null);
+                    }
+                });
 
                 // 4. Handle Lock Release with built-in Cooldown
                 if (!awaitCorrelation) {
@@ -438,7 +516,7 @@ public class MeshtasticClient implements AdminRequestGateway {
                         scheduler.schedule(() -> {
                             log.trace("[TX] Cooldown finished. Releasing radio lock for ID: {}", myPacketId);
                             radioLock.release();
-                        }, 200, TimeUnit.MILLISECONDS);
+                        }, requestLockReleaseCooldownMs, TimeUnit.MILLISECONDS);
                         return null;
                     });
 
@@ -448,7 +526,7 @@ public class MeshtasticClient implements AdminRequestGateway {
                             pendingRequests.remove(myPacketId);
                             future.completeExceptionally(new TimeoutException("Response timeout for: " + myPacketId));
                         }
-                    }, 30, TimeUnit.SECONDS);
+                    }, requestCorrelationTimeout.toMillis(), TimeUnit.MILLISECONDS);
                 }
 
             } catch (Exception e) {
@@ -1188,6 +1266,7 @@ public class MeshtasticClient implements AdminRequestGateway {
             boolean allowSnapshotFallbackOnTimeout,
             Supplier<CompletableFuture<MeshPacket>> requestSupplier,
             Function<CompletableFuture<MeshNode>, MeshtasticEventListener> listenerFactory) {
+        final long startedAtNanos = System.nanoTime();
         Duration effectiveTimeout = (timeout == null || timeout.isZero() || timeout.isNegative())
                 ? DEFAULT_PAYLOAD_WAIT_TIMEOUT : timeout;
 
@@ -1254,6 +1333,11 @@ public class MeshtasticClient implements AdminRequestGateway {
         payloadFuture.whenComplete((node, err) -> {
             timeoutFuture.cancel(false);
             removeEventListener(listener);
+            if (log.isTraceEnabled()) {
+                long totalMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedAtNanos);
+                log.trace("[UTIL] Await {} for {} completed in {}ms (success={})",
+                        payloadName, MeshUtils.formatId(nodeId), totalMs, err == null);
+            }
         });
 
         CompletableFuture<MeshPacket> requestFuture;
@@ -1367,6 +1451,11 @@ public class MeshtasticClient implements AdminRequestGateway {
         @Override
         public void onMessageStatusUpdate(MessageStatusEvent e) {
             notifyListeners(l -> l.onMessageStatusUpdate(e));
+        }
+
+        @Override
+        public void onAdminModelUpdate(AdminModelUpdateEvent e) {
+            notifyListeners(l -> l.onAdminModelUpdate(e));
         }
     }
 

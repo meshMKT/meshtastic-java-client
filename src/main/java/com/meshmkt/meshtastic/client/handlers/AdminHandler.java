@@ -1,14 +1,19 @@
 package com.meshmkt.meshtastic.client.handlers;
 
 import com.meshmkt.meshtastic.client.MeshUtils;
+import com.meshmkt.meshtastic.client.event.AdminModelUpdateEvent;
 import com.meshmkt.meshtastic.client.event.MeshEventDispatcher;
 import com.meshmkt.meshtastic.client.service.AdminService;
 import com.meshmkt.meshtastic.client.storage.NodeDatabase;
 import com.meshmkt.meshtastic.client.storage.PacketContext;
 import lombok.extern.slf4j.Slf4j;
 import org.meshtastic.proto.AdminProtos.AdminMessage;
+import org.meshtastic.proto.AdminProtos.AdminMessage.ConfigType;
+import org.meshtastic.proto.AdminProtos.AdminMessage.ModuleConfigType;
+import org.meshtastic.proto.ConfigProtos.Config;
 import org.meshtastic.proto.MeshProtos;
 import org.meshtastic.proto.MeshProtos.MeshPacket;
+import org.meshtastic.proto.ModuleConfigProtos.ModuleConfig;
 import org.meshtastic.proto.Portnums.PortNum;
 import static org.meshtastic.proto.Portnums.PortNum.ADMIN_APP;
 
@@ -16,7 +21,8 @@ import static org.meshtastic.proto.Portnums.PortNum.ADMIN_APP;
 /**
  * Handles packet-based {@code ADMIN_APP} payloads and forwards decoded admin messages into {@link AdminService}.
  * <p>
- * This handler currently acts as a state-ingest bridge and does not publish dispatcher events directly.
+ * In addition to model ingest, this handler emits {@link AdminModelUpdateEvent} notifications so UIs can react
+ * to owner/config/channel/module/metadata changes while the link remains connected.
  * </p>
  */
 public class AdminHandler extends BaseMeshHandler {
@@ -45,6 +51,7 @@ public class AdminHandler extends BaseMeshHandler {
 
                 // Feed it to the service to see if the model finally populates
                 adminService.ingestAdminMessage(msg);
+                emitAdminModelEvents(msg);
 
                 return true;
             } catch (Exception e) {
@@ -61,6 +68,93 @@ public class AdminHandler extends BaseMeshHandler {
     public boolean canHandle(MeshProtos.FromRadio message) {
         return message.hasPacket() && message.getPacket().getDecoded().getPortnum() == ADMIN_APP;
     }
-    
-    
+
+    /**
+     * Emits granular admin model update events for UI/cache listeners.
+     *
+     * @param msg decoded admin payload.
+     */
+    private void emitAdminModelEvents(AdminMessage msg) {
+        if (msg.hasGetOwnerResponse()) {
+            dispatcher.onAdminModelUpdate(AdminModelUpdateEvent.builder()
+                    .section(AdminModelUpdateEvent.Section.OWNER)
+                    .source("ADMIN_APP")
+                    .build());
+        }
+        if (msg.hasGetConfigResponse()) {
+            dispatcher.onAdminModelUpdate(AdminModelUpdateEvent.builder()
+                    .section(AdminModelUpdateEvent.Section.CONFIG)
+                    .configType(toConfigType(msg.getGetConfigResponse()))
+                    .source("ADMIN_APP")
+                    .build());
+        }
+        if (msg.hasGetChannelResponse()) {
+            dispatcher.onAdminModelUpdate(AdminModelUpdateEvent.builder()
+                    .section(AdminModelUpdateEvent.Section.CHANNEL)
+                    .channelIndex(msg.getGetChannelResponse().getIndex())
+                    .source("ADMIN_APP")
+                    .build());
+        }
+        if (msg.hasGetModuleConfigResponse()) {
+            dispatcher.onAdminModelUpdate(AdminModelUpdateEvent.builder()
+                    .section(AdminModelUpdateEvent.Section.MODULE_CONFIG)
+                    .moduleConfigType(toModuleConfigType(msg.getGetModuleConfigResponse()))
+                    .source("ADMIN_APP")
+                    .build());
+        }
+        if (msg.hasGetDeviceMetadataResponse()) {
+            dispatcher.onAdminModelUpdate(AdminModelUpdateEvent.builder()
+                    .section(AdminModelUpdateEvent.Section.DEVICE_METADATA)
+                    .source("ADMIN_APP")
+                    .build());
+        }
+    }
+
+    /**
+     * Maps config payload oneof variant to admin config type key.
+     */
+    private static ConfigType toConfigType(Config config) {
+        if (config == null) {
+            return null;
+        }
+        return switch (config.getPayloadVariantCase()) {
+            case DEVICE -> ConfigType.DEVICE_CONFIG;
+            case POSITION -> ConfigType.POSITION_CONFIG;
+            case POWER -> ConfigType.POWER_CONFIG;
+            case NETWORK -> ConfigType.NETWORK_CONFIG;
+            case DISPLAY -> ConfigType.DISPLAY_CONFIG;
+            case LORA -> ConfigType.LORA_CONFIG;
+            case BLUETOOTH -> ConfigType.BLUETOOTH_CONFIG;
+            case SECURITY -> ConfigType.SECURITY_CONFIG;
+            case SESSIONKEY -> ConfigType.SESSIONKEY_CONFIG;
+            case DEVICE_UI -> ConfigType.DEVICEUI_CONFIG;
+            case PAYLOADVARIANT_NOT_SET -> null;
+        };
+    }
+
+    /**
+     * Maps module-config payload oneof variant to admin module config type key.
+     */
+    private static ModuleConfigType toModuleConfigType(ModuleConfig moduleConfig) {
+        if (moduleConfig == null) {
+            return null;
+        }
+        return switch (moduleConfig.getPayloadVariantCase()) {
+            case MQTT -> ModuleConfigType.MQTT_CONFIG;
+            case SERIAL -> ModuleConfigType.SERIAL_CONFIG;
+            case EXTERNAL_NOTIFICATION -> ModuleConfigType.EXTNOTIF_CONFIG;
+            case STORE_FORWARD -> ModuleConfigType.STOREFORWARD_CONFIG;
+            case RANGE_TEST -> ModuleConfigType.RANGETEST_CONFIG;
+            case TELEMETRY -> ModuleConfigType.TELEMETRY_CONFIG;
+            case CANNED_MESSAGE -> ModuleConfigType.CANNEDMSG_CONFIG;
+            case AUDIO -> ModuleConfigType.AUDIO_CONFIG;
+            case REMOTE_HARDWARE -> ModuleConfigType.REMOTEHARDWARE_CONFIG;
+            case NEIGHBOR_INFO -> ModuleConfigType.NEIGHBORINFO_CONFIG;
+            case AMBIENT_LIGHTING -> ModuleConfigType.AMBIENTLIGHTING_CONFIG;
+            case DETECTION_SENSOR -> ModuleConfigType.DETECTIONSENSOR_CONFIG;
+            case PAXCOUNTER -> ModuleConfigType.PAXCOUNTER_CONFIG;
+            case STATUSMESSAGE -> ModuleConfigType.STATUSMESSAGE_CONFIG;
+            case PAYLOADVARIANT_NOT_SET -> null;
+        };
+    }
 }

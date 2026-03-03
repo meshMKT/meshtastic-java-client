@@ -18,4 +18,13 @@ public class TcpConfig {
     
     @Builder.Default
     private int connectionTimeoutMs = 5000;
+
+    /**
+     * Optional outbound pacing delay between framed writes.
+     * <p>
+     * Keep this conservative for slower radios/firmware. Set to {@code 0} to disable pacing.
+     * </p>
+     */
+    @Builder.Default
+    private long outboundPacingDelayMs = 200L;
 }

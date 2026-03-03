@@ -1,6 +1,7 @@
 package com.meshmkt.meshtastic.client.support;
 
 import com.meshmkt.meshtastic.client.event.ChatMessageEvent;
+import com.meshmkt.meshtastic.client.event.AdminModelUpdateEvent;
 import com.meshmkt.meshtastic.client.event.MeshEventDispatcher;
 import com.meshmkt.meshtastic.client.event.MessageStatusEvent;
 import com.meshmkt.meshtastic.client.event.NodeDiscoveryEvent;
@@ -29,5 +30,9 @@ public class NoOpMeshEventDispatcher implements MeshEventDispatcher {
 
     @Override
     public void onMessageStatusUpdate(MessageStatusEvent event) {
+    }
+
+    @Override
+    public void onAdminModelUpdate(AdminModelUpdateEvent event) {
     }
 }

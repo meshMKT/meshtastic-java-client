@@ -1,10 +1,15 @@
 package com.meshmkt.meshtastic.client.handlers;
 
+import com.meshmkt.meshtastic.client.event.AdminModelUpdateEvent;
 import com.meshmkt.meshtastic.client.event.MeshEventDispatcher;
 import com.meshmkt.meshtastic.client.service.AdminService;
 import com.meshmkt.meshtastic.client.storage.NodeDatabase;
 import com.meshmkt.meshtastic.client.storage.PacketContext;
+import org.meshtastic.proto.AdminProtos.AdminMessage.ConfigType;
+import org.meshtastic.proto.AdminProtos.AdminMessage.ModuleConfigType;
+import org.meshtastic.proto.ConfigProtos.Config;
 import org.meshtastic.proto.MeshProtos;
+import org.meshtastic.proto.ModuleConfigProtos.ModuleConfig;
 
 /**
  * Handles local (non-packet) state updates from the attached radio transport.
@@ -66,6 +71,11 @@ public class LocalStateHandler extends BaseMeshHandler {
             int selfId = message.getMyInfo().getMyNodeNum();
             nodeDb.setSelfNodeId(selfId);
             adminService.ingestMyInfo(selfId);
+            dispatcher.onAdminModelUpdate(AdminModelUpdateEvent.builder()
+                    .section(AdminModelUpdateEvent.Section.LOCAL_NODE)
+                    .nodeId(selfId)
+                    .source("FROM_RADIO")
+                    .build());
 
             PacketContext selfCtx = PacketContext.builder()
                     .from(selfId)
@@ -78,6 +88,33 @@ public class LocalStateHandler extends BaseMeshHandler {
         // Remaining local snapshots hydrate the AdminService/RadioModel cache.
         if (message.hasConfig() || message.hasChannel() || message.hasModuleConfig() || message.hasMetadata()) {
             adminService.ingestStartupSnapshot(message);
+            if (message.hasConfig()) {
+                dispatcher.onAdminModelUpdate(AdminModelUpdateEvent.builder()
+                        .section(AdminModelUpdateEvent.Section.CONFIG)
+                        .configType(toConfigType(message.getConfig()))
+                        .source("FROM_RADIO")
+                        .build());
+            }
+            if (message.hasChannel()) {
+                dispatcher.onAdminModelUpdate(AdminModelUpdateEvent.builder()
+                        .section(AdminModelUpdateEvent.Section.CHANNEL)
+                        .channelIndex(message.getChannel().getIndex())
+                        .source("FROM_RADIO")
+                        .build());
+            }
+            if (message.hasModuleConfig()) {
+                dispatcher.onAdminModelUpdate(AdminModelUpdateEvent.builder()
+                        .section(AdminModelUpdateEvent.Section.MODULE_CONFIG)
+                        .moduleConfigType(toModuleConfigType(message.getModuleConfig()))
+                        .source("FROM_RADIO")
+                        .build());
+            }
+            if (message.hasMetadata()) {
+                dispatcher.onAdminModelUpdate(AdminModelUpdateEvent.builder()
+                        .section(AdminModelUpdateEvent.Section.DEVICE_METADATA)
+                        .source("FROM_RADIO")
+                        .build());
+            }
         }
 
         return true;
@@ -93,5 +130,53 @@ public class LocalStateHandler extends BaseMeshHandler {
      */
     protected boolean handlePacket(MeshProtos.MeshPacket packet, PacketContext ctx) {
         return false;
+    }
+
+    /**
+     * Maps config payload oneof variant to admin config type key.
+     */
+    private static ConfigType toConfigType(Config config) {
+        if (config == null) {
+            return null;
+        }
+        return switch (config.getPayloadVariantCase()) {
+            case DEVICE -> ConfigType.DEVICE_CONFIG;
+            case POSITION -> ConfigType.POSITION_CONFIG;
+            case POWER -> ConfigType.POWER_CONFIG;
+            case NETWORK -> ConfigType.NETWORK_CONFIG;
+            case DISPLAY -> ConfigType.DISPLAY_CONFIG;
+            case LORA -> ConfigType.LORA_CONFIG;
+            case BLUETOOTH -> ConfigType.BLUETOOTH_CONFIG;
+            case SECURITY -> ConfigType.SECURITY_CONFIG;
+            case SESSIONKEY -> ConfigType.SESSIONKEY_CONFIG;
+            case DEVICE_UI -> ConfigType.DEVICEUI_CONFIG;
+            case PAYLOADVARIANT_NOT_SET -> null;
+        };
+    }
+
+    /**
+     * Maps module-config payload oneof variant to admin module config type key.
+     */
+    private static ModuleConfigType toModuleConfigType(ModuleConfig moduleConfig) {
+        if (moduleConfig == null) {
+            return null;
+        }
+        return switch (moduleConfig.getPayloadVariantCase()) {
+            case MQTT -> ModuleConfigType.MQTT_CONFIG;
+            case SERIAL -> ModuleConfigType.SERIAL_CONFIG;
+            case EXTERNAL_NOTIFICATION -> ModuleConfigType.EXTNOTIF_CONFIG;
+            case STORE_FORWARD -> ModuleConfigType.STOREFORWARD_CONFIG;
+            case RANGE_TEST -> ModuleConfigType.RANGETEST_CONFIG;
+            case TELEMETRY -> ModuleConfigType.TELEMETRY_CONFIG;
+            case CANNED_MESSAGE -> ModuleConfigType.CANNEDMSG_CONFIG;
+            case AUDIO -> ModuleConfigType.AUDIO_CONFIG;
+            case REMOTE_HARDWARE -> ModuleConfigType.REMOTEHARDWARE_CONFIG;
+            case NEIGHBOR_INFO -> ModuleConfigType.NEIGHBORINFO_CONFIG;
+            case AMBIENT_LIGHTING -> ModuleConfigType.AMBIENTLIGHTING_CONFIG;
+            case DETECTION_SENSOR -> ModuleConfigType.DETECTIONSENSOR_CONFIG;
+            case PAXCOUNTER -> ModuleConfigType.PAXCOUNTER_CONFIG;
+            case STATUSMESSAGE -> ModuleConfigType.STATUSMESSAGE_CONFIG;
+            case PAYLOADVARIANT_NOT_SET -> null;
+        };
     }
 }

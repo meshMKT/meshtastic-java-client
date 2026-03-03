@@ -34,6 +34,7 @@ public class TcpTransport extends StreamTransport {
      */
     public TcpTransport(TcpConfig config) {
         this.config = config;
+        setOutboundPacingDelay(config.getOutboundPacingDelayMs());
     }
 
     @Override

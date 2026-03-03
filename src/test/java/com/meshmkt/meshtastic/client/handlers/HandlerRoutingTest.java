@@ -1,6 +1,13 @@
 package com.meshmkt.meshtastic.client.handlers;
 
 import com.meshmkt.meshtastic.client.MeshtasticClient;
+import com.meshmkt.meshtastic.client.event.AdminModelUpdateEvent;
+import com.meshmkt.meshtastic.client.event.ChatMessageEvent;
+import com.meshmkt.meshtastic.client.event.MeshEventDispatcher;
+import com.meshmkt.meshtastic.client.event.MessageStatusEvent;
+import com.meshmkt.meshtastic.client.event.NodeDiscoveryEvent;
+import com.meshmkt.meshtastic.client.event.PositionUpdateEvent;
+import com.meshmkt.meshtastic.client.event.TelemetryUpdateEvent;
 import com.meshmkt.meshtastic.client.service.AdminService;
 import com.meshmkt.meshtastic.client.storage.InMemoryNodeDatabase;
 import com.meshmkt.meshtastic.client.support.NoOpMeshEventDispatcher;
@@ -99,6 +106,61 @@ class HandlerRoutingTest {
     }
 
     /**
+     * Verifies LocalStateHandler publishes admin-model updates for local snapshots.
+     */
+    @Test
+    void localStateHandlerPublishesAdminModelUpdateEvents() {
+        InMemoryNodeDatabase db = new InMemoryNodeDatabase();
+        AdminService admin = new AdminService(new HandlerStubClient());
+        CapturingDispatcher dispatcher = new CapturingDispatcher();
+        LocalStateHandler handler = new LocalStateHandler(db, dispatcher, admin);
+
+        MeshProtos.FromRadio myInfo = MeshProtos.FromRadio.newBuilder()
+                .setMyInfo(MeshProtos.MyNodeInfo.newBuilder().setMyNodeNum(4321).build())
+                .build();
+        MeshProtos.FromRadio channel = MeshProtos.FromRadio.newBuilder()
+                .setChannel(org.meshtastic.proto.ChannelProtos.Channel.newBuilder().setIndex(2).build())
+                .build();
+
+        assertTrue(handler.handle(myInfo));
+        assertTrue(handler.handle(channel));
+        assertEquals(2, dispatcher.adminEvents.size());
+        assertEquals(AdminModelUpdateEvent.Section.LOCAL_NODE, dispatcher.adminEvents.get(0).getSection());
+        assertEquals(AdminModelUpdateEvent.Section.CHANNEL, dispatcher.adminEvents.get(1).getSection());
+        assertEquals(2, dispatcher.adminEvents.get(1).getChannelIndex());
+    }
+
+    /**
+     * Verifies AdminHandler publishes channel update events from ADMIN_APP responses.
+     */
+    @Test
+    void adminHandlerPublishesChannelUpdateEvents() {
+        InMemoryNodeDatabase db = new InMemoryNodeDatabase();
+        AdminService admin = new AdminService(new HandlerStubClient());
+        CapturingDispatcher dispatcher = new CapturingDispatcher();
+        AdminHandler handler = new AdminHandler(db, dispatcher, admin);
+
+        AdminMessage adminMessage = AdminMessage.newBuilder()
+                .setGetChannelResponse(org.meshtastic.proto.ChannelProtos.Channel.newBuilder().setIndex(3).build())
+                .build();
+
+        MeshProtos.FromRadio message = MeshProtos.FromRadio.newBuilder()
+                .setPacket(MeshProtos.MeshPacket.newBuilder()
+                        .setFrom(123)
+                        .setDecoded(MeshProtos.Data.newBuilder()
+                                .setPortnum(Portnums.PortNum.ADMIN_APP)
+                                .setPayload(adminMessage.toByteString())
+                                .build())
+                        .build())
+                .build();
+
+        assertTrue(handler.handle(message));
+        assertEquals(1, dispatcher.adminEvents.size());
+        assertEquals(AdminModelUpdateEvent.Section.CHANNEL, dispatcher.adminEvents.get(0).getSection());
+        assertEquals(3, dispatcher.adminEvents.get(0).getChannelIndex());
+    }
+
+    /**
      * Minimal stub client for handlers that only need AdminService construction.
      */
     private static final class HandlerStubClient extends MeshtasticClient {
@@ -114,6 +176,38 @@ class HandlerRoutingTest {
         @Override
         public int getSelfNodeId() {
             return 1;
+        }
+    }
+
+    /**
+     * Simple dispatcher capture used by tests asserting event publication.
+     */
+    private static final class CapturingDispatcher implements MeshEventDispatcher {
+        private final java.util.List<AdminModelUpdateEvent> adminEvents = new java.util.ArrayList<>();
+
+        @Override
+        public void onChatMessage(ChatMessageEvent event) {
+        }
+
+        @Override
+        public void onPositionUpdate(PositionUpdateEvent event) {
+        }
+
+        @Override
+        public void onTelemetryUpdate(TelemetryUpdateEvent event) {
+        }
+
+        @Override
+        public void onNodeDiscovery(NodeDiscoveryEvent event) {
+        }
+
+        @Override
+        public void onMessageStatusUpdate(MessageStatusEvent event) {
+        }
+
+        @Override
+        public void onAdminModelUpdate(AdminModelUpdateEvent event) {
+            adminEvents.add(event);
         }
     }
 }

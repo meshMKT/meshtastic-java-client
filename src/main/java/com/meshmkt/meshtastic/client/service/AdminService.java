@@ -71,6 +71,7 @@ import java.util.stream.IntStream;
 @Slf4j
 public class AdminService {
     private static final Duration OWNER_VERIFY_TIMEOUT = Duration.ofSeconds(10);
+    private static final int PRIMARY_CHANNEL_INDEX = 0;
     private static final List<ConfigType> CORE_CONFIG_TYPES = List.of(
             ConfigType.LORA_CONFIG,
             ConfigType.DEVICE_CONFIG,
@@ -134,12 +135,28 @@ public class AdminService {
     /**
      * Refreshes settings usually needed by a channels/security page.
      * <p>
-     * Includes channel slots, security config, and MQTT module config.
+     * Includes likely-active channel slots, security config, and MQTT module config.
+     * This avoids blocking settings UIs on a full 8-slot sweep for radios that only use a subset of slots.
      * </p>
      *
      * @return future completing with the updated model.
      */
     public CompletableFuture<RadioModel> refreshChannelsAndSecurity() {
+        return refreshLikelyActiveChannels()
+                .thenCompose(channels -> refreshSecurityConfig())
+                .thenCompose(config -> refreshMqttConfig())
+                .thenApply(moduleConfig -> radioModel);
+    }
+
+    /**
+     * Refreshes settings needed by channels/security pages using a full all-slot channel sweep.
+     * <p>
+     * This is the explicit deep-refresh variant when callers must force refresh of all {@code 0..7} slots.
+     * </p>
+     *
+     * @return future completing with the updated model.
+     */
+    public CompletableFuture<RadioModel> refreshAllChannelsAndSecurity() {
         return refreshChannels()
                 .thenCompose(channels -> refreshSecurityConfig())
                 .thenCompose(config -> refreshMqttConfig())
@@ -364,14 +381,70 @@ public class AdminService {
      * @return future completing with channels sorted by index.
      */
     public CompletableFuture<List<Channel>> refreshChannels() {
-        List<CompletableFuture<Channel>> requests = IntStream.range(0, ProtocolConstraints.MAX_CHANNEL_SLOTS)
-                .mapToObj(this::refreshChannel)
-                .toList();
+        return refreshChannels(IntStream.range(0, ProtocolConstraints.MAX_CHANNEL_SLOTS)
+                .boxed()
+                .toList());
+    }
 
-        return sequence(requests)
-                .thenApply(channels -> channels.stream()
-                        .sorted(Comparator.comparingInt(Channel::getIndex))
-                        .toList());
+    /**
+     * Refreshes only the provided channel slots sequentially.
+     * <p>
+     * This is the preferred API for page-scoped refreshes where callers already know the relevant slots.
+     * Sequential ordering is preserved to avoid flooding slower radios.
+     * </p>
+     *
+     * @param indexes channel slot indexes to refresh. Null/duplicate entries are ignored.
+     *                If null or empty, all slots {@code 0..7} are refreshed.
+     * @return future completing with refreshed channels sorted by index.
+     */
+    public CompletableFuture<List<Channel>> refreshChannels(List<Integer> indexes) {
+        List<Integer> normalizedIndexes = normalizeChannelIndexes(indexes);
+        CompletableFuture<List<Channel>> chain
+                = CompletableFuture.completedFuture(new ArrayList<>(normalizedIndexes.size()));
+
+        for (int index : normalizedIndexes) {
+            chain = chain.thenCompose(refreshed -> refreshChannel(index).thenApply(channel -> {
+                refreshed.add(channel);
+                return refreshed;
+            }));
+        }
+
+        return chain.thenApply(channels -> channels.stream()
+                .sorted(Comparator.comparingInt(Channel::getIndex))
+                .toList());
+    }
+
+    /**
+     * Refreshes likely-active channel slots.
+     * <p>
+     * Slot {@code 0} is always included. Additional slots are chosen from cached snapshots that look active
+     * (for example PRIMARY/SECONDARY roles or non-empty settings).
+     * </p>
+     *
+     * @return future completing with refreshed likely-active channels sorted by index.
+     */
+    public CompletableFuture<List<Channel>> refreshLikelyActiveChannels() {
+        return refreshChannels(getLikelyActiveChannelIndexes());
+    }
+
+    /**
+     * Returns channel slot indexes that are likely active based on current cached channel snapshots.
+     * <p>
+     * This helper supports instant settings-page loads: render cached channels immediately, then reconcile
+     * these indexes in the background.
+     * </p>
+     *
+     * @return immutable ascending list of likely-active slot indexes.
+     */
+    public List<Integer> getLikelyActiveChannelIndexes() {
+        Set<Integer> indexes = new LinkedHashSet<>();
+        indexes.add(PRIMARY_CHANNEL_INDEX);
+        radioModel.getChannels().values().stream()
+                .filter(AdminService::isLikelyActiveChannel)
+                .map(Channel::getIndex)
+                .sorted()
+                .forEach(indexes::add);
+        return List.copyOf(indexes);
     }
 
     /**
@@ -1952,18 +2025,49 @@ public class AdminService {
         return distinct;
     }
 
-    private static <T> CompletableFuture<List<T>> sequence(List<CompletableFuture<T>> futures) {
-        CompletableFuture<List<T>> seed = CompletableFuture.completedFuture(new ArrayList<>(futures.size()));
-        return futures.stream().reduce(
-                seed,
-                (acc, next) -> acc.thenCompose(list -> next.thenApply(value -> {
-                    list.add(value);
-                    return list;
-                })),
-                (left, right) -> left.thenCombine(right, (l, r) -> {
-                    l.addAll(r);
-                    return l;
-                }));
+    /**
+     * Normalizes requested channel indexes by dropping nulls, validating range, removing duplicates,
+     * and preserving first-seen order.
+     *
+     * @param indexes requested indexes.
+     * @return normalized immutable index list. Defaults to all slots when input is null/empty.
+     */
+    private List<Integer> normalizeChannelIndexes(List<Integer> indexes) {
+        if (indexes == null || indexes.isEmpty()) {
+            return IntStream.range(0, ProtocolConstraints.MAX_CHANNEL_SLOTS).boxed().toList();
+        }
+        Set<Integer> distinct = new LinkedHashSet<>();
+        indexes.stream()
+                .filter(Objects::nonNull)
+                .forEach(index -> {
+                    validateChannelIndex(index);
+                    distinct.add(index);
+                });
+        if (distinct.isEmpty()) {
+            return IntStream.range(0, ProtocolConstraints.MAX_CHANNEL_SLOTS).boxed().toList();
+        }
+        return List.copyOf(distinct);
+    }
+
+    /**
+     * Heuristic for whether a channel slot should be treated as active for targeted refresh.
+     *
+     * @param channel cached channel snapshot.
+     * @return {@code true} when slot likely represents an active channel entry.
+     */
+    private static boolean isLikelyActiveChannel(Channel channel) {
+        if (channel == null) {
+            return false;
+        }
+        if (channel.getRole() == Channel.Role.PRIMARY || channel.getRole() == Channel.Role.SECONDARY) {
+            return true;
+        }
+        ChannelSettings settings = channel.getSettings();
+        return !settings.getName().isEmpty()
+                || !settings.getPsk().isEmpty()
+                || settings.getUplinkEnabled()
+                || settings.getDownlinkEnabled()
+                || settings.hasModuleSettings();
     }
 
     /**

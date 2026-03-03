@@ -28,10 +28,21 @@ MeshtasticClient client = new MeshtasticClient(db);
 
 SerialConfig cfg = SerialConfig.builder()
         .portName("/dev/cu.usbmodem80B54ED11F101")
+        // Optional transport pacing between framed writes (default: 200ms)
+        .outboundPacingDelayMs(200)
         .build();
 
 client.connect(new SerialTransport(cfg));
+
+// Optional advanced request-timing tuning (defaults shown)
+client.setRequestLockReleaseCooldownMs(200);               // default: 200ms
+client.setRequestCorrelationTimeout(Duration.ofSeconds(30)); // default: 30s
 ----
+
+[NOTE]
+====
+Keep defaults unless you have measured evidence your radio/firmware tolerates tighter pacing.
+====
 
 == Startup Flow (Recommended)
 
@@ -93,6 +104,57 @@ UI -> Admin: getChannelSnapshots()/getConfigSnapshot()/getModuleConfigSnapshot()
 ----
 
 == Core API Patterns
+
+=== Transport and Request Timing Controls
+
+The client intentionally serializes in-flight requests for radio safety. Timing controls let you tune throughput
+without changing that safety model.
+
+==== Transport Pacing
+
+`SerialConfig` and `TcpConfig` expose:
+
+- `outboundPacingDelayMs` (default `200`)
+
+Usage:
+
+[source,java]
+----
+SerialConfig serialCfg = SerialConfig.builder()
+        .portName("/dev/cu.usbmodem80B54ED11F101")
+        .outboundPacingDelayMs(120) // lower for faster radios, 0 disables pacing
+        .build();
+
+TcpConfig tcpCfg = TcpConfig.builder()
+        .host("192.168.1.50")
+        .port(4403)
+        .outboundPacingDelayMs(120)
+        .build();
+----
+
+==== Request Correlation Controls
+
+`MeshtasticClient` exposes:
+
+- `setRequestLockReleaseCooldownMs(long)` (default `200ms`)
+- `setRequestCorrelationTimeout(Duration)` (default `30s`)
+
+Usage:
+
+[source,java]
+----
+client.setRequestLockReleaseCooldownMs(120);
+client.setRequestCorrelationTimeout(Duration.ofSeconds(20));
+----
+
+Example TRACE output when timing diagnostics are enabled:
+
+[source,text]
+----
+[TX] Request queue delay=0ms lock_wait=0ms port=ADMIN_APP dst=!53ad0f1e
+[TX] Request 1856599835 completed in 6450ms (port=ADMIN_APP dst=!53ad0f1e success=true)
+[UTIL] Await TELEMETRY_APP for !699c5400 completed in 312ms (success=true)
+----
 
 === Fire-and-forget Request Correlation
 
@@ -558,6 +620,48 @@ client.addEventListener(new MeshtasticEventListener() {
 ----
 
 This gives one consistent contract for request outcomes across admin reads/writes and utility request methods.
+
+== Admin Model Update Events
+
+For settings UIs, `MeshtasticEventListener` now exposes `onAdminModelUpdate(...)` for live model changes.
+
+When this event fires:
+
+- `ADMIN_APP` responses update owner/config/channel/module/metadata
+- local `FromRadio` snapshots update local node/config/channel/module/metadata
+
+[source,java]
+----
+client.addEventListener(new MeshtasticEventListener() {
+    @Override
+    public void onAdminModelUpdate(AdminModelUpdateEvent event) {
+        switch (event.getSection()) {
+            case CHANNEL -> {
+                Integer slot = event.getChannelIndex();
+                if (slot != null) {
+                    admin.refreshChannel(slot).thenAccept(ch -> renderChannelRow(slot, ch));
+                } else {
+                    admin.refreshChannels().thenAccept(MainPresenter.this::renderChannels);
+                }
+            }
+            case OWNER -> admin.refreshOwner().thenAccept(MainPresenter.this::renderOwner);
+            case CONFIG -> admin.refreshCoreConfigs().thenAccept(cfg -> renderConfig(admin.getConfigSnapshots()));
+            case MODULE_CONFIG -> admin.refreshModules().thenAccept(m -> renderModules(admin.getModuleConfigSnapshots()));
+            case DEVICE_METADATA -> admin.refreshMetadata().thenAccept(MainPresenter.this::renderMetadata);
+            case LOCAL_NODE -> { /* optional local node update handling */ }
+        }
+    }
+});
+----
+
+[TIP]
+====
+Firmware does not always push channel/config changes made directly on-device. For deterministic settings pages:
+
+1. refresh on page-open,
+2. optionally poll while page is visible,
+3. stop polling when page closes.
+====
 
 == OTA Framework (Serial-First)
 

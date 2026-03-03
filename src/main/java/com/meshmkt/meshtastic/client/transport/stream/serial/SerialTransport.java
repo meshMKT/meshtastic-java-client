@@ -51,6 +51,7 @@ public class SerialTransport extends StreamTransport {
         this.activePortDescriptor = config.getPortName();
         this.activePortDescription = "";
         this.activeDescriptiveName = "";
+        setOutboundPacingDelay(config.getOutboundPacingDelayMs());
     }
 
     @Override

@@ -16,4 +16,11 @@ public class SerialConfig {
     @Builder.Default private final int stopBits = SerialPort.ONE_STOP_BIT;
     @Builder.Default private final int parity = SerialPort.NO_PARITY;
     @Builder.Default private final int timeoutMs = 2000;
+    /**
+     * Optional outbound pacing delay between framed writes.
+     * <p>
+     * Keep this conservative for slower radios/firmware. Set to {@code 0} to disable pacing.
+     * </p>
+     */
+    @Builder.Default private final long outboundPacingDelayMs = 200L;
 }

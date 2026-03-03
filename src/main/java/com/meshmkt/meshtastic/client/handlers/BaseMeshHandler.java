@@ -38,6 +38,10 @@ public abstract class BaseMeshHandler implements MeshtasticMessageHandler {
         @Override
         public void onMessageStatusUpdate(com.meshmkt.meshtastic.client.event.MessageStatusEvent event) {
         }
+
+        @Override
+        public void onAdminModelUpdate(com.meshmkt.meshtastic.client.event.AdminModelUpdateEvent event) {
+        }
     };
 
     /**

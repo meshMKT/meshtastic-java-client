@@ -65,4 +65,13 @@ public interface MeshtasticEventListener {
         // No-op by default. Override only when needed.
     }
 
+    /**
+     * Fired when local admin model state changes (owner/config/channel/module/metadata).
+     *
+     * @param event admin model update event.
+     */
+    default void onAdminModelUpdate(AdminModelUpdateEvent event) {
+        // No-op by default. Override only when needed.
+    }
+
 }
