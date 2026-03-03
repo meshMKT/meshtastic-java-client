@@ -93,7 +93,7 @@ Client -> Client: startup state = READY
 Client --> UI: onStartupStateChanged(..., READY)
 
 UI -> Admin: refreshChannelsAndSecurity()
-Admin -> Client: executeAdminRequest(GET_CHANNEL x8)
+Admin -> Client: executeAdminRequest(GET_CHANNEL likely-active slots)
 Admin -> Client: executeAdminRequest(GET_CONFIG SECURITY)
 Admin -> Client: executeAdminRequest(GET_MODULE_CONFIG MQTT)
 Admin -> Model: apply snapshots
@@ -238,6 +238,11 @@ admin.refreshChannelsAndSecurity().thenAccept(model -> {
     renderSecurity(admin.getConfigSnapshot(ConfigType.SECURITY_CONFIG).orElse(null));
     renderMqtt(admin.getModuleConfigSnapshot(ModuleConfigType.MQTT_CONFIG).orElse(null));
 });
+
+// Explicit deep refresh (all channel slots 0..7)
+admin.refreshAllChannelsAndSecurity().thenAccept(model -> {
+    renderChannels(admin.getChannelSnapshots());
+});
 ----
 
 === Module/Config Refresh by Section
@@ -263,6 +268,38 @@ Admin write methods use explicit completion semantics:
 - `setModuleConfigAndVerify(moduleConfig)`: accepted + verified-applied
 - `setOwner(id, longName, shortName)`: accepted-only
 - `setOwnerAndVerify(id, longName, shortName)`: accepted + verified-applied
+
+=== Eventual-Consistency Verification Policy
+
+Some firmware/radio combinations apply writes asynchronously. To reduce false negatives,
+`AdminService` supports configurable read-back retries when `verifyApplied=true`.
+
+Defaults:
+
+- `maxAttempts = 1` (immediate single verification attempt; legacy behavior)
+- `initialRetryDelay = 300ms`
+- `retryBackoffMultiplier = 2.0`
+- `maxRetryDelay = 2s`
+
+Configuration example:
+
+[source,java]
+----
+admin.setVerificationPolicy(
+        AdminVerificationPolicy.builder()
+                .maxAttempts(3)
+                .initialRetryDelay(Duration.ofMillis(400))
+                .retryBackoffMultiplier(1.8)
+                .maxRetryDelay(Duration.ofSeconds(2))
+                .build()
+);
+----
+
+Operational guidance:
+
+- keep `maxAttempts=1` for fastest fail-fast behavior
+- use `2-3` attempts for unstable radios/firmware where writes may appear late
+- avoid high retry counts to prevent blocking settings workflows
 
 === Structured Write Results (Recommended for UI)
 

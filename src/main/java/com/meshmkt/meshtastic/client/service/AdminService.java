@@ -32,10 +32,12 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.time.Duration;
 import java.nio.charset.StandardCharsets;
 import java.util.function.Function;
+import java.util.function.Supplier;
 import java.util.stream.IntStream;
 
 /**
@@ -98,6 +100,10 @@ public class AdminService {
     private final AdminRequestGateway gateway;
     private final RadioModel radioModel = new RadioModel();
     private ByteString lastSessionPasskey = ByteString.EMPTY;
+    /**
+     * Verification retry/backoff policy used by write methods when {@code verifyApplied=true}.
+     */
+    private volatile AdminVerificationPolicy verificationPolicy = AdminVerificationPolicy.builder().build().validated();
 
     /**
      * Creates a new admin service bound to one request gateway instance.
@@ -106,6 +112,28 @@ public class AdminService {
      */
     public AdminService(AdminRequestGateway gateway) {
         this.gateway = gateway;
+    }
+
+    /**
+     * Returns the current admin write verification policy.
+     *
+     * @return active verification policy.
+     */
+    public AdminVerificationPolicy getVerificationPolicy() {
+        return verificationPolicy;
+    }
+
+    /**
+     * Sets the admin write verification policy.
+     * <p>
+     * This controls delayed read-back retries for eventual-consistency firmwares.
+     * </p>
+     *
+     * @param verificationPolicy new verification policy.
+     */
+    public void setVerificationPolicy(AdminVerificationPolicy verificationPolicy) {
+        this.verificationPolicy = Objects.requireNonNull(verificationPolicy, "verificationPolicy must not be null")
+                .validated();
     }
 
     /**
@@ -689,36 +717,30 @@ public class AdminService {
                                     return CompletableFuture.completedFuture(true);
                                 }
 
-                                return verifyChannelApplied(
-                                        index,
-                                        channelWithIndex,
-                                        allowRetry,
-                                        "Channel write not reflected on radio; retrying once");
+                                return verifyChannelApplied(index, channelWithIndex);
                             })
                             .exceptionallyCompose(ex -> {
                                 if (verifyApplied && isRoutingNoResponse(ex)) {
                                     log.warn("[ADMIN] Channel {} set returned ROUTING NO_RESPONSE; verifying by read-back", index);
-                                    return verifyChannelApplied(
-                                            index,
-                                            channelWithIndex,
-                                            allowRetry,
-                                            "Channel write returned ROUTING NO_RESPONSE and read-back did not match; retrying once")
-                                            .exceptionallyCompose(verifyEx -> {
-                                                if (allowRetry) {
-                                                    log.warn("[ADMIN] Channel {} verification after ROUTING NO_RESPONSE failed; " +
-                                                                    "refreshing session key and retrying once: {}",
-                                                            index, verifyEx.getMessage());
-                                                    return setChannel(index, updatedChannel, verifyApplied, false);
-                                                }
-                                                return CompletableFuture.completedFuture(false);
-                                            });
+                                    return verifyChannelApplied(index, channelWithIndex);
                                 }
-                                if (allowRetry) {
+                                if (allowRetry && verifyApplied) {
                                     log.warn("[ADMIN] Channel {} set failed/verification failed; refreshing session key and retrying once: {}",
                                             index, ex.getMessage());
                                     return setChannel(index, updatedChannel, verifyApplied, false);
                                 }
-                                return CompletableFuture.completedFuture(false);
+                                return CompletableFuture.failedFuture(ex);
+                            })
+                            .thenCompose(applied -> {
+                                if (Boolean.TRUE.equals(applied)) {
+                                    return CompletableFuture.completedFuture(true);
+                                }
+                                if (verifyApplied && allowRetry) {
+                                    log.warn("[ADMIN] Channel {} write accepted but verification did not match; " +
+                                            "refreshing session key and retrying write once.", index);
+                                    return setChannel(index, updatedChannel, true, false);
+                                }
+                                return CompletableFuture.completedFuture(Boolean.TRUE.equals(applied));
                             });
                 });
     }
@@ -782,8 +804,8 @@ public class AdminService {
                         return CompletableFuture.completedFuture(false);
                     }
 
-                    return refreshConfigs(impactedTypes)
-                            .thenApply(observed -> isConfigApplied(config, observed));
+                    return verifyWithPolicy("setConfig", () -> refreshConfigs(impactedTypes)
+                            .thenApply(observed -> isConfigApplied(config, observed)));
                 })
                 .exceptionallyCompose(ex -> {
                     if (!verifyApplied || !isRoutingNoResponse(ex)) {
@@ -795,8 +817,8 @@ public class AdminService {
                     if (impactedTypes.isEmpty()) {
                         return CompletableFuture.completedFuture(false);
                     }
-                    return refreshConfigs(impactedTypes)
-                            .thenApply(observed -> isConfigApplied(config, observed));
+                    return verifyWithPolicy("setConfig", () -> refreshConfigs(impactedTypes)
+                            .thenApply(observed -> isConfigApplied(config, observed)));
                 });
     }
 
@@ -857,8 +879,8 @@ public class AdminService {
                         return CompletableFuture.completedFuture(true);
                     }
 
-                    return refreshModuleConfig(moduleType)
-                            .thenApply(observed -> isModuleConfigApplied(moduleConfig, observed));
+                    return verifyWithPolicy("setModuleConfig(" + moduleType + ")", () -> refreshModuleConfig(moduleType)
+                            .thenApply(observed -> isModuleConfigApplied(moduleConfig, observed)));
                 })
                 .exceptionallyCompose(ex -> {
                     if (!verifyApplied || !isRoutingNoResponse(ex)) {
@@ -866,8 +888,8 @@ public class AdminService {
                     }
 
                     log.warn("[ADMIN] setModuleConfig returned ROUTING NO_RESPONSE; verifying by read-back for {}", moduleType);
-                    return refreshModuleConfig(moduleType)
-                            .thenApply(observed -> isModuleConfigApplied(moduleConfig, observed));
+                    return verifyWithPolicy("setModuleConfig(" + moduleType + ")", () -> refreshModuleConfig(moduleType)
+                            .thenApply(observed -> isModuleConfigApplied(moduleConfig, observed)));
                 });
     }
 
@@ -1430,7 +1452,8 @@ public class AdminService {
                     if (!verifyApplied) {
                         return CompletableFuture.completedFuture(true);
                     }
-                    return verifyOwnerApplied(targetNodeId, longName, shortName);
+                    return verifyWithPolicy("setOwner(" + MeshUtils.formatId(targetNodeId) + ")",
+                            () -> verifyOwnerApplied(targetNodeId, longName, shortName));
                 })
                 .exceptionallyCompose(ex -> {
                     if (!verifyApplied || !isRoutingNoResponse(ex)) {
@@ -1439,7 +1462,8 @@ public class AdminService {
 
                     log.warn("[ADMIN] setOwner returned ROUTING NO_RESPONSE for !{}; verifying by read-back",
                             Integer.toHexString(targetNodeId));
-                    return verifyOwnerApplied(targetNodeId, longName, shortName);
+                    return verifyWithPolicy("setOwner(" + MeshUtils.formatId(targetNodeId) + ")",
+                            () -> verifyOwnerApplied(targetNodeId, longName, shortName));
                 });
     }
 
@@ -1890,15 +1914,10 @@ public class AdminService {
      *
      * @param index channel index.
      * @param expected expected role/settings payload.
-     * @param allowRetry whether mismatch should throw to trigger a retry.
-     * @param retryMessage message used when throwing retry trigger exception.
      * @return future completing with {@code true} when expected channel state is observed.
      */
-    private CompletableFuture<Boolean> verifyChannelApplied(int index,
-                                                            Channel expected,
-                                                            boolean allowRetry,
-                                                            String retryMessage) {
-        return refreshChannel(index).thenApply(appliedChannel -> {
+    private CompletableFuture<Boolean> verifyChannelApplied(int index, Channel expected) {
+        return verifyWithPolicy("setChannel(" + index + ")", () -> refreshChannel(index).thenApply(appliedChannel -> {
             if (log.isDebugEnabled()) {
                 log.debug("[ADMIN] setChannel verify expected -> {}", describeChannelForLog(expected));
                 log.debug("[ADMIN] setChannel verify observed -> {}", describeChannelForLog(appliedChannel));
@@ -1908,14 +1927,108 @@ public class AdminService {
 
             if (applied) {
                 log.info("[ADMIN] Channel {} updated successfully", index);
-            } else if (allowRetry) {
-                throw new IllegalStateException(retryMessage);
             } else {
-                log.warn("[ADMIN] Channel {} update did not apply on radio (requested role={}, observed role={})",
+                log.debug("[ADMIN] Channel {} update not yet reflected (requested role={}, observed role={})",
                         index, expected.getRole(), appliedChannel.getRole());
             }
             return applied;
-        });
+        }));
+    }
+
+    /**
+     * Executes read-back verification with the configured retry/backoff policy.
+     *
+     * @param operation operation label for diagnostics.
+     * @param verifier verification attempt supplier that returns true when applied.
+     * @return future completing with true when any attempt verifies successfully.
+     */
+    private CompletableFuture<Boolean> verifyWithPolicy(String operation,
+                                                        Supplier<CompletableFuture<Boolean>> verifier) {
+        return verifyWithPolicy(operation, verifier, 1);
+    }
+
+    private CompletableFuture<Boolean> verifyWithPolicy(String operation,
+                                                        Supplier<CompletableFuture<Boolean>> verifier,
+                                                        int attempt) {
+        long delayMs = verificationDelayMs(attempt);
+        CompletableFuture<Boolean> attemptFuture = delayMs <= 0
+                ? invokeVerifier(verifier)
+                : CompletableFuture.runAsync(
+                        () -> {
+                        },
+                        CompletableFuture.delayedExecutor(delayMs, TimeUnit.MILLISECONDS))
+                        .thenCompose(unused -> invokeVerifier(verifier));
+
+        return attemptFuture.handle((applied, error) -> new VerificationAttemptResult(Boolean.TRUE.equals(applied), error))
+                .thenCompose(result -> {
+                    if (result.applied()) {
+                        return CompletableFuture.completedFuture(true);
+                    }
+
+                    int maxAttempts = verificationPolicy.getMaxAttempts();
+                    if (attempt >= maxAttempts) {
+                        if (result.error() != null) {
+                            log.debug("[ADMIN] {} verification exhausted after {} attempt(s). Last error: {}",
+                                    operation, attempt, unwrap(result.error()).getMessage());
+                        }
+                        return CompletableFuture.completedFuture(false);
+                    }
+
+                    if (result.error() != null) {
+                        log.debug("[ADMIN] {} verification attempt {}/{} failed with error: {}",
+                                operation, attempt, maxAttempts, unwrap(result.error()).getMessage());
+                    } else {
+                        log.debug("[ADMIN] {} verification attempt {}/{} did not match; retrying...",
+                                operation, attempt, maxAttempts);
+                    }
+
+                    return verifyWithPolicy(operation, verifier, attempt + 1);
+                });
+    }
+
+    /**
+     * Computes retry delay for a verification attempt.
+     * <p>
+     * Attempt #1 is immediate. Attempt #2 uses {@code initialRetryDelay}. Subsequent attempts apply backoff and
+     * are clamped by {@code maxRetryDelay}.
+     * </p>
+     *
+     * @param attempt 1-based attempt number.
+     * @return delay in milliseconds.
+     */
+    private long verificationDelayMs(int attempt) {
+        if (attempt <= 1) {
+            return 0L;
+        }
+        AdminVerificationPolicy policy = verificationPolicy;
+        double base = policy.getInitialRetryDelay().toMillis();
+        double multiplier = Math.pow(policy.getRetryBackoffMultiplier(), Math.max(0, attempt - 2));
+        long computed = Math.round(base * multiplier);
+        return Math.min(computed, policy.getMaxRetryDelay().toMillis());
+    }
+
+    /**
+     * Safely invokes a verification supplier.
+     *
+     * @param verifier verification supplier.
+     * @return attempt future (never null).
+     */
+    private static CompletableFuture<Boolean> invokeVerifier(Supplier<CompletableFuture<Boolean>> verifier) {
+        try {
+            CompletableFuture<Boolean> attempt = verifier.get();
+            return attempt == null ? CompletableFuture.completedFuture(false) : attempt;
+        } catch (Exception ex) {
+            return CompletableFuture.failedFuture(ex);
+        }
+    }
+
+    /**
+     * Internal verification attempt envelope.
+     *
+     * @param applied whether this attempt verified applied state.
+     * @param error optional attempt error.
+     */
+    private record VerificationAttemptResult(boolean applied, Throwable error) {
     }
 
     /**

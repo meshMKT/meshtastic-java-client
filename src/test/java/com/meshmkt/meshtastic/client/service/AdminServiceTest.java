@@ -555,6 +555,46 @@ class AdminServiceTest {
     }
 
     /**
+     * Verifies verification policy retries allow eventual config read-back convergence.
+     */
+    @Test
+    void setConfigAndVerifySucceedsWhenSecondVerificationAttemptMatches() {
+        StubGateway gateway = new StubGateway(1234);
+        AdminService service = new AdminService(gateway);
+        service.setVerificationPolicy(AdminVerificationPolicy.builder()
+                .maxAttempts(2)
+                .initialRetryDelay(Duration.ZERO)
+                .retryBackoffMultiplier(1.0)
+                .maxRetryDelay(Duration.ZERO)
+                .build());
+
+        ConfigProtos.Config requested = ConfigProtos.Config.newBuilder()
+                .setDisplay(ConfigProtos.Config.DisplayConfig.newBuilder()
+                        .setScreenOnSecs(30)
+                        .setDisplaymode(ConfigProtos.Config.DisplayConfig.DisplayMode.COLOR)
+                        .build())
+                .build();
+
+        ConfigProtos.Config staleObserved = ConfigProtos.Config.newBuilder()
+                .setDisplay(ConfigProtos.Config.DisplayConfig.newBuilder()
+                        .setScreenOnSecs(10)
+                        .setDisplaymode(ConfigProtos.Config.DisplayConfig.DisplayMode.DEFAULT)
+                        .build())
+                .build();
+
+        gateway.enqueueAdminResponse(AdminMessage.newBuilder().build());
+        gateway.enqueueAdminResponse(AdminMessage.newBuilder().setGetConfigResponse(staleObserved).build());
+        gateway.enqueueAdminResponse(AdminMessage.newBuilder().setGetConfigResponse(requested).build());
+
+        boolean applied = service.setConfigAndVerify(requested).join();
+        assertTrue(applied);
+        assertEquals(3, gateway.requests.size());
+        assertTrue(gateway.requests.get(0).hasSetConfig());
+        assertEquals(AdminMessage.ConfigType.DISPLAY_CONFIG, gateway.requests.get(1).getGetConfigRequest());
+        assertEquals(AdminMessage.ConfigType.DISPLAY_CONFIG, gateway.requests.get(2).getGetConfigRequest());
+    }
+
+    /**
      * Verifies module config write verification succeeds when read-back matches the requested payload.
      */
     @Test
@@ -638,6 +678,21 @@ class AdminServiceTest {
         assertEquals(2, gateway.requests.size());
         assertTrue(gateway.requests.get(0).hasSetModuleConfig());
         assertEquals(AdminMessage.ModuleConfigType.MQTT_CONFIG, gateway.requests.get(1).getGetModuleConfigRequest());
+    }
+
+    /**
+     * Verifies invalid verification policies are rejected.
+     */
+    @Test
+    void setVerificationPolicyRejectsInvalidAttemptCount() {
+        StubGateway gateway = new StubGateway(1234);
+        AdminService service = new AdminService(gateway);
+
+        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
+                () -> service.setVerificationPolicy(AdminVerificationPolicy.builder()
+                        .maxAttempts(0)
+                        .build()));
+        assertTrue(ex.getMessage().contains("maxAttempts"));
     }
 
     /**
