@@ -2031,6 +2031,7 @@ public class AdminService {
      *
      * @param indexes requested indexes.
      * @return normalized immutable index list. Defaults to all slots when input is null/empty.
+     * If input is non-empty but all entries are null, returns an empty list.
      */
     private List<Integer> normalizeChannelIndexes(List<Integer> indexes) {
         if (indexes == null || indexes.isEmpty()) {
@@ -2044,7 +2045,7 @@ public class AdminService {
                     distinct.add(index);
                 });
         if (distinct.isEmpty()) {
-            return IntStream.range(0, ProtocolConstraints.MAX_CHANNEL_SLOTS).boxed().toList();
+            return List.of();
         }
         return List.copyOf(distinct);
     }

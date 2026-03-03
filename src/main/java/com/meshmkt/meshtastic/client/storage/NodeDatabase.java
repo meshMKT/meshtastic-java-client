@@ -106,4 +106,14 @@ public interface NodeDatabase {
      * @param timeoutMins
      */
     void startCleanupTask(int timeoutMins);
+
+    /**
+     * Releases any background resources held by this database implementation.
+     * <p>
+     * Default implementation is a no-op for implementations that do not allocate background workers.
+     * </p>
+     */
+    default void shutdown() {
+        // no-op by default
+    }
 }

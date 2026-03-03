@@ -111,6 +111,14 @@ public abstract class AbstractNodeDatabase implements NodeDatabase {
     }
 
     /**
+     * Stops internal cleanup scheduler threads.
+     */
+    @Override
+    public void shutdown() {
+        scheduler.shutdownNow();
+    }
+
+    /**
      * When the "Self" node moves, we need to iterate through every known node
      * and update how far away they are from our new position.
      * @param selfId

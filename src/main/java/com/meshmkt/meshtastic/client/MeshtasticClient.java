@@ -42,6 +42,7 @@ import java.util.Objects;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.Supplier;
@@ -82,6 +83,10 @@ public class MeshtasticClient implements AdminRequestGateway {
     private final AtomicBoolean rebootResyncInProgress = new AtomicBoolean(false);
     // This ensures only one request is "In-Flight" to the radio at a time
     private final Semaphore radioLock = new Semaphore(1);
+    /**
+     * Monotonic lock epoch used to invalidate delayed lock-release tasks across disconnect/reboot cleanup cycles.
+     */
+    private final AtomicLong requestLockEpoch = new AtomicLong(0);
     
     private AdminService adminService;
     private OtaService otaService;
@@ -424,6 +429,7 @@ public class MeshtasticClient implements AdminRequestGateway {
                 awaitStartupSyncBarrier();
                 radioLock.acquire();
                 lockAcquired = true;
+                long lockEpoch = requestLockEpoch.get();
                 if (log.isTraceEnabled()) {
                     long queueDelayMs = TimeUnit.NANOSECONDS.toMillis(executorStartNanos - submittedAtNanos);
                     long lockWaitMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - executorStartNanos);
@@ -513,10 +519,7 @@ public class MeshtasticClient implements AdminRequestGateway {
                 } else {
                     future.handle((res, err) -> {
                         // This triggers when correlateResponse completes the future or it times out
-                        scheduler.schedule(() -> {
-                            log.trace("[TX] Cooldown finished. Releasing radio lock for ID: {}", myPacketId);
-                            radioLock.release();
-                        }, requestLockReleaseCooldownMs, TimeUnit.MILLISECONDS);
+                        scheduleLockReleaseAfterCooldown(myPacketId, lockEpoch);
                         return null;
                     });
 
@@ -715,6 +718,9 @@ public class MeshtasticClient implements AdminRequestGateway {
             pending.future().cancel(true);
         });
         pendingRequests.clear();
+
+        // Invalidate delayed lock-release tasks created by older request completions.
+        requestLockEpoch.incrementAndGet();
 
         // 2. FORCE release the lock so the next connection starts fresh
         // drainPermits() + release() ensures we are back to exactly 1 permit
@@ -951,6 +957,7 @@ public class MeshtasticClient implements AdminRequestGateway {
         scheduler.shutdown();
         requestExecutor.shutdown();
         listenerExecutor.shutdown();
+        nodeDb.shutdown();
     }
 
     // -------------------------------------------------------------------------
@@ -1479,14 +1486,40 @@ public class MeshtasticClient implements AdminRequestGateway {
     }
 
     private void notifyListeners(Consumer<MeshtasticEventListener> action) {
-        for (MeshtasticEventListener l : listeners) {
-            listenerExecutor.execute(() -> {
+        listenerExecutor.execute(() -> {
+            for (MeshtasticEventListener l : listeners) {
                 try {
                     action.accept(l);
-                } catch (Exception ignored) {
+                } catch (Exception ex) {
+                    log.warn("Event listener {} failed: {}", l.getClass().getName(), ex.getMessage());
+                    log.debug("Listener failure stacktrace", ex);
                 }
-            });
-        }
+            }
+        });
+    }
+
+    /**
+     * Releases the radio lock after configured cooldown if the request lock epoch is still current.
+     * <p>
+     * Epoch guarding prevents delayed releases from canceled/disconnected requests from inflating semaphore permits.
+     * </p>
+     *
+     * @param requestId correlated request id for diagnostics.
+     * @param lockEpochAtAcquire lock epoch captured when this request acquired the radio lock.
+     */
+    private void scheduleLockReleaseAfterCooldown(int requestId, long lockEpochAtAcquire) {
+        scheduler.schedule(() -> {
+            if (requestLockEpoch.get() != lockEpochAtAcquire) {
+                log.trace("[TX] Skipping stale lock release for ID {} due to epoch change.", requestId);
+                return;
+            }
+            if (radioLock.availablePermits() == 0) {
+                log.trace("[TX] Cooldown finished. Releasing radio lock for ID: {}", requestId);
+                radioLock.release();
+            } else {
+                log.trace("[TX] Skipping lock release for ID {} because permit is already available.", requestId);
+            }
+        }, requestLockReleaseCooldownMs, TimeUnit.MILLISECONDS);
     }
 
     /**

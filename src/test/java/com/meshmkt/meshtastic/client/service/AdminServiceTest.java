@@ -15,6 +15,7 @@ import org.meshtastic.proto.Portnums;
 
 import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Deque;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
@@ -272,6 +273,19 @@ class AdminServiceTest {
         assertEquals(1, gateway.requests.get(1).getGetChannelRequest());
         // Returned results are normalized to ascending slot index.
         assertEquals(List.of(0, 2), refreshed.stream().map(Channel::getIndex).toList());
+    }
+
+    /**
+     * Verifies explicit index refresh does not fall back to full sweep when caller passes only null indexes.
+     */
+    @Test
+    void refreshChannelsByIndexWithNullOnlyInputReturnsEmptyWithoutRequests() {
+        StubGateway gateway = new StubGateway(1234);
+        AdminService service = new AdminService(gateway);
+
+        List<Channel> refreshed = service.refreshChannels(Arrays.asList(null, null)).join();
+        assertTrue(refreshed.isEmpty());
+        assertTrue(gateway.requests.isEmpty());
     }
 
     /**

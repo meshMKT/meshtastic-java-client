@@ -2,6 +2,8 @@ package com.meshmkt.meshtastic.client;
 
 import com.meshmkt.meshtastic.client.handlers.MeshtasticMessageHandler;
 import org.meshtastic.proto.MeshProtos;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutorService;
@@ -12,6 +14,7 @@ import java.util.concurrent.Executors;
  * Maintains message order while freeing up the serial transport thread.
  */
 public class MeshtasticDispatcher {
+    private static final Logger log = LoggerFactory.getLogger(MeshtasticDispatcher.class);
     private final List<MeshtasticMessageHandler> handlers = new CopyOnWriteArrayList<>();
     
     // Single thread worker ensures messages are processed in the order they were received.
@@ -50,8 +53,7 @@ public class MeshtasticDispatcher {
                 }
             } catch (Exception e) {
                 // Log error but keep the worker thread alive for the next message.
-                System.err.printf("Handler %s failed: %s%n", 
-                    handler.getClass().getSimpleName(), e.getMessage());
+                log.error("Handler {} failed while dispatching message", handler.getClass().getSimpleName(), e);
             }
         }
     }
