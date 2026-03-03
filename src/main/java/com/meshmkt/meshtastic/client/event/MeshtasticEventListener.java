@@ -56,4 +56,13 @@ public interface MeshtasticEventListener {
         // No-op by default. Override only when needed.
     }
 
+    /**
+     * Fired when an outbound request lifecycle transitions (sent/accepted/rejected/timeout/etc).
+     *
+     * @param event request lifecycle event.
+     */
+    default void onRequestLifecycleUpdate(RequestLifecycleEvent event) {
+        // No-op by default. Override only when needed.
+    }
+
 }

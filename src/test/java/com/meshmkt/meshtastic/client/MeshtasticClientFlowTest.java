@@ -4,12 +4,14 @@ import com.google.protobuf.ByteString;
 import com.meshmkt.meshtastic.client.storage.InMemoryNodeDatabase;
 import com.meshmkt.meshtastic.client.storage.MeshNode;
 import com.meshmkt.meshtastic.client.support.FakeTransport;
+import com.meshmkt.meshtastic.client.event.RequestLifecycleEvent;
 import com.meshmkt.meshtastic.client.event.StartupState;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.meshtastic.proto.AdminProtos.AdminMessage;
 import org.meshtastic.proto.MeshProtos;
 import org.meshtastic.proto.Portnums;
+import org.meshtastic.proto.XmodemProtos;
 
 import java.time.Duration;
 import java.util.concurrent.CountDownLatch;
@@ -19,6 +21,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.Predicate;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -270,6 +273,40 @@ class MeshtasticClientFlowTest {
     }
 
     /**
+     * Verifies a pending request cancelled by disconnect does not poison the next request after reconnect.
+     */
+    @Test
+    void reconnectAfterPendingCancellationAllowsFreshRequests() throws Exception {
+        FakeTransport transport = new FakeTransport();
+        client = new MeshtasticClient(new InMemoryNodeDatabase());
+        client.connect(transport);
+        completeStartupSync(transport, 10001);
+
+        CompletableFuture<MeshProtos.MeshPacket> pending = client.requestNodeInfo(0x11111111);
+        assertNotNull(awaitToRadio(transport,
+                tr -> tr.hasPacket() && tr.getPacket().getDecoded().getPortnum() == Portnums.PortNum.NODEINFO_APP,
+                Duration.ofSeconds(2)));
+
+        transport.stop();
+        assertThrows(CancellationException.class, pending::join);
+
+        transport.start();
+        completeStartupSync(transport, 10002);
+
+        CompletableFuture<MeshProtos.MeshPacket> fresh = client.requestNodeInfo(0x22222222);
+        MeshProtos.ToRadio outbound = awaitToRadio(transport,
+                tr -> tr.hasPacket()
+                        && tr.getPacket().getTo() == 0x22222222
+                        && tr.getPacket().getDecoded().getPortnum() == Portnums.PortNum.NODEINFO_APP,
+                Duration.ofSeconds(2));
+        int requestId = outbound.getPacket().getId();
+        transport.emitParsedPacket(MeshProtos.FromRadio.newBuilder()
+                .setPacket(buildRoutingAck(client.getSelfNodeId(), requestId, 901050))
+                .build().toByteArray());
+        assertEquals(requestId, fresh.get(2, TimeUnit.SECONDS).getDecoded().getRequestId());
+    }
+
+    /**
      * Verifies transport error callbacks trigger the same pending-request cleanup as disconnect.
      */
     @Test
@@ -358,6 +395,152 @@ class MeshtasticClientFlowTest {
                 .build();
         newTransport.emitParsedPacket(MeshProtos.FromRadio.newBuilder().setPacket(routingAck).build().toByteArray());
         assertEquals(requestId, future.get(2, TimeUnit.SECONDS).getDecoded().getRequestId());
+    }
+
+    /**
+     * Verifies link disconnect/reconnect on the same transport re-runs startup sync phases and reaches READY again.
+     */
+    @Test
+    void transportReconnectRerunsStartupSyncPhases() throws Exception {
+        FakeTransport transport = new FakeTransport();
+        client = new MeshtasticClient(new InMemoryNodeDatabase());
+        client.connect(transport);
+        completeStartupSync(transport, 6060);
+        assertEquals(StartupState.READY, client.getStartupState());
+
+        int phase1Baseline = countToRadioMatches(transport, tr -> tr.hasWantConfigId() && tr.getWantConfigId() == 69420);
+        int phase2Baseline = countToRadioMatches(transport, tr -> tr.hasWantConfigId() && tr.getWantConfigId() == 69421);
+
+        transport.stop();
+        assertEquals(StartupState.DISCONNECTED, client.getStartupState());
+
+        transport.start();
+        waitForMatchingCount(transport,
+                tr -> tr.hasWantConfigId() && tr.getWantConfigId() == 69420,
+                phase1Baseline + 1,
+                Duration.ofSeconds(2));
+        assertEquals(StartupState.SYNC_LOCAL_CONFIG, client.getStartupState());
+
+        transport.emitParsedPacket(MeshProtos.FromRadio.newBuilder()
+                .setMyInfo(MeshProtos.MyNodeInfo.newBuilder().setMyNodeNum(6061).build())
+                .build().toByteArray());
+        transport.emitParsedPacket(MeshProtos.FromRadio.newBuilder().setConfigCompleteId(69420).build().toByteArray());
+
+        waitForMatchingCount(transport,
+                tr -> tr.hasWantConfigId() && tr.getWantConfigId() == 69421,
+                phase2Baseline + 1,
+                Duration.ofSeconds(2));
+        assertEquals(StartupState.SYNC_MESH_CONFIG, client.getStartupState());
+
+        transport.emitParsedPacket(MeshProtos.FromRadio.newBuilder().setConfigCompleteId(69421).build().toByteArray());
+        assertEquals(StartupState.READY, client.getStartupState());
+    }
+
+    /**
+     * Verifies startup interruption during phase 1 is recoverable and reconnect restarts from phase 1 cleanly.
+     */
+    @Test
+    void startupInterruptionDuringPhaseOneRecoversAfterReconnect() throws Exception {
+        FakeTransport transport = new FakeTransport();
+        client = new MeshtasticClient(new InMemoryNodeDatabase());
+        client.connect(transport);
+
+        assertNotNull(awaitToRadio(transport,
+                tr -> tr.hasWantConfigId() && tr.getWantConfigId() == 69420,
+                Duration.ofSeconds(2)));
+        assertEquals(StartupState.SYNC_LOCAL_CONFIG, client.getStartupState());
+
+        // Drop link before phase 1 completes.
+        transport.stop();
+        assertEquals(StartupState.DISCONNECTED, client.getStartupState());
+
+        // Reconnect should restart phase 1 handshake.
+        transport.start();
+        assertNotNull(awaitToRadio(transport,
+                tr -> tr.hasWantConfigId() && tr.getWantConfigId() == 69420,
+                Duration.ofSeconds(2)));
+        assertEquals(StartupState.SYNC_LOCAL_CONFIG, client.getStartupState());
+
+        completeStartupSync(transport, 6161);
+        assertEquals(StartupState.READY, client.getStartupState());
+    }
+
+    /**
+     * Verifies reboot signal while READY initiates a full startup resync cycle without requiring a transport disconnect.
+     */
+    @Test
+    void rebootSignalWhileReadyTriggersStartupResync() throws Exception {
+        FakeTransport transport = new FakeTransport();
+        client = new MeshtasticClient(new InMemoryNodeDatabase());
+        client.connect(transport);
+        completeStartupSync(transport, 7070);
+        assertEquals(StartupState.READY, client.getStartupState());
+
+        int phase1Baseline = countToRadioMatches(transport, tr -> tr.hasWantConfigId() && tr.getWantConfigId() == 69420);
+        int phase2Baseline = countToRadioMatches(transport, tr -> tr.hasWantConfigId() && tr.getWantConfigId() == 69421);
+
+        List<StartupState> states = new CopyOnWriteArrayList<>();
+        CountDownLatch readyLatch = new CountDownLatch(1);
+        client.addEventListener(new com.meshmkt.meshtastic.client.event.MeshtasticEventListener() {
+            @Override
+            public void onStartupStateChanged(StartupState previousState, StartupState newState) {
+                states.add(newState);
+                if (newState == StartupState.READY) {
+                    readyLatch.countDown();
+                }
+            }
+        });
+
+        transport.emitParsedPacket(MeshProtos.FromRadio.newBuilder().setRebooted(true).build().toByteArray());
+        waitForMatchingCount(transport,
+                tr -> tr.hasWantConfigId() && tr.getWantConfigId() == 69420,
+                phase1Baseline + 1,
+                Duration.ofSeconds(2));
+
+        transport.emitParsedPacket(MeshProtos.FromRadio.newBuilder()
+                .setMyInfo(MeshProtos.MyNodeInfo.newBuilder().setMyNodeNum(7071).build())
+                .build().toByteArray());
+        transport.emitParsedPacket(MeshProtos.FromRadio.newBuilder().setConfigCompleteId(69420).build().toByteArray());
+
+        waitForMatchingCount(transport,
+                tr -> tr.hasWantConfigId() && tr.getWantConfigId() == 69421,
+                phase2Baseline + 1,
+                Duration.ofSeconds(2));
+        transport.emitParsedPacket(MeshProtos.FromRadio.newBuilder().setConfigCompleteId(69421).build().toByteArray());
+
+        assertTrue(readyLatch.await(2, TimeUnit.SECONDS), "Expected READY after reboot-driven resync");
+        assertTrue(states.contains(StartupState.SYNC_LOCAL_CONFIG));
+        assertTrue(states.contains(StartupState.SYNC_MESH_CONFIG));
+    }
+
+    /**
+     * Verifies stale/unknown correlation IDs do not complete unrelated pending requests.
+     */
+    @Test
+    void staleCorrelationIdDoesNotCompletePendingRequest() throws Exception {
+        FakeTransport transport = new FakeTransport();
+        client = new MeshtasticClient(new InMemoryNodeDatabase());
+        client.connect(transport);
+        completeStartupSync(transport, 7111);
+
+        CompletableFuture<MeshProtos.MeshPacket> pending = client.requestNodeInfo(0x699c5400);
+        MeshProtos.ToRadio outbound = awaitToRadio(transport,
+                tr -> tr.hasPacket() && tr.getPacket().getDecoded().getPortnum() == Portnums.PortNum.NODEINFO_APP,
+                Duration.ofSeconds(2));
+        int requestId = outbound.getPacket().getId();
+
+        // Emit ACK with unrelated request id; pending request must remain incomplete.
+        transport.emitParsedPacket(MeshProtos.FromRadio.newBuilder()
+                .setPacket(buildRoutingAck(client.getSelfNodeId(), requestId + 9999, 902000))
+                .build().toByteArray());
+        Thread.sleep(150L);
+        assertFalse(pending.isDone(), "Pending request should ignore stale correlation IDs");
+
+        // Correct request id should complete request.
+        transport.emitParsedPacket(MeshProtos.FromRadio.newBuilder()
+                .setPacket(buildRoutingAck(client.getSelfNodeId(), requestId, 902001))
+                .build().toByteArray());
+        assertEquals(requestId, pending.get(2, TimeUnit.SECONDS).getDecoded().getRequestId());
     }
 
     /**
@@ -525,6 +708,243 @@ class MeshtasticClientFlowTest {
         assertTrue(ex.getCause().getMessage().contains("NO_RESPONSE"));
     }
 
+    /**
+     * Verifies request lifecycle emits SENT -> ACCEPTED for correlated request success.
+     */
+    @Test
+    void requestLifecycleEmitsAcceptedStages() throws Exception {
+        FakeTransport transport = new FakeTransport();
+        client = new MeshtasticClient(new InMemoryNodeDatabase());
+        client.connect(transport);
+        completeStartupSync(transport, 7211);
+
+        List<RequestLifecycleEvent.Stage> stages = new CopyOnWriteArrayList<>();
+        CountDownLatch acceptedLatch = new CountDownLatch(1);
+        client.addEventListener(new com.meshmkt.meshtastic.client.event.MeshtasticEventListener() {
+            @Override
+            public void onRequestLifecycleUpdate(RequestLifecycleEvent event) {
+                stages.add(event.getStage());
+                if (event.getStage() == RequestLifecycleEvent.Stage.ACCEPTED) {
+                    acceptedLatch.countDown();
+                }
+            }
+        });
+
+        CompletableFuture<MeshProtos.MeshPacket> future = client.requestNodeInfo(0x12345678);
+        MeshProtos.ToRadio outbound = awaitToRadio(transport,
+                tr -> tr.hasPacket() && tr.getPacket().getDecoded().getPortnum() == Portnums.PortNum.NODEINFO_APP,
+                Duration.ofSeconds(2));
+        int requestId = outbound.getPacket().getId();
+        transport.emitParsedPacket(MeshProtos.FromRadio.newBuilder()
+                .setPacket(buildRoutingAck(client.getSelfNodeId(), requestId, 902100))
+                .build().toByteArray());
+
+        assertEquals(requestId, future.get(2, TimeUnit.SECONDS).getDecoded().getRequestId());
+        assertTrue(acceptedLatch.await(2, TimeUnit.SECONDS), "Expected ACCEPTED lifecycle stage");
+        assertTrue(stages.contains(RequestLifecycleEvent.Stage.SENT));
+        assertTrue(stages.contains(RequestLifecycleEvent.Stage.ACCEPTED));
+    }
+
+    /**
+     * Verifies request lifecycle emits REJECTED when routing reports an explicit error.
+     */
+    @Test
+    void requestLifecycleEmitsRejectedStage() throws Exception {
+        FakeTransport transport = new FakeTransport();
+        client = new MeshtasticClient(new InMemoryNodeDatabase());
+        client.connect(transport);
+        completeStartupSync(transport, 7222);
+
+        CountDownLatch rejectedLatch = new CountDownLatch(1);
+        List<RequestLifecycleEvent.Stage> stages = new CopyOnWriteArrayList<>();
+        client.addEventListener(new com.meshmkt.meshtastic.client.event.MeshtasticEventListener() {
+            @Override
+            public void onRequestLifecycleUpdate(RequestLifecycleEvent event) {
+                stages.add(event.getStage());
+                if (event.getStage() == RequestLifecycleEvent.Stage.REJECTED) {
+                    rejectedLatch.countDown();
+                }
+            }
+        });
+
+        CompletableFuture<MeshProtos.MeshPacket> future = client.requestNodeInfo(0x12345678);
+        MeshProtos.ToRadio outbound = awaitToRadio(transport,
+                tr -> tr.hasPacket() && tr.getPacket().getDecoded().getPortnum() == Portnums.PortNum.NODEINFO_APP,
+                Duration.ofSeconds(2));
+        int requestId = outbound.getPacket().getId();
+
+        MeshProtos.Routing noResponse = MeshProtos.Routing.newBuilder()
+                .setErrorReason(MeshProtos.Routing.Error.NO_RESPONSE)
+                .build();
+        MeshProtos.MeshPacket routingError = MeshProtos.MeshPacket.newBuilder()
+                .setFrom(client.getSelfNodeId())
+                .setTo(client.getSelfNodeId())
+                .setDecoded(MeshProtos.Data.newBuilder()
+                        .setPortnum(Portnums.PortNum.ROUTING_APP)
+                        .setRequestId(requestId)
+                        .setPayload(noResponse.toByteString())
+                        .build())
+                .setId(902101)
+                .build();
+        transport.emitParsedPacket(MeshProtos.FromRadio.newBuilder().setPacket(routingError).build().toByteArray());
+
+        assertThrows(ExecutionException.class, () -> future.get(2, TimeUnit.SECONDS));
+        assertTrue(rejectedLatch.await(2, TimeUnit.SECONDS), "Expected REJECTED lifecycle stage");
+        assertTrue(stages.contains(RequestLifecycleEvent.Stage.REJECTED));
+    }
+
+    /**
+     * Verifies text-message requests treat ROUTING NO_RESPONSE as soft-accept so bot-style peers
+     * that do not send routing confirms are not reported as hard failures.
+     */
+    @Test
+    void textRequestTreatsRoutingNoResponseAsSoftAccept() throws Exception {
+        FakeTransport transport = new FakeTransport();
+        client = new MeshtasticClient(new InMemoryNodeDatabase());
+        client.connect(transport);
+        completeStartupSync(transport, 7444);
+
+        CompletableFuture<Boolean> future = client.sendDirectText(0x00ba0dd0, "help");
+        MeshProtos.ToRadio outbound = awaitToRadio(transport,
+                tr -> tr.hasPacket() && tr.getPacket().getDecoded().getPortnum() == Portnums.PortNum.TEXT_MESSAGE_APP,
+                Duration.ofSeconds(2));
+        int requestId = outbound.getPacket().getId();
+
+        MeshProtos.Routing noResponse = MeshProtos.Routing.newBuilder()
+                .setErrorReason(MeshProtos.Routing.Error.NO_RESPONSE)
+                .build();
+        MeshProtos.MeshPacket routingNoResponse = MeshProtos.MeshPacket.newBuilder()
+                .setFrom(client.getSelfNodeId())
+                .setTo(client.getSelfNodeId())
+                .setDecoded(MeshProtos.Data.newBuilder()
+                        .setPortnum(Portnums.PortNum.ROUTING_APP)
+                        .setRequestId(requestId)
+                        .setPayload(noResponse.toByteString())
+                        .build())
+                .setId(902200)
+                .build();
+        transport.emitParsedPacket(MeshProtos.FromRadio.newBuilder().setPacket(routingNoResponse).build().toByteArray());
+
+        assertTrue(future.get(2, TimeUnit.SECONDS));
+    }
+
+    /**
+     * Verifies await-style request emits PAYLOAD_RECEIVED when matching payload event arrives.
+     */
+    @Test
+    void requestLifecycleEmitsPayloadReceivedStage() throws Exception {
+        FakeTransport transport = new FakeTransport();
+        client = new MeshtasticClient(new InMemoryNodeDatabase());
+        client.connect(transport);
+        completeStartupSync(transport, 7333);
+
+        int targetNodeId = 0x00be35f0;
+        List<RequestLifecycleEvent.Stage> stages = new CopyOnWriteArrayList<>();
+        CountDownLatch payloadLatch = new CountDownLatch(1);
+        client.addEventListener(new com.meshmkt.meshtastic.client.event.MeshtasticEventListener() {
+            @Override
+            public void onRequestLifecycleUpdate(RequestLifecycleEvent event) {
+                stages.add(event.getStage());
+                if (event.getStage() == RequestLifecycleEvent.Stage.PAYLOAD_RECEIVED) {
+                    payloadLatch.countDown();
+                }
+            }
+        });
+
+        CompletableFuture<MeshNode> future = client.requestNodeInfoAwaitPayload(targetNodeId, Duration.ofSeconds(2));
+        MeshProtos.ToRadio outbound = awaitToRadio(transport,
+                tr -> tr.hasPacket() && tr.getPacket().getDecoded().getPortnum() == Portnums.PortNum.NODEINFO_APP,
+                Duration.ofSeconds(2));
+        int requestId = outbound.getPacket().getId();
+
+        transport.emitParsedPacket(MeshProtos.FromRadio.newBuilder()
+                .setPacket(buildRoutingAck(client.getSelfNodeId(), requestId, 902102))
+                .build().toByteArray());
+
+        MeshProtos.User userPayload = MeshProtos.User.newBuilder()
+                .setLongName("Payload Node")
+                .setShortName("pld")
+                .build();
+        MeshProtos.MeshPacket nodeInfoPacket = MeshProtos.MeshPacket.newBuilder()
+                .setFrom(targetNodeId)
+                .setTo(MeshConstants.ID_BROADCAST)
+                .setDecoded(MeshProtos.Data.newBuilder()
+                        .setPortnum(Portnums.PortNum.NODEINFO_APP)
+                        .setPayload(userPayload.toByteString())
+                        .build())
+                .setId(902103)
+                .build();
+        transport.emitParsedPacket(MeshProtos.FromRadio.newBuilder().setPacket(nodeInfoPacket).build().toByteArray());
+
+        assertEquals(targetNodeId, future.get(2, TimeUnit.SECONDS).getNodeId());
+        assertTrue(payloadLatch.await(2, TimeUnit.SECONDS), "Expected PAYLOAD_RECEIVED lifecycle stage");
+        assertTrue(stages.contains(RequestLifecycleEvent.Stage.PAYLOAD_RECEIVED));
+    }
+
+    /**
+     * Verifies outbound XMODEM control frames are wrapped in top-level {@code ToRadio.xmodemPacket}.
+     */
+    @Test
+    void sendXmodemPacketWritesTopLevelXmodemEnvelope() throws Exception {
+        FakeTransport transport = new FakeTransport();
+        client = new MeshtasticClient(new InMemoryNodeDatabase());
+        client.connect(transport);
+        completeStartupSync(transport, 4040);
+
+        XmodemProtos.XModem frame = XmodemProtos.XModem.newBuilder()
+                .setControl(XmodemProtos.XModem.Control.SOH)
+                .setSeq(7)
+                .setCrc16(0xABCD)
+                .build();
+
+        client.sendXmodemPacket(frame).get(2, TimeUnit.SECONDS);
+
+        MeshProtos.ToRadio outbound = awaitToRadio(transport,
+                tr -> tr.hasXmodemPacket() && tr.getXmodemPacket().getControl() == XmodemProtos.XModem.Control.SOH,
+                Duration.ofSeconds(2));
+
+        assertEquals(7, outbound.getXmodemPacket().getSeq());
+        assertEquals(0xABCD, outbound.getXmodemPacket().getCrc16());
+    }
+
+    /**
+     * Verifies inbound top-level {@code FromRadio.xmodemPacket.control} can be awaited by OTA callers.
+     */
+    @Test
+    void awaitXmodemControlCompletesWhenControlArrives() throws Exception {
+        FakeTransport transport = new FakeTransport();
+        client = new MeshtasticClient(new InMemoryNodeDatabase());
+        client.connect(transport);
+        completeStartupSync(transport, 5050);
+
+        CompletableFuture<XmodemProtos.XModem.Control> controlFuture =
+                client.awaitXmodemControl(Duration.ofSeconds(1));
+
+        transport.emitParsedPacket(MeshProtos.FromRadio.newBuilder()
+                .setXmodemPacket(XmodemProtos.XModem.newBuilder().setControl(XmodemProtos.XModem.Control.ACK).build())
+                .build()
+                .toByteArray());
+
+        assertEquals(XmodemProtos.XModem.Control.ACK, controlFuture.get(2, TimeUnit.SECONDS));
+    }
+
+    /**
+     * Verifies awaiting XMODEM control fails with timeout when no control is received.
+     */
+    @Test
+    void awaitXmodemControlTimesOutWhenNoControlArrives() throws Exception {
+        FakeTransport transport = new FakeTransport();
+        client = new MeshtasticClient(new InMemoryNodeDatabase());
+        client.connect(transport);
+        completeStartupSync(transport, 5051);
+
+        CompletableFuture<XmodemProtos.XModem.Control> controlFuture =
+                client.awaitXmodemControl(Duration.ofMillis(100));
+
+        ExecutionException ex = assertThrows(ExecutionException.class, () -> controlFuture.get(2, TimeUnit.SECONDS));
+        assertTrue(ex.getCause() instanceof TimeoutException);
+    }
+
     private void completeStartupSync(FakeTransport transport, int selfNodeId) {
         transport.emitParsedPacket(MeshProtos.FromRadio.newBuilder()
                 .setMyInfo(MeshProtos.MyNodeInfo.newBuilder().setMyNodeNum(selfNodeId).build())
@@ -548,6 +968,33 @@ class MeshtasticClientFlowTest {
             Thread.sleep(10L);
         }
         throw new TimeoutException("Timed out waiting for expected ToRadio frame");
+    }
+
+    private static int countToRadioMatches(FakeTransport transport, Predicate<MeshProtos.ToRadio> predicate) throws Exception {
+        int matches = 0;
+        List<byte[]> writes = transport.getWritesSnapshot();
+        for (byte[] write : writes) {
+            MeshProtos.ToRadio parsed = MeshProtos.ToRadio.parseFrom(write);
+            if (predicate.test(parsed)) {
+                matches++;
+            }
+        }
+        return matches;
+    }
+
+    private static void waitForMatchingCount(FakeTransport transport,
+                                             Predicate<MeshProtos.ToRadio> predicate,
+                                             int expectedCount,
+                                             Duration timeout) throws Exception {
+        long deadline = System.nanoTime() + timeout.toNanos();
+        while (System.nanoTime() < deadline) {
+            int current = countToRadioMatches(transport, predicate);
+            if (current >= expectedCount) {
+                return;
+            }
+            Thread.sleep(10L);
+        }
+        throw new TimeoutException("Timed out waiting for expected ToRadio count: " + expectedCount);
     }
 
     private static void assertNoToRadio(FakeTransport transport,

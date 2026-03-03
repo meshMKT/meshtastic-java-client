@@ -202,6 +202,36 @@ Admin write methods use explicit completion semantics:
 - `setOwner(id, longName, shortName)`: accepted-only
 - `setOwnerAndVerify(id, longName, shortName)`: accepted + verified-applied
 
+=== Structured Write Results (Recommended for UI)
+
+For consistent error/status handling, use result-returning write methods:
+
+[source,java]
+----
+CompletableFuture<AdminWriteResult> resultFuture =
+        admin.setConfigResult(configPayload, true);
+
+resultFuture.thenAccept(result -> {
+    switch (result.status()) {
+        case VERIFIED_APPLIED -> showSuccess("Applied and verified.");
+        case ACCEPTED -> showSuccess("Accepted by radio.");
+        case REJECTED -> showError("Rejected: " + result.message());
+        case TIMEOUT -> showError("Timed out: " + result.message());
+        case VERIFICATION_FAILED -> showWarning("Accepted but read-back mismatch.");
+        case FAILED -> showError("Write failed: " + result.message());
+    }
+});
+----
+
+Available result statuses:
+
+- `ACCEPTED`
+- `VERIFIED_APPLIED`
+- `REJECTED`
+- `TIMEOUT`
+- `VERIFICATION_FAILED`
+- `FAILED`
+
 [plantuml,admin-write-verification-flow,svg]
 ----
 @startuml
@@ -263,6 +293,196 @@ ModuleConfig.MQTTConfig mqtt = ModuleConfig.MQTTConfig.newBuilder()
 admin.setMqttConfigAndVerify(mqtt);
 ----
 
+=== Structured Result Variants
+
+All major write paths have result-returning variants:
+
+[source,java]
+----
+admin.setChannelResult(2, channel, true);
+admin.setConfigResult(config, true);
+admin.setModuleConfigResult(moduleConfig, true);
+admin.setOwnerResult(targetNodeId, "Long Name", "short", true);
+----
+
+== Settings Cookbook
+
+This section shows practical UI workflows by page. The pattern is consistent:
+
+1. Render immediately from snapshots.
+2. Trigger page-specific refresh on page open.
+3. On save, use a write method with verification where correctness matters.
+4. Handle `AdminWriteResult` for user-facing success/failure messaging.
+
+=== Channels Page
+
+Recommended open flow:
+
+[source,java]
+----
+// 1) Snapshot render (instant)
+renderChannels(admin.getChannelSnapshots());
+
+// 2) Refresh slots on page open
+admin.refreshChannels().thenAccept(channels -> {
+    renderChannels(channels);
+});
+----
+
+Recommended writes:
+
+[source,java]
+----
+// rename slot 2
+admin.setChannelName(2, "meshMKT")
+     .thenAccept(applied -> refreshChannelsUi());
+
+// set password/psk on slot 2
+admin.setChannelPassword(2, "shared-secret")
+     .thenAccept(applied -> refreshChannelsUi());
+
+// full channel payload update with structured status
+admin.setChannelResult(2, updatedChannel, true)
+     .thenAccept(this::handleWriteResult);
+----
+
+=== Security Page
+
+Recommended open flow:
+
+[source,java]
+----
+admin.getConfigSnapshot(ConfigType.SECURITY_CONFIG)
+     .ifPresent(this::renderSecuritySnapshot);
+
+admin.refreshSecurityConfig().thenAccept(config -> {
+    if (config.hasSecurity()) {
+        renderSecurity(config.getSecurity());
+    }
+});
+----
+
+Recommended write:
+
+[source,java]
+----
+Config.SecurityConfig security = Config.SecurityConfig.newBuilder()
+        .setAdminChannelEnabled(true)
+        .build();
+
+admin.setSecurityConfigAndVerify(security)
+     .thenAccept(applied -> {
+         if (applied) showSuccess("Security settings applied.");
+         else showWarning("Security settings accepted but not verified.");
+     });
+----
+
+=== MQTT Page
+
+MQTT in Meshtastic is a module config section, not a top-level config section.
+
+Recommended open flow:
+
+[source,java]
+----
+admin.getModuleConfigSnapshot(ModuleConfigType.MQTT_CONFIG)
+     .ifPresent(snapshot -> {
+         if (snapshot.hasMqtt()) {
+             renderMqtt(snapshot.getMqtt());
+         }
+     });
+
+admin.refreshMqttConfig().thenAccept(moduleConfig -> {
+    if (moduleConfig.hasMqtt()) {
+        renderMqtt(moduleConfig.getMqtt());
+    }
+});
+----
+
+Recommended write:
+
+[source,java]
+----
+ModuleConfig.MQTTConfig mqtt = ModuleConfig.MQTTConfig.newBuilder()
+        .setEnabled(true)
+        .setAddress("mqtt.example.com")
+        .setUsername("mesh-user")
+        // set password/tls/root fields as required by your deployment
+        .build();
+
+admin.setMqttConfigAndVerify(mqtt).thenAccept(applied -> {
+    if (applied) {
+        showSuccess("MQTT settings applied.");
+    } else {
+        showWarning("MQTT settings accepted but read-back mismatch.");
+    }
+});
+----
+
+How MQTT settings are used in a client app:
+
+- Your app writes MQTT module settings via `AdminService`.
+- The radio firmware applies those settings and controls MQTT bridge behavior.
+- Your Java app usually does not need a separate MQTT client just to enable radio MQTT forwarding.
+- If your app also consumes broker traffic directly (analytics/backend tooling), run a separate MQTT client in your app process; that is independent of radio admin configuration.
+
+=== Device / LoRa / Network / Display Pages
+
+Use typed config refresh/write wrappers:
+
+[source,java]
+----
+// open page
+admin.refreshDeviceConfig().thenAccept(this::renderDevice);
+admin.refreshLoraConfig().thenAccept(this::renderLora);
+admin.refreshNetworkConfig().thenAccept(this::renderNetwork);
+admin.refreshDisplayConfig().thenAccept(this::renderDisplay);
+
+// save page
+admin.setDeviceConfig(deviceConfig, true).thenAccept(this::handleBooleanWrite);
+admin.setLoraConfig(loraConfig, true).thenAccept(this::handleBooleanWrite);
+admin.setNetworkConfig(networkConfig, true).thenAccept(this::handleBooleanWrite);
+admin.setDisplayConfig(displayConfig, true).thenAccept(this::handleBooleanWrite);
+----
+
+=== Modules Page (Full Refresh)
+
+For a consolidated modules page:
+
+[source,java]
+----
+admin.refreshModules().thenAccept(model -> {
+    renderModules(admin.getModuleConfigSnapshots());
+});
+----
+
+For specific module cards, prefer targeted calls:
+
+[source,java]
+----
+admin.refreshTelemetryModuleConfig().thenAccept(this::renderTelemetryModule);
+admin.refreshSerialModuleConfig().thenAccept(this::renderSerialModule);
+admin.refreshStoreForwardModuleConfig().thenAccept(this::renderStoreForwardModule);
+----
+
+=== Write Result Handling Pattern
+
+Reusable UI handler:
+
+[source,java]
+----
+private void handleWriteResult(AdminWriteResult result) {
+    switch (result.status()) {
+        case VERIFIED_APPLIED -> showSuccess(result.operation() + ": verified.");
+        case ACCEPTED -> showSuccess(result.operation() + ": accepted.");
+        case REJECTED -> showError(result.operation() + ": rejected (" + result.message() + ")");
+        case TIMEOUT -> showError(result.operation() + ": timeout (" + result.message() + ")");
+        case VERIFICATION_FAILED -> showWarning(result.operation() + ": verification failed.");
+        case FAILED -> showError(result.operation() + ": failed (" + result.message() + ")");
+    }
+}
+----
+
 == Snapshot-Driven UI
 
 Use snapshot getters for render and refresh methods for on-demand reads:
@@ -314,6 +534,192 @@ Client --> UI: onStartupStateChanged(..., READY)
 
 @enduml
 ----
+
+== Request Lifecycle Events
+
+`MeshtasticEventListener` exposes request lifecycle updates through:
+
+[source,java]
+----
+client.addEventListener(new MeshtasticEventListener() {
+    @Override
+    public void onRequestLifecycleUpdate(RequestLifecycleEvent event) {
+        switch (event.getStage()) {
+            case SENT -> uiLog("Sent " + event.getPort() + " -> " + MeshUtils.formatId(event.getDestinationNodeId()));
+            case ACCEPTED -> uiLog("Accepted request #" + event.getRequestId());
+            case REJECTED -> showError("Rejected: " + event.getMessage());
+            case TIMED_OUT -> showError("Timed out: " + event.getMessage());
+            case PAYLOAD_RECEIVED -> uiLog("Payload observed for request #" + event.getRequestId());
+            case CANCELLED -> uiLog("Cancelled request #" + event.getRequestId());
+            case FAILED -> showError("Request failed: " + event.getMessage());
+        }
+    }
+});
+----
+
+This gives one consistent contract for request outcomes across admin reads/writes and utility request methods.
+
+== OTA Framework (Serial-First)
+
+[IMPORTANT]
+====
+OTA support in this Java client is currently **advanced/experimental**.
+
+For most production users, the recommended firmware update path is the official Meshtastic web flasher/updater.
+Use the OTA APIs here when you explicitly need programmatic control and can validate behavior on your target
+hardware/firmware combinations.
+====
+
+The OTA API is split into two parts:
+
+- `AdminService` requests OTA mode (`requestOtaModeResult(...)`).
+- `OtaService` orchestrates hash + OTA mode request + uploader strategy.
+
+This keeps OTA transport-agnostic. You can use a Linux serial uploader now and reuse the same orchestration later for BLE.
+
+=== OTA Orchestration Example
+
+[source,java]
+----
+OtaService ota = client.getOtaService();
+
+OtaRequest request = OtaRequest.builder()
+        .targetNodeId(targetNodeId)
+        .firmwarePath(Path.of("/path/to/firmware.bin"))
+        .otaMode(OTAMode.OTA_BLE)
+        .rebootWait(Duration.ofSeconds(5))
+        .build();
+
+OtaUploadStrategy uploader = new CommandLineOtaUploadStrategy(List.of(
+        "esptool.py",
+        "--port", "/dev/ttyUSB0",
+        "write_flash",
+        "0x10000",
+        "{firmware}"
+));
+
+OtaSession session = ota.start(
+        request,
+        uploader,
+        progress -> {
+            switch (progress.stage()) {
+                case HASHING_FIRMWARE -> showStatus("Hashing firmware...");
+                case REQUESTING_OTA_MODE -> showStatus("Requesting OTA mode...");
+                case WAITING_FOR_REBOOT -> showStatus("Waiting for reboot...");
+                case UPLOADING_FIRMWARE -> showProgress(progress.bytesSent(), progress.totalBytes());
+                case COMPLETED -> showStatus("OTA complete");
+                case FAILED -> showError(progress.message());
+                case CANCELLED -> showWarning("OTA cancelled");
+                default -> { }
+            }
+        }
+);
+
+session.resultFuture().thenAccept(result -> {
+    if (result.isSuccess()) {
+        showSuccess("OTA finished");
+    } else {
+        showError("OTA failed: " + result.message());
+    }
+});
+----
+
+=== OTA Design Notes
+
+- OTA upload implementation is intentionally externalized via `OtaUploadStrategy`.
+- Linux serial release can ship with `CommandLineOtaUploadStrategy` + CLI tooling.
+- BLE transport can later provide another `OtaUploadStrategy` without changing OTA API or UI flow.
+
+=== OTA Support Matrix (Current)
+
+[cols="1,1,2",options="header"]
+|===
+| Path
+| Status
+| Notes
+
+| `CommandLineOtaUploadStrategy`
+| Usable
+| Requires external uploader tool installed/configured by app/developer (for example board-specific CLI flash utility).
+
+| `SerialXmodemUploadStrategy`
+| Experimental
+| In-process protocol loop is implemented, but requires a concrete `XmodemDuplex` adapter bound to real radio OTA link behavior.
+
+| BLE OTA uploader strategy
+| Planned
+| Intended future strategy once BLE transport path is implemented/stabilized.
+|===
+
+Recommended product behavior:
+
+- If OTA path/model is not explicitly supported/tested, direct users to the official web flasher.
+- Keep OTA actions behind an “Advanced” UI section until path support is validated.
+
+=== In-Process XMODEM Strategy (Experimental)
+
+For environments where you do not want external command-line tools, use the experimental in-process uploader:
+
+[source,java]
+----
+OtaService ota = client.getOtaService();
+
+// Firmware path is defined here and passed into the upload strategy via OtaUploadContext.
+OtaRequest request = OtaRequest.builder()
+        .targetNodeId(targetNodeId)
+        .firmwarePath(Path.of("/path/to/firmware.bin"))
+        .otaMode(OTAMode.OTA_BLE)
+        .rebootWait(Duration.ofSeconds(5))
+        .build();
+
+MeshtasticXmodemDuplex duplex = client.createXmodemDuplex();
+duplex.reset(); // clear stale control events before a new upload attempt
+
+OtaUploadStrategy uploader = new SerialXmodemUploadStrategy(
+        duplex,
+        Duration.ofSeconds(2),
+        10
+);
+
+OtaSession session = ota.start(request, uploader, progress -> {
+    // update UI / logs
+});
+----
+
+Notes:
+
+- This strategy is CLI-free and uses top-level protobuf envelopes: `ToRadio.xmodemPacket` and `FromRadio.xmodemPacket`.
+- `OtaRequest.firmwarePath` is the source of the upload file for all strategies.
+- `duplex.reset()` is recommended at session start to avoid consuming stale controls from prior attempts.
+- Keep this path experimental until validated against your target hardware/firmware variants.
+
+== BLE Transport SPI (Skeleton)
+
+The core includes a BLE transport skeleton with a pluggable backend SPI:
+
+- `BleConfig` (connection IDs/UUIDs/timeouts/reconnect policy)
+- `BleLinkBackend` (backend adapter contract to your BLE library)
+- `BleTransport` (meshtastic framing + reconnect + lifecycle wiring)
+
+Example bootstrap:
+
+[source,java]
+----
+BleConfig cfg = BleConfig.builder()
+        .deviceId("AA:BB:CC:DD:EE:FF")
+        .serviceUuid("service-uuid")
+        .toRadioCharacteristicUuid("to-radio-char-uuid")
+        .fromRadioCharacteristicUuid("from-radio-char-uuid")
+        .connectTimeout(Duration.ofSeconds(10))
+        .reconnectBackoff(Duration.ofSeconds(2))
+        .autoReconnect(true)
+        .build();
+
+BleLinkBackend backend = new MyBleBackend(); // your adapter for a concrete BLE stack
+client.connect(new BleTransport(cfg, backend));
+----
+
+This keeps the core API stable while allowing platform-specific BLE implementations without hard-coding one dependency.
 
 == Build Outputs
 

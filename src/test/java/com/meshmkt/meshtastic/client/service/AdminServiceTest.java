@@ -4,9 +4,11 @@ import com.google.protobuf.ByteString;
 import com.meshmkt.meshtastic.client.storage.MeshNode;
 import org.junit.jupiter.api.Test;
 import org.meshtastic.proto.AdminProtos.AdminMessage;
+import org.meshtastic.proto.AdminProtos.OTAMode;
 import org.meshtastic.proto.ChannelProtos.Channel;
 import org.meshtastic.proto.ChannelProtos.ChannelSettings;
 import org.meshtastic.proto.ConfigProtos;
+import org.meshtastic.proto.DeviceUIProtos;
 import org.meshtastic.proto.MeshProtos;
 import org.meshtastic.proto.ModuleConfigProtos;
 import org.meshtastic.proto.Portnums;
@@ -17,11 +19,13 @@ import java.util.Deque;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.time.Duration;
+import java.util.concurrent.TimeoutException;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 /**
  * Unit tests for {@link AdminService} using a stubbed gateway response queue.
@@ -132,6 +136,35 @@ class AdminServiceTest {
     }
 
     /**
+     * Verifies channel writes with verify enabled recover from routing NO_RESPONSE when read-back matches.
+     */
+    @Test
+    void setChannelVerifySucceedsOnRoutingNoResponseWhenReadbackMatches() {
+        StubGateway gateway = new StubGateway(1234);
+        AdminService service = new AdminService(gateway);
+
+        Channel requested = Channel.newBuilder()
+                .setIndex(2)
+                .setRole(Channel.Role.SECONDARY)
+                .setSettings(ChannelSettings.newBuilder().setName("Timmy2").build())
+                .build();
+
+        gateway.enqueueAdminResponse(AdminMessage.newBuilder()
+                .setGetDeviceMetadataResponse(MeshProtos.DeviceMetadata.newBuilder().setFirmwareVersion("v").build())
+                .build());
+        gateway.enqueueFailure(new IllegalStateException(
+                "Routing rejected request 1684545740 with status NO_RESPONSE"));
+        gateway.enqueueAdminResponse(AdminMessage.newBuilder().setGetChannelResponse(requested).build());
+
+        boolean applied = service.setChannel(2, requested, true).join();
+        assertTrue(applied);
+        assertEquals(3, gateway.requests.size());
+        assertTrue(gateway.requests.get(0).hasGetDeviceMetadataRequest());
+        assertTrue(gateway.requests.get(1).hasSetChannel());
+        assertEquals(3, gateway.requests.get(2).getGetChannelRequest());
+    }
+
+    /**
      * Verifies refreshChannels requests all 8 channel slots and returns channels sorted by index.
      */
     @Test
@@ -216,6 +249,30 @@ class AdminServiceTest {
     }
 
     /**
+     * Verifies owner writes with verify enabled recover from routing NO_RESPONSE when read-back matches.
+     */
+    @Test
+    void setOwnerVerifyLocalSucceedsOnRoutingNoResponseWhenReadbackMatches() {
+        StubGateway gateway = new StubGateway(1234);
+        AdminService service = new AdminService(gateway);
+
+        gateway.enqueueFailure(new IllegalStateException(
+                "Routing rejected request 2103086087 with status NO_RESPONSE"));
+        gateway.enqueueAdminResponse(AdminMessage.newBuilder()
+                .setGetOwnerResponse(MeshProtos.User.newBuilder()
+                        .setLongName("Red Cypress")
+                        .setShortName("rcyp")
+                        .build())
+                .build());
+
+        boolean applied = service.setOwner(1234, "Red Cypress", "rcyp", true).join();
+        assertTrue(applied);
+        assertEquals(2, gateway.requests.size());
+        assertTrue(gateway.requests.get(0).hasSetOwner());
+        assertTrue(gateway.requests.get(1).hasGetOwnerRequest());
+    }
+
+    /**
      * Verifies owner writes can be explicitly verified for remote nodes via node-info snapshots.
      */
     @Test
@@ -248,7 +305,7 @@ class AdminServiceTest {
         Channel requested = Channel.newBuilder()
                 .setIndex(3)
                 .setRole(Channel.Role.SECONDARY)
-                .setSettings(ChannelSettings.newBuilder().setName("accepted-only").build())
+                .setSettings(ChannelSettings.newBuilder().setName("acceptOnly").build())
                 .build();
 
         gateway.enqueueAdminResponse(AdminMessage.newBuilder()
@@ -261,6 +318,63 @@ class AdminServiceTest {
         assertEquals(2, gateway.requests.size());
         assertTrue(gateway.requests.get(0).hasGetDeviceMetadataRequest());
         assertTrue(gateway.requests.get(1).hasSetChannel());
+    }
+
+    /**
+     * Verifies channel writes fail fast when name exceeds protocol byte-length limit.
+     */
+    @Test
+    void setChannelFailsFastWhenNameExceedsProtocolLimit() {
+        StubGateway gateway = new StubGateway(1234);
+        AdminService service = new AdminService(gateway);
+
+        Channel requested = Channel.newBuilder()
+                .setIndex(2)
+                .setRole(Channel.Role.SECONDARY)
+                .setSettings(ChannelSettings.newBuilder().setName("Timmy9922-Yahoo").build())
+                .build();
+
+        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
+                () -> service.setChannel(2, requested, true));
+        assertTrue(ex.getMessage().contains("Channel name must be <="));
+        assertTrue(gateway.requests.isEmpty());
+    }
+
+    /**
+     * Verifies sparse channel writes (name-only) are hydrated from cached slot settings before transmit.
+     */
+    @Test
+    void setChannelHydratesSparseSettingsFromCachedSnapshot() {
+        StubGateway gateway = new StubGateway(1234);
+        AdminService service = new AdminService(gateway);
+
+        Channel cached = Channel.newBuilder()
+                .setIndex(2)
+                .setRole(Channel.Role.SECONDARY)
+                .setSettings(ChannelSettings.newBuilder()
+                        .setName("old-name")
+                        .setPsk(ByteString.copyFromUtf8("1234567890ABCDEF"))
+                        .build())
+                .build();
+        service.ingestAdminMessage(AdminMessage.newBuilder().setGetChannelResponse(cached).build());
+
+        Channel requested = Channel.newBuilder()
+                .setIndex(2)
+                .setRole(Channel.Role.SECONDARY)
+                .setSettings(ChannelSettings.newBuilder().setName("new-name").build())
+                .build();
+
+        gateway.enqueueAdminResponse(AdminMessage.newBuilder()
+                .setGetDeviceMetadataResponse(MeshProtos.DeviceMetadata.newBuilder().setFirmwareVersion("v").build())
+                .build());
+        gateway.enqueueAdminResponse(AdminMessage.newBuilder().build());
+
+        boolean applied = service.setChannel(2, requested, false).join();
+        assertTrue(applied);
+        assertEquals(2, gateway.requests.size());
+        assertTrue(gateway.requests.get(1).hasSetChannel());
+        assertEquals("new-name", gateway.requests.get(1).getSetChannel().getSettings().getName());
+        assertEquals(ByteString.copyFromUtf8("1234567890ABCDEF"), gateway.requests.get(1).getSetChannel().getSettings().getPsk());
     }
 
     /**
@@ -325,6 +439,32 @@ class AdminServiceTest {
     }
 
     /**
+     * Verifies config writes with verify enabled recover from routing NO_RESPONSE when read-back matches.
+     */
+    @Test
+    void setConfigAndVerifySucceedsOnRoutingNoResponseWhenReadbackMatches() {
+        StubGateway gateway = new StubGateway(1234);
+        AdminService service = new AdminService(gateway);
+
+        ConfigProtos.Config requested = ConfigProtos.Config.newBuilder()
+                .setDisplay(ConfigProtos.Config.DisplayConfig.newBuilder()
+                        .setScreenOnSecs(30)
+                        .setDisplaymode(ConfigProtos.Config.DisplayConfig.DisplayMode.COLOR)
+                        .build())
+                .build();
+
+        gateway.enqueueFailure(new IllegalStateException(
+                "Routing rejected request 1293257125 with status NO_RESPONSE"));
+        gateway.enqueueAdminResponse(AdminMessage.newBuilder().setGetConfigResponse(requested).build());
+
+        boolean applied = service.setConfigAndVerify(requested).join();
+        assertTrue(applied);
+        assertEquals(2, gateway.requests.size());
+        assertTrue(gateway.requests.get(0).hasSetConfig());
+        assertEquals(AdminMessage.ConfigType.DISPLAY_CONFIG, gateway.requests.get(1).getGetConfigRequest());
+    }
+
+    /**
      * Verifies module config write verification succeeds when read-back matches the requested payload.
      */
     @Test
@@ -385,6 +525,32 @@ class AdminServiceTest {
     }
 
     /**
+     * Verifies module-config writes with verify enabled recover from routing NO_RESPONSE when read-back matches.
+     */
+    @Test
+    void setModuleConfigAndVerifySucceedsOnRoutingNoResponseWhenReadbackMatches() {
+        StubGateway gateway = new StubGateway(1234);
+        AdminService service = new AdminService(gateway);
+
+        ModuleConfigProtos.ModuleConfig requested = ModuleConfigProtos.ModuleConfig.newBuilder()
+                .setMqtt(ModuleConfigProtos.ModuleConfig.MQTTConfig.newBuilder()
+                        .setEnabled(true)
+                        .setAddress("mqtt.example.com")
+                        .build())
+                .build();
+
+        gateway.enqueueFailure(new IllegalStateException(
+                "Routing rejected request 2047045905 with status NO_RESPONSE"));
+        gateway.enqueueAdminResponse(AdminMessage.newBuilder().setGetModuleConfigResponse(requested).build());
+
+        boolean applied = service.setModuleConfigAndVerify(requested).join();
+        assertTrue(applied);
+        assertEquals(2, gateway.requests.size());
+        assertTrue(gateway.requests.get(0).hasSetModuleConfig());
+        assertEquals(AdminMessage.ModuleConfigType.MQTT_CONFIG, gateway.requests.get(1).getGetModuleConfigRequest());
+    }
+
+    /**
      * Verifies MQTT convenience write wrapper emits module-config admin writes and verifies by read-back.
      */
     @Test
@@ -422,7 +588,7 @@ class AdminServiceTest {
                 .setRole(Channel.Role.SECONDARY)
                 .setSettings(ChannelSettings.newBuilder()
                         .setName("meshMKT")
-                        .setPsk(ByteString.copyFromUtf8("old-psk"))
+                        .setPsk(ByteString.copyFromUtf8("1111222233334444"))
                         .build())
                 .build();
         service.ingestAdminMessage(AdminMessage.newBuilder().setGetChannelResponse(cached).build());
@@ -437,17 +603,17 @@ class AdminServiceTest {
                         .setRole(Channel.Role.SECONDARY)
                         .setSettings(ChannelSettings.newBuilder()
                                 .setName("meshMKT")
-                                .setPsk(ByteString.copyFromUtf8("new-psk"))
+                                .setPsk(ByteString.copyFromUtf8("AAAABBBBCCCCDDDD"))
                                 .build())
                         .build())
                 .build());
 
-        boolean applied = service.setChannelPsk(2, ByteString.copyFromUtf8("new-psk"), true).join();
+        boolean applied = service.setChannelPsk(2, ByteString.copyFromUtf8("AAAABBBBCCCCDDDD"), true).join();
         assertTrue(applied);
         assertEquals(3, gateway.requests.size());
         assertTrue(gateway.requests.get(1).hasSetChannel());
         assertEquals("meshMKT", gateway.requests.get(1).getSetChannel().getSettings().getName());
-        assertEquals(ByteString.copyFromUtf8("new-psk"), gateway.requests.get(1).getSetChannel().getSettings().getPsk());
+        assertEquals(ByteString.copyFromUtf8("AAAABBBBCCCCDDDD"), gateway.requests.get(1).getSetChannel().getSettings().getPsk());
     }
 
     /**
@@ -463,7 +629,7 @@ class AdminServiceTest {
                 .setRole(Channel.Role.PRIMARY)
                 .setSettings(ChannelSettings.newBuilder()
                         .setName("Primary")
-                        .setPsk(ByteString.copyFromUtf8("old"))
+                        .setPsk(ByteString.copyFromUtf8("1234567890ABCDEF"))
                         .build())
                 .build();
         service.ingestAdminMessage(AdminMessage.newBuilder().setGetChannelResponse(cached).build());
@@ -478,16 +644,16 @@ class AdminServiceTest {
                         .setRole(Channel.Role.PRIMARY)
                         .setSettings(ChannelSettings.newBuilder()
                                 .setName("Primary")
-                                .setPsk(ByteString.copyFromUtf8("secret-pass"))
+                                .setPsk(ByteString.copyFromUtf8("FEDCBA0987654321"))
                                 .build())
                         .build())
                 .build());
 
-        boolean applied = service.setPrimaryChannelPassword("secret-pass").join();
+        boolean applied = service.setPrimaryChannelPassword("FEDCBA0987654321").join();
         assertTrue(applied);
         assertTrue(gateway.requests.get(1).hasSetChannel());
         assertEquals(0, gateway.requests.get(1).getSetChannel().getIndex());
-        assertEquals(ByteString.copyFromUtf8("secret-pass"), gateway.requests.get(1).getSetChannel().getSettings().getPsk());
+        assertEquals(ByteString.copyFromUtf8("FEDCBA0987654321"), gateway.requests.get(1).getSetChannel().getSettings().getPsk());
     }
 
     /**
@@ -515,11 +681,194 @@ class AdminServiceTest {
     }
 
     /**
+     * Verifies typed refresh wrapper for device UI config requests the correct config type.
+     */
+    @Test
+    void refreshDeviceUiConfigRequestsDeviceUiConfigType() {
+        StubGateway gateway = new StubGateway(1234);
+        AdminService service = new AdminService(gateway);
+
+        DeviceUIProtos.DeviceUIConfig deviceUiConfig = DeviceUIProtos.DeviceUIConfig.newBuilder()
+                .setTheme(DeviceUIProtos.Theme.DARK)
+                .build();
+        gateway.enqueueAdminResponse(AdminMessage.newBuilder()
+                .setGetConfigResponse(ConfigProtos.Config.newBuilder().setDeviceUi(deviceUiConfig).build())
+                .build());
+
+        DeviceUIProtos.DeviceUIConfig refreshed = service.refreshDeviceUiConfig().join();
+        assertEquals(deviceUiConfig, refreshed);
+        assertEquals(1, gateway.requests.size());
+        assertEquals(AdminMessage.ConfigType.DEVICEUI_CONFIG, gateway.requests.get(0).getGetConfigRequest());
+    }
+
+    /**
+     * Verifies typed refresh wrapper for serial module config requests the correct module type.
+     */
+    @Test
+    void refreshSerialModuleConfigRequestsSerialModuleType() {
+        StubGateway gateway = new StubGateway(1234);
+        AdminService service = new AdminService(gateway);
+
+        ModuleConfigProtos.ModuleConfig.SerialConfig serialConfig = ModuleConfigProtos.ModuleConfig.SerialConfig.newBuilder()
+                .setBaud(ModuleConfigProtos.ModuleConfig.SerialConfig.Serial_Baud.BAUD_115200)
+                .build();
+        gateway.enqueueAdminResponse(AdminMessage.newBuilder()
+                .setGetModuleConfigResponse(ModuleConfigProtos.ModuleConfig.newBuilder().setSerial(serialConfig).build())
+                .build());
+
+        ModuleConfigProtos.ModuleConfig.SerialConfig refreshed = service.refreshSerialModuleConfig().join();
+        assertEquals(serialConfig, refreshed);
+        assertEquals(1, gateway.requests.size());
+        assertEquals(AdminMessage.ModuleConfigType.SERIAL_CONFIG, gateway.requests.get(0).getGetModuleConfigRequest());
+    }
+
+    /**
+     * Verifies typed device UI config writer maps to set/get config calls for DEVICEUI.
+     */
+    @Test
+    void setDeviceUiConfigVerifyUsesDeviceUiConfigReadback() {
+        StubGateway gateway = new StubGateway(1234);
+        AdminService service = new AdminService(gateway);
+
+        DeviceUIProtos.DeviceUIConfig deviceUiConfig = DeviceUIProtos.DeviceUIConfig.newBuilder()
+                .setTheme(DeviceUIProtos.Theme.DARK)
+                .build();
+
+        gateway.enqueueAdminResponse(AdminMessage.newBuilder().build());
+        gateway.enqueueAdminResponse(AdminMessage.newBuilder()
+                .setGetConfigResponse(ConfigProtos.Config.newBuilder().setDeviceUi(deviceUiConfig).build())
+                .build());
+
+        boolean applied = service.setDeviceUiConfig(deviceUiConfig, true).join();
+        assertTrue(applied);
+        assertTrue(gateway.requests.get(0).hasSetConfig());
+        assertEquals(AdminMessage.ConfigType.DEVICEUI_CONFIG, gateway.requests.get(1).getGetConfigRequest());
+    }
+
+    /**
+     * Verifies typed serial module writer maps to set/get module-config calls for SERIAL.
+     */
+    @Test
+    void setSerialModuleConfigVerifyUsesSerialModuleReadback() {
+        StubGateway gateway = new StubGateway(1234);
+        AdminService service = new AdminService(gateway);
+
+        ModuleConfigProtos.ModuleConfig.SerialConfig serialConfig = ModuleConfigProtos.ModuleConfig.SerialConfig.newBuilder()
+                .setBaud(ModuleConfigProtos.ModuleConfig.SerialConfig.Serial_Baud.BAUD_9600)
+                .setEnabled(true)
+                .build();
+
+        gateway.enqueueAdminResponse(AdminMessage.newBuilder().build());
+        gateway.enqueueAdminResponse(AdminMessage.newBuilder()
+                .setGetModuleConfigResponse(ModuleConfigProtos.ModuleConfig.newBuilder().setSerial(serialConfig).build())
+                .build());
+
+        boolean applied = service.setSerialModuleConfig(serialConfig, true).join();
+        assertTrue(applied);
+        assertTrue(gateway.requests.get(0).hasSetModuleConfig());
+        assertEquals(AdminMessage.ModuleConfigType.SERIAL_CONFIG, gateway.requests.get(1).getGetModuleConfigRequest());
+    }
+
+    /**
+     * Verifies structured write results report verification failure when read-back mismatches.
+     */
+    @Test
+    void setConfigResultReportsVerificationFailedOnMismatch() {
+        StubGateway gateway = new StubGateway(1234);
+        AdminService service = new AdminService(gateway);
+
+        ConfigProtos.Config requested = ConfigProtos.Config.newBuilder()
+                .setLora(ConfigProtos.Config.LoRaConfig.newBuilder()
+                        .setHopLimit(3)
+                        .setTxPower(20)
+                        .build())
+                .build();
+
+        ConfigProtos.Config observed = ConfigProtos.Config.newBuilder()
+                .setLora(ConfigProtos.Config.LoRaConfig.newBuilder()
+                        .setHopLimit(5)
+                        .setTxPower(20)
+                        .build())
+                .build();
+
+        gateway.enqueueAdminResponse(AdminMessage.newBuilder().build());
+        gateway.enqueueAdminResponse(AdminMessage.newBuilder().setGetConfigResponse(observed).build());
+
+        AdminWriteResult result = service.setConfigResult(requested, true).join();
+        assertEquals(AdminWriteStatus.VERIFICATION_FAILED, result.status());
+    }
+
+    /**
+     * Verifies structured write results map routing rejection to REJECTED.
+     */
+    @Test
+    void setConfigResultMapsRoutingRejectToRejected() {
+        StubGateway gateway = new StubGateway(1234);
+        AdminService service = new AdminService(gateway);
+
+        gateway.enqueueFailure(new IllegalStateException(
+                "Routing rejected request 42 with status ADMIN_PUBLIC_KEY_UNAUTHORIZED"));
+
+        ConfigProtos.Config requested = ConfigProtos.Config.newBuilder()
+                .setSecurity(ConfigProtos.Config.SecurityConfig.newBuilder().setAdminChannelEnabled(true).build())
+                .build();
+
+        AdminWriteResult result = service.setConfigResult(requested, false).join();
+        assertEquals(AdminWriteStatus.REJECTED, result.status());
+    }
+
+    /**
+     * Verifies structured write results map transport timeouts to TIMEOUT.
+     */
+    @Test
+    void setConfigResultMapsTimeoutToTimeout() {
+        StubGateway gateway = new StubGateway(1234);
+        AdminService service = new AdminService(gateway);
+
+        gateway.enqueueFailure(new TimeoutException("Response timeout for: 100"));
+
+        ConfigProtos.Config requested = ConfigProtos.Config.newBuilder()
+                .setDisplay(ConfigProtos.Config.DisplayConfig.newBuilder().setScreenOnSecs(30).build())
+                .build();
+
+        AdminWriteResult result = service.setConfigResult(requested, false).join();
+        assertEquals(AdminWriteStatus.TIMEOUT, result.status());
+    }
+
+    /**
+     * Verifies OTA mode admin request is encoded and returns ACCEPTED on successful correlation.
+     */
+    @Test
+    void requestOtaModeResultBuildsOtaRequestAndReturnsAccepted() {
+        StubGateway gateway = new StubGateway(1234);
+        AdminService service = new AdminService(gateway);
+
+        gateway.enqueueAdminResponse(AdminMessage.newBuilder().build());
+
+        byte[] hash = new byte[32];
+        for (int i = 0; i < hash.length; i++) {
+            hash[i] = (byte) i;
+        }
+
+        AdminWriteResult result = service.requestOtaModeResult(
+                1234,
+                OTAMode.OTA_BLE,
+                ByteString.copyFrom(hash)
+        ).join();
+
+        assertEquals(AdminWriteStatus.ACCEPTED, result.status());
+        assertEquals(1, gateway.requests.size());
+        assertTrue(gateway.requests.get(0).hasOtaRequest());
+        assertEquals(OTAMode.OTA_BLE, gateway.requests.get(0).getOtaRequest().getRebootOtaMode());
+        assertEquals(ByteString.copyFrom(hash), gateway.requests.get(0).getOtaRequest().getOtaHash());
+    }
+
+    /**
      * Minimal gateway stub that records admin requests and replays queued packet responses.
      */
     private static final class StubGateway implements AdminRequestGateway {
         private final int selfNodeId;
-        private final Deque<MeshProtos.MeshPacket> responseQueue = new ArrayDeque<>();
+        private final Deque<Object> outcomes = new ArrayDeque<>();
         private final Deque<MeshNode> nodeInfoQueue = new ArrayDeque<>();
         private final List<AdminMessage> requests = new ArrayList<>();
 
@@ -536,7 +885,11 @@ class AdminServiceTest {
                             .setPayload(response.toByteString())
                             .build())
                     .build();
-            responseQueue.add(packet);
+            outcomes.add(packet);
+        }
+
+        void enqueueFailure(Throwable failure) {
+            outcomes.add(failure);
         }
 
         void enqueueNodeInfoSnapshot(MeshNode node) {
@@ -553,11 +906,14 @@ class AdminServiceTest {
                                                                             AdminMessage adminMsg,
                                                                             boolean expectAdminAppResponse) {
             requests.add(adminMsg);
-            MeshProtos.MeshPacket next = responseQueue.pollFirst();
+            Object next = outcomes.pollFirst();
             if (next == null) {
                 return CompletableFuture.failedFuture(new IllegalStateException("No queued response for request"));
             }
-            return CompletableFuture.completedFuture(next);
+            if (next instanceof Throwable failure) {
+                return CompletableFuture.failedFuture(failure);
+            }
+            return CompletableFuture.completedFuture((MeshProtos.MeshPacket) next);
         }
 
         @Override

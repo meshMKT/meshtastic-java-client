@@ -2,14 +2,17 @@ package com.meshmkt.meshtastic.client.service;
 
 import com.google.protobuf.ByteString;
 import com.meshmkt.meshtastic.client.MeshUtils;
+import com.meshmkt.meshtastic.client.ProtocolConstraints;
 import com.meshmkt.meshtastic.client.model.RadioModel;
 import lombok.extern.slf4j.Slf4j;
 import org.meshtastic.proto.AdminProtos.AdminMessage;
 import org.meshtastic.proto.AdminProtos.AdminMessage.ConfigType;
 import org.meshtastic.proto.AdminProtos.AdminMessage.ModuleConfigType;
+import org.meshtastic.proto.AdminProtos.OTAMode;
 import org.meshtastic.proto.ChannelProtos.Channel;
 import org.meshtastic.proto.ChannelProtos.ChannelSettings;
 import org.meshtastic.proto.ConfigProtos.Config;
+import org.meshtastic.proto.DeviceUIProtos.DeviceUIConfig;
 import org.meshtastic.proto.MeshProtos.DeviceMetadata;
 import org.meshtastic.proto.MeshProtos.FromRadio;
 import org.meshtastic.proto.MeshProtos.MeshPacket;
@@ -28,6 +31,8 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeoutException;
 import java.time.Duration;
 import java.nio.charset.StandardCharsets;
 import java.util.function.Function;
@@ -65,8 +70,6 @@ import java.util.stream.IntStream;
  */
 @Slf4j
 public class AdminService {
-
-    private static final int MAX_CHANNEL_SLOTS = 8;
     private static final Duration OWNER_VERIFY_TIMEOUT = Duration.ofSeconds(10);
     private static final List<ConfigType> CORE_CONFIG_TYPES = List.of(
             ConfigType.LORA_CONFIG,
@@ -232,6 +235,87 @@ public class AdminService {
     }
 
     /**
+     * Refreshes the device config section.
+     *
+     * @return future completing with parsed device config section.
+     */
+    public CompletableFuture<Config.DeviceConfig> refreshDeviceConfig() {
+        return refreshConfig(ConfigType.DEVICE_CONFIG).thenApply(Config::getDevice);
+    }
+
+    /**
+     * Refreshes the position config section.
+     *
+     * @return future completing with parsed position config section.
+     */
+    public CompletableFuture<Config.PositionConfig> refreshPositionConfig() {
+        return refreshConfig(ConfigType.POSITION_CONFIG).thenApply(Config::getPosition);
+    }
+
+    /**
+     * Refreshes the power config section.
+     *
+     * @return future completing with parsed power config section.
+     */
+    public CompletableFuture<Config.PowerConfig> refreshPowerConfig() {
+        return refreshConfig(ConfigType.POWER_CONFIG).thenApply(Config::getPower);
+    }
+
+    /**
+     * Refreshes the network config section.
+     *
+     * @return future completing with parsed network config section.
+     */
+    public CompletableFuture<Config.NetworkConfig> refreshNetworkConfig() {
+        return refreshConfig(ConfigType.NETWORK_CONFIG).thenApply(Config::getNetwork);
+    }
+
+    /**
+     * Refreshes the display config section.
+     *
+     * @return future completing with parsed display config section.
+     */
+    public CompletableFuture<Config.DisplayConfig> refreshDisplayConfig() {
+        return refreshConfig(ConfigType.DISPLAY_CONFIG).thenApply(Config::getDisplay);
+    }
+
+    /**
+     * Refreshes the LoRa config section.
+     *
+     * @return future completing with parsed LoRa config section.
+     */
+    public CompletableFuture<Config.LoRaConfig> refreshLoraConfig() {
+        return refreshConfig(ConfigType.LORA_CONFIG).thenApply(Config::getLora);
+    }
+
+    /**
+     * Refreshes the Bluetooth config section.
+     *
+     * @return future completing with parsed Bluetooth config section.
+     */
+    public CompletableFuture<Config.BluetoothConfig> refreshBluetoothConfig() {
+        return refreshConfig(ConfigType.BLUETOOTH_CONFIG).thenApply(Config::getBluetooth);
+    }
+
+    /**
+     * Refreshes the session key config section.
+     *
+     * @return future completing with parsed session key config section.
+     */
+    public CompletableFuture<Config.SessionkeyConfig> refreshSessionKeyConfig() {
+        return refreshConfig(ConfigType.SESSIONKEY_CONFIG).thenApply(Config::getSessionkey);
+    }
+
+    /**
+     * Refreshes the device UI config section.
+     *
+     * @return future completing with parsed device UI config section.
+     */
+    public CompletableFuture<DeviceUIConfig> refreshDeviceUiConfig() {
+        return refreshConfig(ConfigType.DEVICEUI_CONFIG).thenApply(Config::getDeviceUi);
+    }
+
+    /**
      * Refreshes an explicit set of config types sequentially.
      * <p>
      * Sequential ordering avoids flooding slower radios with many settings queries at once.
@@ -280,7 +364,7 @@ public class AdminService {
      * @return future completing with channels sorted by index.
      */
     public CompletableFuture<List<Channel>> refreshChannels() {
-        List<CompletableFuture<Channel>> requests = IntStream.range(0, MAX_CHANNEL_SLOTS)
+        List<CompletableFuture<Channel>> requests = IntStream.range(0, ProtocolConstraints.MAX_CHANNEL_SLOTS)
                 .mapToObj(this::refreshChannel)
                 .toList();
 
@@ -315,6 +399,123 @@ public class AdminService {
      */
     public CompletableFuture<ModuleConfig> refreshMqttConfig() {
         return refreshModuleConfig(ModuleConfigType.MQTT_CONFIG);
+    }
+
+    /**
+     * Refreshes serial module settings.
+     *
+     * @return future completing with parsed serial module settings.
+     */
+    public CompletableFuture<ModuleConfig.SerialConfig> refreshSerialModuleConfig() {
+        return refreshModuleConfig(ModuleConfigType.SERIAL_CONFIG).thenApply(ModuleConfig::getSerial);
+    }
+
+    /**
+     * Refreshes external-notification module settings.
+     *
+     * @return future completing with parsed external-notification module settings.
+     */
+    public CompletableFuture<ModuleConfig.ExternalNotificationConfig> refreshExternalNotificationModuleConfig() {
+        return refreshModuleConfig(ModuleConfigType.EXTNOTIF_CONFIG).thenApply(ModuleConfig::getExternalNotification);
+    }
+
+    /**
+     * Refreshes store-forward module settings.
+     *
+     * @return future completing with parsed store-forward module settings.
+     */
+    public CompletableFuture<ModuleConfig.StoreForwardConfig> refreshStoreForwardModuleConfig() {
+        return refreshModuleConfig(ModuleConfigType.STOREFORWARD_CONFIG).thenApply(ModuleConfig::getStoreForward);
+    }
+
+    /**
+     * Refreshes range-test module settings.
+     *
+     * @return future completing with parsed range-test module settings.
+     */
+    public CompletableFuture<ModuleConfig.RangeTestConfig> refreshRangeTestModuleConfig() {
+        return refreshModuleConfig(ModuleConfigType.RANGETEST_CONFIG).thenApply(ModuleConfig::getRangeTest);
+    }
+
+    /**
+     * Refreshes telemetry module settings.
+     *
+     * @return future completing with parsed telemetry module settings.
+     */
+    public CompletableFuture<ModuleConfig.TelemetryConfig> refreshTelemetryModuleConfig() {
+        return refreshModuleConfig(ModuleConfigType.TELEMETRY_CONFIG).thenApply(ModuleConfig::getTelemetry);
+    }
+
+    /**
+     * Refreshes canned-message module settings.
+     *
+     * @return future completing with parsed canned-message module settings.
+     */
+    public CompletableFuture<ModuleConfig.CannedMessageConfig> refreshCannedMessageModuleConfig() {
+        return refreshModuleConfig(ModuleConfigType.CANNEDMSG_CONFIG).thenApply(ModuleConfig::getCannedMessage);
+    }
+
+    /**
+     * Refreshes audio module settings.
+     *
+     * @return future completing with parsed audio module settings.
+     */
+    public CompletableFuture<ModuleConfig.AudioConfig> refreshAudioModuleConfig() {
+        return refreshModuleConfig(ModuleConfigType.AUDIO_CONFIG).thenApply(ModuleConfig::getAudio);
+    }
+
+    /**
+     * Refreshes remote-hardware module settings.
+     *
+     * @return future completing with parsed remote-hardware module settings.
+     */
+    public CompletableFuture<ModuleConfig.RemoteHardwareConfig> refreshRemoteHardwareModuleConfig() {
+        return refreshModuleConfig(ModuleConfigType.REMOTEHARDWARE_CONFIG).thenApply(ModuleConfig::getRemoteHardware);
+    }
+
+    /**
+     * Refreshes neighbor-info module settings.
+     *
+     * @return future completing with parsed neighbor-info module settings.
+     */
+    public CompletableFuture<ModuleConfig.NeighborInfoConfig> refreshNeighborInfoModuleConfig() {
+        return refreshModuleConfig(ModuleConfigType.NEIGHBORINFO_CONFIG).thenApply(ModuleConfig::getNeighborInfo);
+    }
+
+    /**
+     * Refreshes ambient-lighting module settings.
+     *
+     * @return future completing with parsed ambient-lighting module settings.
+     */
+    public CompletableFuture<ModuleConfig.AmbientLightingConfig> refreshAmbientLightingModuleConfig() {
+        return refreshModuleConfig(ModuleConfigType.AMBIENTLIGHTING_CONFIG).thenApply(ModuleConfig::getAmbientLighting);
+    }
+
+    /**
+     * Refreshes detection-sensor module settings.
+     *
+     * @return future completing with parsed detection-sensor module settings.
+     */
+    public CompletableFuture<ModuleConfig.DetectionSensorConfig> refreshDetectionSensorModuleConfig() {
+        return refreshModuleConfig(ModuleConfigType.DETECTIONSENSOR_CONFIG).thenApply(ModuleConfig::getDetectionSensor);
+    }
+
+    /**
+     * Refreshes paxcounter module settings.
+     *
+     * @return future completing with parsed paxcounter module settings.
+     */
+    public CompletableFuture<ModuleConfig.PaxcounterConfig> refreshPaxcounterModuleConfig() {
+        return refreshModuleConfig(ModuleConfigType.PAXCOUNTER_CONFIG).thenApply(ModuleConfig::getPaxcounter);
+    }
+
+    /**
+     * Refreshes status-message module settings.
+     *
+     * @return future completing with parsed status-message module settings.
+     */
+    public CompletableFuture<ModuleConfig.StatusMessageConfig> refreshStatusMessageModuleConfig() {
+        return refreshModuleConfig(ModuleConfigType.STATUSMESSAGE_CONFIG).thenApply(ModuleConfig::getStatusmessage);
     }
 
     /**
@@ -377,48 +578,75 @@ public class AdminService {
         return setChannel(index, updatedChannel, verifyApplied, verifyApplied);
     }
 
+    /**
+     * Writes an updated channel to a slot and returns structured completion status.
+     *
+     * @param index channel slot index ({@code 0..7}).
+     * @param updatedChannel channel payload.
+     * @param verifyApplied when {@code true}, performs read-back verification.
+     * @return future completing with structured write result status.
+     */
+    public CompletableFuture<AdminWriteResult> setChannelResult(int index, Channel updatedChannel, boolean verifyApplied) {
+        String operation = "setChannel(" + index + ")";
+        return setChannel(index, updatedChannel, verifyApplied)
+                .handle((applied, ex) -> toWriteResult(operation, verifyApplied, Boolean.TRUE.equals(applied), ex));
+    }
+
     private CompletableFuture<Boolean> setChannel(int index,
                                                   Channel updatedChannel,
                                                   boolean verifyApplied,
                                                   boolean allowRetry) {
         validateChannelIndex(index);
-        Channel channelWithIndex = updatedChannel.toBuilder().setIndex(index).build();
+        Channel requestedChannel = updatedChannel.toBuilder().setIndex(index).build();
+        ProtocolConstraints.validateChannel(requestedChannel);
         CompletableFuture<Void> preflight = refreshMetadata().thenApply(metadata -> null);
 
-        return preflight.thenCompose(unused -> {
-            AdminMessage request = withSessionIfPresent(AdminMessage.newBuilder().setSetChannel(channelWithIndex)).build();
-            // Channel write is a mutating operation: routing NONE is terminal success, routing errors fail fast.
-            return gateway.executeAdminRequest(gateway.getSelfNodeId(), request, false);
-        })
-                .thenCompose(packet -> {
-                    if (!verifyApplied) {
-                        applyChannel(channelWithIndex);
-                        log.info("[ADMIN] Channel {} request accepted by radio", index);
-                        return CompletableFuture.completedFuture(true);
+        return preflight.thenCompose(unused -> hydrateChannelFromCurrentSlotIfSparse(index, requestedChannel))
+                .thenCompose(channelWithIndex -> {
+                    if (log.isDebugEnabled()) {
+                        log.debug("[ADMIN] setChannel tx payload -> {}", describeChannelForLog(channelWithIndex));
                     }
+                    AdminMessage request = withSessionIfPresent(AdminMessage.newBuilder().setSetChannel(channelWithIndex)).build();
+                    // Channel write is a mutating operation: routing NONE is terminal success, routing errors fail fast.
+                    return gateway.executeAdminRequest(gateway.getSelfNodeId(), request, false)
+                            .thenCompose(packet -> {
+                                if (!verifyApplied) {
+                                    applyChannel(channelWithIndex);
+                                    log.info("[ADMIN] Channel {} request accepted by radio", index);
+                                    return CompletableFuture.completedFuture(true);
+                                }
 
-                    return refreshChannel(index).thenApply(appliedChannel -> {
-                        boolean applied = channelWithIndex.getRole() == appliedChannel.getRole()
-                                && channelWithIndex.getSettings().equals(appliedChannel.getSettings());
-
-                        if (applied) {
-                            log.info("[ADMIN] Channel {} updated successfully", index);
-                        } else if (allowRetry) {
-                            throw new IllegalStateException("Channel write not reflected on radio; retrying once");
-                        } else {
-                            log.warn("[ADMIN] Channel {} update did not apply on radio (requested role={}, observed role={})",
-                                    index, channelWithIndex.getRole(), appliedChannel.getRole());
-                        }
-                        return applied;
-                    });
-                })
-                .exceptionallyCompose(ex -> {
-                    if (allowRetry) {
-                        log.warn("[ADMIN] Channel {} set failed/verification failed; refreshing session key and retrying once: {}",
-                                index, ex.getMessage());
-                        return setChannel(index, updatedChannel, verifyApplied, false);
-                    }
-                    return CompletableFuture.completedFuture(false);
+                                return verifyChannelApplied(
+                                        index,
+                                        channelWithIndex,
+                                        allowRetry,
+                                        "Channel write not reflected on radio; retrying once");
+                            })
+                            .exceptionallyCompose(ex -> {
+                                if (verifyApplied && isRoutingNoResponse(ex)) {
+                                    log.warn("[ADMIN] Channel {} set returned ROUTING NO_RESPONSE; verifying by read-back", index);
+                                    return verifyChannelApplied(
+                                            index,
+                                            channelWithIndex,
+                                            allowRetry,
+                                            "Channel write returned ROUTING NO_RESPONSE and read-back did not match; retrying once")
+                                            .exceptionallyCompose(verifyEx -> {
+                                                if (allowRetry) {
+                                                    log.warn("[ADMIN] Channel {} verification after ROUTING NO_RESPONSE failed; " +
+                                                                    "refreshing session key and retrying once: {}",
+                                                            index, verifyEx.getMessage());
+                                                    return setChannel(index, updatedChannel, verifyApplied, false);
+                                                }
+                                                return CompletableFuture.completedFuture(false);
+                                            });
+                                }
+                                if (allowRetry) {
+                                    log.warn("[ADMIN] Channel {} set failed/verification failed; refreshing session key and retrying once: {}",
+                                            index, ex.getMessage());
+                                    return setChannel(index, updatedChannel, verifyApplied, false);
+                                }
+                                return CompletableFuture.completedFuture(false);
+                            });
                 });
     }
 
@@ -441,6 +669,18 @@ public class AdminService {
      */
     public CompletableFuture<Boolean> setConfigAndVerify(Config config) {
         return setConfig(config, true);
+    }
+
+    /**
+     * Writes one config payload and returns structured completion status.
+     *
+     * @param config config payload.
+     * @param verifyApplied when {@code true}, performs read-back verification before completing.
+     * @return future completing with structured write result status.
+     */
+    public CompletableFuture<AdminWriteResult> setConfigResult(Config config, boolean verifyApplied) {
+        return setConfig(config, verifyApplied)
+                .handle((applied, ex) -> toWriteResult("setConfig", verifyApplied, Boolean.TRUE.equals(applied), ex));
     }
 
     /**
@@ -471,6 +711,19 @@ public class AdminService {
 
                     return refreshConfigs(impactedTypes)
                             .thenApply(observed -> isConfigApplied(config, observed));
+                })
+                .exceptionallyCompose(ex -> {
+                    if (!verifyApplied || !isRoutingNoResponse(ex)) {
+                        return CompletableFuture.failedFuture(ex);
+                    }
+
+                    log.warn("[ADMIN] setConfig returned ROUTING NO_RESPONSE; verifying by read-back");
+                    List<ConfigType> impactedTypes = extractConfigTypes(config);
+                    if (impactedTypes.isEmpty()) {
+                        return CompletableFuture.completedFuture(false);
+                    }
+                    return refreshConfigs(impactedTypes)
+                            .thenApply(observed -> isConfigApplied(config, observed));
                 });
     }
 
@@ -493,6 +746,18 @@ public class AdminService {
      */
     public CompletableFuture<Boolean> setModuleConfigAndVerify(ModuleConfig moduleConfig) {
         return setModuleConfig(moduleConfig, true);
+    }
+
+    /**
+     * Writes one module config payload and returns structured completion status.
+     *
+     * @param moduleConfig module config payload.
+     * @param verifyApplied when {@code true}, performs read-back verification before completing.
+     * @return future completing with structured write result status.
+     */
+    public CompletableFuture<AdminWriteResult> setModuleConfigResult(ModuleConfig moduleConfig, boolean verifyApplied) {
+        return setModuleConfig(moduleConfig, verifyApplied)
+                .handle((applied, ex) -> toWriteResult("setModuleConfig", verifyApplied, Boolean.TRUE.equals(applied), ex));
     }
 
     /**
@@ -519,6 +784,15 @@ public class AdminService {
                         return CompletableFuture.completedFuture(true);
                     }
 
+                    return refreshModuleConfig(moduleType)
+                            .thenApply(observed -> isModuleConfigApplied(moduleConfig, observed));
+                })
+                .exceptionallyCompose(ex -> {
+                    if (!verifyApplied || !isRoutingNoResponse(ex)) {
+                        return CompletableFuture.failedFuture(ex);
+                    }
+
+                    log.warn("[ADMIN] setModuleConfig returned ROUTING NO_RESPONSE; verifying by read-back for {}", moduleType);
                     return refreshModuleConfig(moduleType)
                             .thenApply(observed -> isModuleConfigApplied(moduleConfig, observed));
                 });
@@ -559,6 +833,171 @@ public class AdminService {
     }
 
     /**
+     * Writes serial module settings.
+     *
+     * @param serialConfig serial module config payload.
+     * @param verifyApplied when {@code true}, verifies by read-back.
+     * @return future completing with write/verification result.
+     */
+    public CompletableFuture<Boolean> setSerialModuleConfig(ModuleConfig.SerialConfig serialConfig, boolean verifyApplied) {
+        Objects.requireNonNull(serialConfig, "serialConfig must not be null");
+        return setModuleConfig(ModuleConfig.newBuilder().setSerial(serialConfig).build(), verifyApplied);
+    }
+
+    /**
+     * Writes external-notification module settings.
+     *
+     * @param config external-notification module config payload.
+     * @param verifyApplied when {@code true}, verifies by read-back.
+     * @return future completing with write/verification result.
+     */
+    public CompletableFuture<Boolean> setExternalNotificationModuleConfig(ModuleConfig.ExternalNotificationConfig config,
+                                                                          boolean verifyApplied) {
+        Objects.requireNonNull(config, "externalNotificationConfig must not be null");
+        return setModuleConfig(ModuleConfig.newBuilder().setExternalNotification(config).build(), verifyApplied);
+    }
+
+    /**
+     * Writes store-forward module settings.
+     *
+     * @param config store-forward module config payload.
+     * @param verifyApplied when {@code true}, verifies by read-back.
+     * @return future completing with write/verification result.
+     */
+    public CompletableFuture<Boolean> setStoreForwardModuleConfig(ModuleConfig.StoreForwardConfig config,
+                                                                  boolean verifyApplied) {
+        Objects.requireNonNull(config, "storeForwardConfig must not be null");
+        return setModuleConfig(ModuleConfig.newBuilder().setStoreForward(config).build(), verifyApplied);
+    }
+
+    /**
+     * Writes range-test module settings.
+     *
+     * @param config range-test module config payload.
+     * @param verifyApplied when {@code true}, verifies by read-back.
+     * @return future completing with write/verification result.
+     */
+    public CompletableFuture<Boolean> setRangeTestModuleConfig(ModuleConfig.RangeTestConfig config, boolean verifyApplied) {
+        Objects.requireNonNull(config, "rangeTestConfig must not be null");
+        return setModuleConfig(ModuleConfig.newBuilder().setRangeTest(config).build(), verifyApplied);
+    }
+
+    /**
+     * Writes telemetry module settings.
+     *
+     * @param config telemetry module config payload.
+     * @param verifyApplied when {@code true}, verifies by read-back.
+     * @return future completing with write/verification result.
+     */
+    public CompletableFuture<Boolean> setTelemetryModuleConfig(ModuleConfig.TelemetryConfig config, boolean verifyApplied) {
+        Objects.requireNonNull(config, "telemetryConfig must not be null");
+        return setModuleConfig(ModuleConfig.newBuilder().setTelemetry(config).build(), verifyApplied);
+    }
+
+    /**
+     * Writes canned-message module settings.
+     *
+     * @param config canned-message module config payload.
+     * @param verifyApplied when {@code true}, verifies by read-back.
+     * @return future completing with write/verification result.
+     */
+    public CompletableFuture<Boolean> setCannedMessageModuleConfig(ModuleConfig.CannedMessageConfig config,
+                                                                   boolean verifyApplied) {
+        Objects.requireNonNull(config, "cannedMessageConfig must not be null");
+        return setModuleConfig(ModuleConfig.newBuilder().setCannedMessage(config).build(), verifyApplied);
+    }
+
+    /**
+     * Writes audio module settings.
+     *
+     * @param config audio module config payload.
+     * @param verifyApplied when {@code true}, verifies by read-back.
+     * @return future completing with write/verification result.
+     */
+    public CompletableFuture<Boolean> setAudioModuleConfig(ModuleConfig.AudioConfig config, boolean verifyApplied) {
+        Objects.requireNonNull(config, "audioConfig must not be null");
+        return setModuleConfig(ModuleConfig.newBuilder().setAudio(config).build(), verifyApplied);
+    }
+
+    /**
+     * Writes remote-hardware module settings.
+     *
+     * @param config remote-hardware module config payload.
+     * @param verifyApplied when {@code true}, verifies by read-back.
+     * @return future completing with write/verification result.
+     */
+    public CompletableFuture<Boolean> setRemoteHardwareModuleConfig(ModuleConfig.RemoteHardwareConfig config,
+                                                                    boolean verifyApplied) {
+        Objects.requireNonNull(config, "remoteHardwareConfig must not be null");
+        return setModuleConfig(ModuleConfig.newBuilder().setRemoteHardware(config).build(), verifyApplied);
+    }
+
+    /**
+     * Writes neighbor-info module settings.
+     *
+     * @param config neighbor-info module config payload.
+     * @param verifyApplied when {@code true}, verifies by read-back.
+     * @return future completing with write/verification result.
+     */
+    public CompletableFuture<Boolean> setNeighborInfoModuleConfig(ModuleConfig.NeighborInfoConfig config,
+                                                                  boolean verifyApplied) {
+        Objects.requireNonNull(config, "neighborInfoConfig must not be null");
+        return setModuleConfig(ModuleConfig.newBuilder().setNeighborInfo(config).build(), verifyApplied);
+    }
+
+    /**
+     * Writes ambient-lighting module settings.
+     *
+     * @param config ambient-lighting module config payload.
+     * @param verifyApplied when {@code true}, verifies by read-back.
+     * @return future completing with write/verification result.
+     */
+    public CompletableFuture<Boolean> setAmbientLightingModuleConfig(ModuleConfig.AmbientLightingConfig config,
+                                                                     boolean verifyApplied) {
+        Objects.requireNonNull(config, "ambientLightingConfig must not be null");
+        return setModuleConfig(ModuleConfig.newBuilder().setAmbientLighting(config).build(), verifyApplied);
+    }
+
+    /**
+     * Writes detection-sensor module settings.
+     *
+     * @param config detection-sensor module config payload.
+     * @param verifyApplied when {@code true}, verifies by read-back.
+     * @return future completing with write/verification result.
+     */
+    public CompletableFuture<Boolean> setDetectionSensorModuleConfig(ModuleConfig.DetectionSensorConfig config,
+                                                                     boolean verifyApplied) {
+        Objects.requireNonNull(config, "detectionSensorConfig must not be null");
+        return setModuleConfig(ModuleConfig.newBuilder().setDetectionSensor(config).build(), verifyApplied);
+    }
+
+    /**
+     * Writes paxcounter module settings.
+     *
+     * @param config paxcounter module config payload.
+     * @param verifyApplied when {@code true}, verifies by read-back.
+     * @return future completing with write/verification result.
+     */
+    public CompletableFuture<Boolean> setPaxcounterModuleConfig(ModuleConfig.PaxcounterConfig config,
+                                                                boolean verifyApplied) {
+        Objects.requireNonNull(config, "paxcounterConfig must not be null");
+        return setModuleConfig(ModuleConfig.newBuilder().setPaxcounter(config).build(), verifyApplied);
+    }
+
+    /**
+     * Writes status-message module settings.
+     *
+     * @param config status-message module config payload.
+     * @param verifyApplied when {@code true}, verifies by read-back.
+     * @return future completing with write/verification result.
+     */
+    public CompletableFuture<Boolean> setStatusMessageModuleConfig(ModuleConfig.StatusMessageConfig config,
+                                                                   boolean verifyApplied) {
+        Objects.requireNonNull(config, "statusMessageConfig must not be null");
+        return setModuleConfig(ModuleConfig.newBuilder().setStatusmessage(config).build(), verifyApplied);
+    }
+
+    /**
      * Writes security config to the local radio.
      *
      * @param securityConfig security config payload.
@@ -569,6 +1008,114 @@ public class AdminService {
         Objects.requireNonNull(securityConfig, "securityConfig must not be null");
         Config config = Config.newBuilder().setSecurity(securityConfig).build();
         return setConfig(config, verifyApplied);
+    }
+
+    /**
+     * Writes device config to the local radio.
+     *
+     * @param deviceConfig device config payload.
+     * @param verifyApplied when {@code true}, verifies by read-back.
+     * @return future completing with write/verification result.
+     */
+    public CompletableFuture<Boolean> setDeviceConfig(Config.DeviceConfig deviceConfig, boolean verifyApplied) {
+        Objects.requireNonNull(deviceConfig, "deviceConfig must not be null");
+        return setConfig(Config.newBuilder().setDevice(deviceConfig).build(), verifyApplied);
+    }
+
+    /**
+     * Writes position config to the local radio.
+     *
+     * @param positionConfig position config payload.
+     * @param verifyApplied when {@code true}, verifies by read-back.
+     * @return future completing with write/verification result.
+     */
+    public CompletableFuture<Boolean> setPositionConfig(Config.PositionConfig positionConfig, boolean verifyApplied) {
+        Objects.requireNonNull(positionConfig, "positionConfig must not be null");
+        return setConfig(Config.newBuilder().setPosition(positionConfig).build(), verifyApplied);
+    }
+
+    /**
+     * Writes power config to the local radio.
+     *
+     * @param powerConfig power config payload.
+     * @param verifyApplied when {@code true}, verifies by read-back.
+     * @return future completing with write/verification result.
+     */
+    public CompletableFuture<Boolean> setPowerConfig(Config.PowerConfig powerConfig, boolean verifyApplied) {
+        Objects.requireNonNull(powerConfig, "powerConfig must not be null");
+        return setConfig(Config.newBuilder().setPower(powerConfig).build(), verifyApplied);
+    }
+
+    /**
+     * Writes network config to the local radio.
+     *
+     * @param networkConfig network config payload.
+     * @param verifyApplied when {@code true}, verifies by read-back.
+     * @return future completing with write/verification result.
+     */
+    public CompletableFuture<Boolean> setNetworkConfig(Config.NetworkConfig networkConfig, boolean verifyApplied) {
+        Objects.requireNonNull(networkConfig, "networkConfig must not be null");
+        return setConfig(Config.newBuilder().setNetwork(networkConfig).build(), verifyApplied);
+    }
+
+    /**
+     * Writes display config to the local radio.
+     *
+     * @param displayConfig display config payload.
+     * @param verifyApplied when {@code true}, verifies by read-back.
+     * @return future completing with write/verification result.
+     */
+    public CompletableFuture<Boolean> setDisplayConfig(Config.DisplayConfig displayConfig, boolean verifyApplied) {
+        Objects.requireNonNull(displayConfig, "displayConfig must not be null");
+        return setConfig(Config.newBuilder().setDisplay(displayConfig).build(), verifyApplied);
+    }
+
+    /**
+     * Writes LoRa config to the local radio.
+     *
+     * @param loraConfig LoRa config payload.
+     * @param verifyApplied when {@code true}, verifies by read-back.
+     * @return future completing with write/verification result.
+     */
+    public CompletableFuture<Boolean> setLoraConfig(Config.LoRaConfig loraConfig, boolean verifyApplied) {
+        Objects.requireNonNull(loraConfig, "loraConfig must not be null");
+        return setConfig(Config.newBuilder().setLora(loraConfig).build(), verifyApplied);
+    }
+
+    /**
+     * Writes Bluetooth config to the local radio.
+     *
+     * @param bluetoothConfig Bluetooth config payload.
+     * @param verifyApplied when {@code true}, verifies by read-back.
+     * @return future completing with write/verification result.
+     */
+    public CompletableFuture<Boolean> setBluetoothConfig(Config.BluetoothConfig bluetoothConfig, boolean verifyApplied) {
+        Objects.requireNonNull(bluetoothConfig, "bluetoothConfig must not be null");
+        return setConfig(Config.newBuilder().setBluetooth(bluetoothConfig).build(), verifyApplied);
+    }
+
+    /**
+     * Writes session key config to the local radio.
+     *
+     * @param sessionKeyConfig session key config payload.
+     * @param verifyApplied when {@code true}, verifies by read-back.
+     * @return future completing with write/verification result.
+     */
+    public CompletableFuture<Boolean> setSessionKeyConfig(Config.SessionkeyConfig sessionKeyConfig, boolean verifyApplied) {
+        Objects.requireNonNull(sessionKeyConfig, "sessionKeyConfig must not be null");
+        return setConfig(Config.newBuilder().setSessionkey(sessionKeyConfig).build(), verifyApplied);
+    }
+
+    /**
+     * Writes device UI config to the local radio.
+     *
+     * @param deviceUiConfig device UI config payload.
+     * @param verifyApplied when {@code true}, verifies by read-back.
+     * @return future completing with write/verification result.
+     */
+    public CompletableFuture<Boolean> setDeviceUiConfig(DeviceUIConfig deviceUiConfig, boolean verifyApplied) {
+        Objects.requireNonNull(deviceUiConfig, "deviceUiConfig must not be null");
+        return setConfig(Config.newBuilder().setDeviceUi(deviceUiConfig).build(), verifyApplied);
     }
 
     /**
@@ -634,7 +1181,7 @@ public class AdminService {
      * @return future completing with write/verification result.
      */
     public CompletableFuture<Boolean> setChannelPsk(int index, ByteString psk, boolean verifyApplied) {
-        Objects.requireNonNull(psk, "psk must not be null");
+        ProtocolConstraints.validateChannelPsk(psk);
         return resolveChannelForUpdate(index)
                 .thenCompose(baseChannel -> {
                     ChannelSettings settings = baseChannel.getSettings().toBuilder().setPsk(psk).build();
@@ -758,6 +1305,24 @@ public class AdminService {
     }
 
     /**
+     * Updates node identity values and returns structured completion status.
+     *
+     * @param targetNodeId target node id.
+     * @param longName new long name.
+     * @param shortName new short name.
+     * @param verifyApplied when {@code true}, performs read-back verification before completing.
+     * @return future completing with structured write result status.
+     */
+    public CompletableFuture<AdminWriteResult> setOwnerResult(int targetNodeId,
+                                                              String longName,
+                                                              String shortName,
+                                                              boolean verifyApplied) {
+        String operation = "setOwner(" + MeshUtils.formatId(targetNodeId) + ")";
+        return setOwner(targetNodeId, longName, shortName, verifyApplied)
+                .handle((applied, ex) -> toWriteResult(operation, verifyApplied, Boolean.TRUE.equals(applied), ex));
+    }
+
+    /**
      * Updates node identity values and optionally verifies they were applied.
      * <p>
      * Verification behavior:
@@ -793,6 +1358,15 @@ public class AdminService {
                         return CompletableFuture.completedFuture(true);
                     }
                     return verifyOwnerApplied(targetNodeId, longName, shortName);
+                })
+                .exceptionallyCompose(ex -> {
+                    if (!verifyApplied || !isRoutingNoResponse(ex)) {
+                        return CompletableFuture.failedFuture(ex);
+                    }
+
+                    log.warn("[ADMIN] setOwner returned ROUTING NO_RESPONSE for !{}; verifying by read-back",
+                            Integer.toHexString(targetNodeId));
+                    return verifyOwnerApplied(targetNodeId, longName, shortName);
                 });
     }
 
@@ -823,6 +1397,35 @@ public class AdminService {
 
         log.info("[ADMIN] Requesting radio reboot in {} seconds...", seconds);
         return gateway.executeAdminRequest(gateway.getSelfNodeId(), request, false).thenApply(packet -> true);
+    }
+
+    /**
+     * Requests the target node to enter OTA mode with an optional firmware hash.
+     * <p>
+     * This call only requests OTA loader mode. Actual firmware upload is transport/tool specific and should be
+     * handled by an OTA uploader strategy.
+     * </p>
+     *
+     * @param targetNodeId target node id.
+     * @param mode OTA reboot mode.
+     * @param firmwareSha256 optional 32-byte SHA-256 firmware hash; pass empty to omit.
+     * @return future completing with structured write result status.
+     */
+    public CompletableFuture<AdminWriteResult> requestOtaModeResult(int targetNodeId,
+                                                                    OTAMode mode,
+                                                                    ByteString firmwareSha256) {
+        Objects.requireNonNull(mode, "mode must not be null");
+        ByteString hash = firmwareSha256 == null ? ByteString.EMPTY : firmwareSha256;
+
+        AdminMessage.OTAEvent otaEvent = AdminMessage.OTAEvent.newBuilder()
+                .setRebootOtaMode(mode)
+                .setOtaHash(hash)
+                .build();
+        AdminMessage request = withSessionIfPresent(AdminMessage.newBuilder().setOtaRequest(otaEvent)).build();
+        String operation = "requestOtaMode(" + MeshUtils.formatId(targetNodeId) + ")";
+
+        return gateway.executeAdminRequest(targetNodeId, request, false)
+                .handle((packet, ex) -> toWriteResult(operation, false, ex == null, ex));
     }
 
     /**
@@ -1206,9 +1809,118 @@ public class AdminService {
     }
 
     private void validateChannelIndex(int index) {
-        if (index < 0 || index >= MAX_CHANNEL_SLOTS) {
-            throw new IllegalArgumentException("Channel index out of range (expected 0-7): " + index);
+        ProtocolConstraints.validateChannelIndex(index);
+    }
+
+    /**
+     * Verifies channel role/settings by read-back.
+     *
+     * @param index channel index.
+     * @param expected expected role/settings payload.
+     * @param allowRetry whether mismatch should throw to trigger a retry.
+     * @param retryMessage message used when throwing retry trigger exception.
+     * @return future completing with {@code true} when expected channel state is observed.
+     */
+    private CompletableFuture<Boolean> verifyChannelApplied(int index,
+                                                            Channel expected,
+                                                            boolean allowRetry,
+                                                            String retryMessage) {
+        return refreshChannel(index).thenApply(appliedChannel -> {
+            if (log.isDebugEnabled()) {
+                log.debug("[ADMIN] setChannel verify expected -> {}", describeChannelForLog(expected));
+                log.debug("[ADMIN] setChannel verify observed -> {}", describeChannelForLog(appliedChannel));
+            }
+            boolean applied = expected.getRole() == appliedChannel.getRole()
+                    && expected.getSettings().equals(appliedChannel.getSettings());
+
+            if (applied) {
+                log.info("[ADMIN] Channel {} updated successfully", index);
+            } else if (allowRetry) {
+                throw new IllegalStateException(retryMessage);
+            } else {
+                log.warn("[ADMIN] Channel {} update did not apply on radio (requested role={}, observed role={})",
+                        index, expected.getRole(), appliedChannel.getRole());
+            }
+            return applied;
+        });
+    }
+
+    /**
+     * Back-fills sparse channel settings from the current slot snapshot before write.
+     * <p>
+     * Some firmware builds ignore partial channel settings writes (for example, name-only payloads that omit PSK).
+     * When a sparse payload is detected, this method merges the current slot settings with the caller-provided
+     * settings so unchanged values are preserved in the outgoing write.
+     * </p>
+     *
+     * @param index channel slot index.
+     * @param requested caller-provided channel payload with normalized index.
+     * @return future completing with a write-safe channel payload.
+     */
+    private CompletableFuture<Channel> hydrateChannelFromCurrentSlotIfSparse(int index, Channel requested) {
+        if (!isLikelySparseChannelSettings(requested.getSettings())) {
+            return CompletableFuture.completedFuture(requested);
         }
+
+        return getChannelSnapshot(index)
+                .map(current -> {
+                    ChannelSettings merged = current.getSettings().toBuilder()
+                            .mergeFrom(requested.getSettings())
+                            .build();
+                    if (log.isDebugEnabled()) {
+                        log.debug("[ADMIN] setChannel sparse payload detected for slot {}. " +
+                                        "Hydrating with cached slot settings before write.", index);
+                        log.debug("[ADMIN] setChannel cached base -> {}", describeChannelForLog(current));
+                        log.debug("[ADMIN] setChannel requested sparse -> {}", describeChannelForLog(requested));
+                        log.debug("[ADMIN] setChannel hydrated payload -> {}",
+                                describeChannelForLog(requested.toBuilder().setSettings(merged).build()));
+                    }
+                    return CompletableFuture.completedFuture(requested.toBuilder().setSettings(merged).build());
+                })
+                .orElseGet(() -> {
+                    if (log.isDebugEnabled()) {
+                        log.debug("[ADMIN] setChannel sparse payload detected for slot {} but no cached slot found. " +
+                                "Sending payload as-is.", index);
+                    }
+                    return CompletableFuture.completedFuture(requested);
+                });
+    }
+
+    /**
+     * Heuristic for settings payloads that are likely patch-style writes rather than complete channel state.
+     * <p>
+     * Current trigger: name was provided but PSK is empty. This matches common UI edit flows where only the
+     * display name is edited, and we need to preserve existing channel cryptographic fields.
+     * </p>
+     *
+     * @param settings outgoing channel settings payload.
+     * @return {@code true} when payload should be hydrated from current slot state before write.
+     */
+    private static boolean isLikelySparseChannelSettings(ChannelSettings settings) {
+        return settings != null
+                && !settings.getName().isEmpty()
+                && settings.getPsk().isEmpty();
+    }
+
+    /**
+     * Builds a concise, readable channel summary for debug logs without dumping raw key material.
+     *
+     * @param channel channel payload.
+     * @return formatted summary string.
+     */
+    private static String describeChannelForLog(Channel channel) {
+        if (channel == null) {
+            return "channel=null";
+        }
+        ChannelSettings s = channel.getSettings();
+        int pskLen = s.getPsk().size();
+        return "slot=" + channel.getIndex()
+                + ", role=" + channel.getRole()
+                + ", name=\"" + s.getName() + "\""
+                + ", psk_len=" + pskLen
+                + ", uplink=" + s.getUplinkEnabled()
+                + ", downlink=" + s.getDownlinkEnabled()
+                + ", module_settings_present=" + s.hasModuleSettings();
     }
 
     /**
@@ -1252,5 +1964,84 @@ public class AdminService {
                     l.addAll(r);
                     return l;
                 }));
+    }
+
+    /**
+     * Maps boolean/exception write outcomes into canonical admin write statuses.
+     *
+     * @param operation operation identifier.
+     * @param verificationRequested whether caller requested read-back verification.
+     * @param applied boolean applied flag from write path.
+     * @param error optional failure throwable from write path.
+     * @return canonical write result payload.
+     */
+    private AdminWriteResult toWriteResult(String operation,
+                                           boolean verificationRequested,
+                                           boolean applied,
+                                           Throwable error) {
+        if (error == null) {
+            if (verificationRequested) {
+                if (applied) {
+                    return new AdminWriteResult(AdminWriteStatus.VERIFIED_APPLIED, operation,
+                            "Write accepted and verified by read-back.");
+                }
+                return new AdminWriteResult(AdminWriteStatus.VERIFICATION_FAILED, operation,
+                        "Write accepted but verification read-back did not match requested state.");
+            }
+
+            if (applied) {
+                return new AdminWriteResult(AdminWriteStatus.ACCEPTED, operation,
+                        "Write accepted by radio.");
+            }
+
+            return new AdminWriteResult(AdminWriteStatus.FAILED, operation,
+                    "Write did not report acceptance.");
+        }
+
+        Throwable root = unwrap(error);
+        if (root instanceof TimeoutException) {
+            return new AdminWriteResult(AdminWriteStatus.TIMEOUT, operation,
+                    root.getMessage() == null ? "Write timed out." : root.getMessage());
+        }
+
+        String message = root.getMessage() == null ? root.getClass().getSimpleName() : root.getMessage();
+        if (message.contains("Routing rejected request")) {
+            return new AdminWriteResult(AdminWriteStatus.REJECTED, operation, message);
+        }
+
+        return new AdminWriteResult(AdminWriteStatus.FAILED, operation, message);
+    }
+
+    /**
+     * Unwraps common async wrapper exceptions to expose the root cause.
+     *
+     * @param error wrapped error from completion stages.
+     * @return root throwable.
+     */
+    private static Throwable unwrap(Throwable error) {
+        Throwable current = error;
+        while ((current instanceof java.util.concurrent.CompletionException || current instanceof ExecutionException)
+                && current.getCause() != null) {
+            current = current.getCause();
+        }
+        return current;
+    }
+
+    /**
+     * Returns whether the request failed with a routing-level NO_RESPONSE status.
+     * <p>
+     * Some firmwares can apply writes while still reporting routing NO_RESPONSE, so write paths that requested
+     * verification should perform read-back before declaring failure.
+     * </p>
+     *
+     * @param error completion error from request pipeline.
+     * @return {@code true} when error payload indicates routing NO_RESPONSE.
+     */
+    private static boolean isRoutingNoResponse(Throwable error) {
+        Throwable root = unwrap(error);
+        String message = root.getMessage();
+        return message != null
+                && message.contains("Routing rejected request")
+                && message.toUpperCase().contains("NO_RESPONSE");
     }
 }
