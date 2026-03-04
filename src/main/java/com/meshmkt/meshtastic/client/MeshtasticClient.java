@@ -272,15 +272,19 @@ public class MeshtasticClient implements AdminRequestGateway {
     /**
      * Returns the current local node id from the node database.
      *
-     * @return current self node id, or {@code -1} when unavailable.
+     * @return current self node id, or {@link MeshConstants#ID_UNKNOWN} when unavailable.
      */
     @Override
     public int getSelfNodeId() {
-        if (nodeDb == null) {
-            return -1;
+        int dbNodeId = (nodeDb == null) ? -1 : nodeDb.getSelfNodeId();
+        if (isKnownSelfNodeId(dbNodeId)) {
+            return dbNodeId;
         }
 
-        return nodeDb.getSelfNodeId();
+        // Fallback for startup races/firmware variants where owner identity is available before my_info
+        // is reflected into NodeDatabase.
+        int adminSnapshotNodeId = adminService.getSnapshot().getNodeId();
+        return isKnownSelfNodeId(adminSnapshotNodeId) ? adminSnapshotNodeId : MeshConstants.ID_UNKNOWN;
     }
 
     /**
@@ -839,6 +843,15 @@ public class MeshtasticClient implements AdminRequestGateway {
 
         if (fromRadio.hasMyInfo()) {
             sawMyInfoInCurrentPhase = true;
+            int selfId = fromRadio.getMyInfo().getMyNodeNum();
+            if (isKnownSelfNodeId(selfId) && selfId != nodeDb.getSelfNodeId()) {
+                // Establish self identity as soon as startup sync observes my_info so READY does not race
+                // ahead of LocalStateHandler dispatch on slower/async handler execution.
+                nodeDb.setSelfNodeId(selfId);
+                adminService.ingestMyInfo(selfId);
+                log.debug("[SYNC] Self node id established from my_info during startup sync: {}",
+                        MeshUtils.formatId(selfId));
+            }
         }
 
         if (!fromRadio.hasConfigCompleteId()) {
@@ -1721,6 +1734,19 @@ public class MeshtasticClient implements AdminRequestGateway {
         }
         this.startupState = nextState;
         notifyListeners(l -> l.onStartupStateChanged(previous, nextState));
+    }
+
+    /**
+     * Returns whether a node id is usable as a local self-id.
+     * <p>
+     * Meshtastic node ids are uint32 values and may appear as negative Java ints.
+     * </p>
+     *
+     * @param nodeId node id to validate.
+     * @return {@code true} when id is neither unknown nor broadcast.
+     */
+    private boolean isKnownSelfNodeId(int nodeId) {
+        return nodeId != MeshConstants.ID_UNKNOWN && nodeId != MeshConstants.ID_BROADCAST;
     }
 
     /**

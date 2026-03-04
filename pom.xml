@@ -25,6 +25,7 @@
         <maven.compiler.plugin.version>3.14.1</maven.compiler.plugin.version>
         <protobuf.maven.plugin.version>0.6.1</protobuf.maven.plugin.version>
         <maven.surefire.plugin.version>3.2.5</maven.surefire.plugin.version>
+        <maven.failsafe.plugin.version>3.2.5</maven.failsafe.plugin.version>
         <maven.source.plugin.version>3.3.1</maven.source.plugin.version>
         <maven.javadoc.plugin.version>3.8.0</maven.javadoc.plugin.version>
         <asciidoctor.maven.plugin.version>3.1.1</asciidoctor.maven.plugin.version>
@@ -170,6 +171,7 @@
                 <artifactId>maven-javadoc-plugin</artifactId>
                 <version>${maven.javadoc.plugin.version}</version>
                 <configuration>
+                    <skip>${maven.javadoc.skip}</skip>
                     <!-- Publish docs for client API packages only. -->
                     <subpackages>com.meshmkt.meshtastic.client</subpackages>
                     <!-- Exclude generated protobuf package from published API docs. -->
@@ -211,6 +213,7 @@
                     </dependency>
                 </dependencies>
                 <configuration>
+                    <skip>${asciidoctor.skip}</skip>
                     <sourceDirectory>${project.basedir}/src/docs/asciidoc</sourceDirectory>
                     <outputDirectory>${project.build.directory}/docs</outputDirectory>
                     <requires>
@@ -254,5 +257,52 @@
 
         </plugins>
     </build>
+
+    <profiles>
+        <profile>
+            <id>hardware-it</id>
+            <properties>
+                <asciidoctor.skip>true</asciidoctor.skip>
+                <maven.javadoc.skip>true</maven.javadoc.skip>
+            </properties>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-surefire-plugin</artifactId>
+                        <version>${maven.surefire.plugin.version}</version>
+                        <configuration>
+                            <skipTests>true</skipTests>
+                        </configuration>
+                    </plugin>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-failsafe-plugin</artifactId>
+                        <version>${maven.failsafe.plugin.version}</version>
+                        <configuration>
+                            <useModulePath>false</useModulePath>
+                            <includes>
+                                <include>**/*IT.java</include>
+                            </includes>
+                            <systemPropertyVariables>
+                                <MESHTASTIC_TEST_PORT>${env.MESHTASTIC_TEST_PORT}</MESHTASTIC_TEST_PORT>
+                                <MESHTASTIC_TEST_TIMEOUT_SEC>${env.MESHTASTIC_TEST_TIMEOUT_SEC}</MESHTASTIC_TEST_TIMEOUT_SEC>
+                                <MESHTASTIC_TEST_MUTABLE_CHANNEL_INDEX>${env.MESHTASTIC_TEST_MUTABLE_CHANNEL_INDEX}</MESHTASTIC_TEST_MUTABLE_CHANNEL_INDEX>
+                                <MESHTASTIC_TEST_ENABLE_OWNER_WRITE>${env.MESHTASTIC_TEST_ENABLE_OWNER_WRITE}</MESHTASTIC_TEST_ENABLE_OWNER_WRITE>
+                            </systemPropertyVariables>
+                        </configuration>
+                        <executions>
+                            <execution>
+                                <goals>
+                                    <goal>integration-test</goal>
+                                    <goal>verify</goal>
+                                </goals>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
     
 </project>

@@ -28,3 +28,29 @@ BLE parity and full OTA integration are the major remaining items for full proto
 - API guide: `src/docs/asciidoc/index.adoc`
 - Generated Javadocs and docs are produced during Maven package phases (see `pom.xml` plugin config)
 
+## Hardware Integration Tests (Opt-In)
+
+Real-radio tests are available behind the Maven profile `hardware-it` and are not executed during normal `test`.
+
+Required environment variable:
+- `MESHTASTIC_TEST_PORT` (example: `/dev/cu.usbmodem80B54ED11F101`)
+
+Optional environment variables:
+- `MESHTASTIC_TEST_TIMEOUT_SEC` (default: `45`)
+- `MESHTASTIC_TEST_MUTABLE_CHANNEL_INDEX` (default: `2`, should be an active non-primary slot)
+- `MESHTASTIC_TEST_ENABLE_OWNER_WRITE` (default: `false`; enables reversible owner write/readback/restore test)
+
+Run:
+
+```bash
+MESHTASTIC_TEST_PORT=/dev/cu.usbmodem80B54ED11F101 \
+mvn -Phardware-it verify
+```
+
+Hardware IT currently validates:
+- startup to `READY`
+- metadata/owner/channel read paths
+- core config read matrix
+- module config read matrix (capability-tolerant)
+- reversible channel write/readback/restore
+- optional reversible owner write/readback/restore (explicitly enabled)

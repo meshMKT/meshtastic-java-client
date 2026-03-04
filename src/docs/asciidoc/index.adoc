@@ -298,6 +298,38 @@ Client --> Job: futures complete/fail
 @enduml
 ----
 
+== Hardware Integration Tests
+
+Hardware-in-the-loop tests are intentionally opt-in and isolated from default unit tests.
+
+- Maven profile: `hardware-it`
+- Test class: `RealRadioAdminIT`
+- Required environment variable: `MESHTASTIC_TEST_PORT`
+- Optional environment variables:
+  - `MESHTASTIC_TEST_TIMEOUT_SEC` (default `45`)
+  - `MESHTASTIC_TEST_MUTABLE_CHANNEL_INDEX` (default `2`)
+  - `MESHTASTIC_TEST_ENABLE_OWNER_WRITE` (default `false`)
+
+[source,bash]
+----
+MESHTASTIC_TEST_PORT=/dev/cu.usbmodem80B54ED11F101 \
+mvn -Phardware-it verify
+----
+
+[NOTE]
+====
+The reversible write test restores original channel state after verification and should target an active non-primary channel slot.
+====
+
+Coverage in current hardware integration tests:
+
+- startup readiness (`READY`)
+- metadata/owner/likely-channel read path
+- core config read matrix
+- module config read matrix (capability tolerant)
+- reversible channel write/readback/restore
+- optional reversible owner write/readback/restore (enabled with `MESHTASTIC_TEST_ENABLE_OWNER_WRITE=true`)
+
 == Architecture Diagram
 
 [plantuml,client-startup-flow,svg]

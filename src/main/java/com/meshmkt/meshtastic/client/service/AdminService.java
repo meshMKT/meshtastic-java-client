@@ -1,6 +1,7 @@
 package com.meshmkt.meshtastic.client.service;
 
 import com.google.protobuf.ByteString;
+import com.meshmkt.meshtastic.client.MeshConstants;
 import com.meshmkt.meshtastic.client.MeshUtils;
 import com.meshmkt.meshtastic.client.ProtocolConstraints;
 import com.meshmkt.meshtastic.client.model.RadioModel;
@@ -1557,7 +1558,7 @@ public class AdminService {
      * @param nodeId local node id.
      */
     public void ingestMyInfo(int nodeId) {
-        if (nodeId > 0) {
+        if (isKnownNodeId(nodeId)) {
             radioModel.setNodeId(nodeId);
         }
     }
@@ -1574,7 +1575,7 @@ public class AdminService {
         if (info.hasUser()) {
             applyOwner(info.getUser());
         }
-        if (info.getNum() > 0) {
+        if (isKnownNodeId(info.getNum())) {
             radioModel.setNodeId(info.getNum());
         }
     }
@@ -1587,7 +1588,26 @@ public class AdminService {
     private void applyOwner(User owner) {
         if (owner != null) {
             radioModel.setOwner(owner);
+            // Some firmware paths provide owner identity before/without my_info.
+            // Mirror owner.id into local node id cache so callers can resolve self id reliably.
+            String ownerId = owner.getId();
+            if (ownerId != null && !ownerId.isBlank()) {
+                int parsedId = MeshUtils.parseId(ownerId);
+                if (isKnownNodeId(parsedId)) {
+                    radioModel.setNodeId(parsedId);
+                }
+            }
         }
+    }
+
+    /**
+     * Returns whether node id is a usable concrete node identifier.
+     *
+     * @param nodeId node id candidate.
+     * @return {@code true} when id is neither unknown nor broadcast.
+     */
+    private boolean isKnownNodeId(int nodeId) {
+        return nodeId != MeshConstants.ID_UNKNOWN && nodeId != MeshConstants.ID_BROADCAST;
     }
 
     /**
