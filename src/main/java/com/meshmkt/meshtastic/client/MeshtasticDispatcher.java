@@ -42,6 +42,11 @@ public class MeshtasticDispatcher {
         }
     }
 
+    /**
+     * Dispatches one inbound message to the first matching registered handler.
+     *
+     * @param message inbound message.
+     */
     private void dispatch(MeshProtos.FromRadio message) {
         for (MeshtasticMessageHandler handler : handlers) {
             try {

@@ -48,6 +48,11 @@ public class CommandLineOtaUploadStrategy implements OtaUploadStrategy {
         return CompletableFuture.runAsync(() -> runCommand(context));
     }
 
+    /**
+     * Runs the configured external command-line uploader for one OTA request.
+     *
+     * @param context OTA upload context.
+     */
     private void runCommand(OtaUploadContext context) {
         List<String> resolved = resolveTemplate(context);
         ProcessBuilder builder = new ProcessBuilder(resolved);
@@ -82,6 +87,12 @@ public class CommandLineOtaUploadStrategy implements OtaUploadStrategy {
         }
     }
 
+    /**
+     * Resolves uploader command template placeholders for current OTA context.
+     *
+     * @param context OTA upload context.
+     * @return fully resolved command tokens.
+     */
     private List<String> resolveTemplate(OtaUploadContext context) {
         String firmware = context.firmwarePath().toAbsolutePath().toString();
         String hashHex = toHex(context.firmwareSha256());
@@ -97,6 +108,12 @@ public class CommandLineOtaUploadStrategy implements OtaUploadStrategy {
         return resolved;
     }
 
+    /**
+     * Converts a byte array to lowercase hexadecimal text.
+     *
+     * @param bytes byte array to convert.
+     * @return hexadecimal string.
+     */
     private static String toHex(byte[] bytes) {
         StringBuilder sb = new StringBuilder(bytes.length * 2);
         for (byte b : bytes) {

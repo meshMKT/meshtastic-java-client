@@ -31,6 +31,10 @@ public class BleTransport extends StreamTransport {
         this.backend = java.util.Objects.requireNonNull(backend, "backend must not be null");
     }
 
+    /**
+     * Establishes the underlying transport connection.
+     *
+     */
     @Override
     protected void connect() throws Exception {
         backend.setReceiveListener(data -> {
@@ -43,11 +47,20 @@ public class BleTransport extends StreamTransport {
         backend.connect(config);
     }
 
+    /**
+     * Closes the underlying transport connection and releases resources.
+     *
+     */
     @Override
     protected void disconnect() throws Exception {
         backend.disconnect();
     }
 
+    /**
+     * Writes framed outbound bytes to the physical transport layer.
+     *
+     * @param framedData framed outbound bytes ready for physical write.
+     */
     @Override
     protected void writeToPhysicalLayer(byte[] framedData) throws IOException {
         try {
@@ -57,11 +70,21 @@ public class BleTransport extends StreamTransport {
         }
     }
 
+    /**
+     * Reports whether the transport currently has an active connection.
+     *
+     * @return {@code true} when backend link state is connected.
+     */
     @Override
     public boolean isConnected() {
         return backend.isConnected();
     }
 
+    /**
+     * Handles transport failures and triggers reconnect flow when configured.
+     *
+     * @param e error or event payload, depending on callback context.
+     */
     @Override
     protected void handleTransportError(Exception e) {
         try {

@@ -92,6 +92,11 @@ public class SerialXmodemUploadStrategy implements OtaUploadStrategy {
         return CompletableFuture.runAsync(() -> runUpload(context));
     }
 
+    /**
+     * Runs one XMODEM upload session for the provided OTA context.
+     *
+     * @param context OTA upload context.
+     */
     private void runUpload(OtaUploadContext context) {
         byte[] firmware = readFirmware(context);
         long totalBytes = firmware.length;
@@ -141,6 +146,12 @@ public class SerialXmodemUploadStrategy implements OtaUploadStrategy {
         }
     }
 
+    /**
+     * Reads firmware bytes from the OTA request path.
+     *
+     * @param context OTA upload context.
+     * @return firmware file bytes.
+     */
     private static byte[] readFirmware(OtaUploadContext context) {
         try {
             return Files.readAllBytes(context.firmwarePath());
@@ -149,12 +160,22 @@ public class SerialXmodemUploadStrategy implements OtaUploadStrategy {
         }
     }
 
+    /**
+     * Throws cancellation when the OTA context or session has been cancelled.
+     *
+     * @param context OTA upload context.
+     */
     private static void ensureNotCancelled(OtaUploadContext context) {
         if (context.isCancelled()) {
             throw new java.util.concurrent.CancellationException("XMODEM upload cancelled");
         }
     }
 
+    /**
+     * Sends one XMODEM frame through the configured duplex channel.
+     *
+     * @param frame XMODEM frame to send.
+     */
     private void send(XModem frame) {
         try {
             duplex.send(frame).get();
@@ -166,6 +187,11 @@ public class SerialXmodemUploadStrategy implements OtaUploadStrategy {
         }
     }
 
+    /**
+     * Waits for the next XMODEM control signal from the radio.
+     *
+     * @return next control symbol.
+     */
     private XModem.Control awaitControl() {
         try {
             return duplex.nextControl(controlTimeout).get();
@@ -177,6 +203,13 @@ public class SerialXmodemUploadStrategy implements OtaUploadStrategy {
         }
     }
 
+    /**
+     * Builds one XMODEM data frame including sequence and CRC metadata.
+     *
+     * @param seq XMODEM sequence number.
+     * @param block XMODEM payload block.
+     * @return encoded XMODEM frame.
+     */
     private static XModem buildDataFrame(int seq, byte[] block) {
         int crc = crc16Ccitt(block);
         return XModem.newBuilder()
@@ -187,6 +220,12 @@ public class SerialXmodemUploadStrategy implements OtaUploadStrategy {
                 .build();
     }
 
+    /**
+     * Computes CRC-16/CCITT checksum bytes for the provided payload.
+     *
+     * @param data payload bytes for checksum calculation.
+     * @return CRC-16 value.
+     */
     private static int crc16Ccitt(byte[] data) {
         int crc = 0x0000;
         for (byte b : data) {

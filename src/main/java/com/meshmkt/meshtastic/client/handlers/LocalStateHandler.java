@@ -39,13 +39,13 @@ public class LocalStateHandler extends BaseMeshHandler {
         this.adminService = adminService;
     }
 
-    @Override
     /**
      * Matches only local, non-packet state variants that originate from the attached radio link.
      *
      * @param message inbound {@link MeshProtos.FromRadio} message.
      * @return {@code true} when this message carries local bootstrap/snapshot state.
      */
+    @Override
     public boolean canHandle(MeshProtos.FromRadio message) {
         return message.hasMyInfo()
                 || message.hasConfig()
@@ -54,7 +54,6 @@ public class LocalStateHandler extends BaseMeshHandler {
                 || message.hasMetadata();
     }
 
-    @Override
     /**
      * Applies local state updates into the node database and admin model cache.
      * <p>
@@ -65,6 +64,7 @@ public class LocalStateHandler extends BaseMeshHandler {
      * @param message local non-packet message from the radio link.
      * @return always {@code true} once message classes for this handler are processed.
      */
+    @Override
     protected boolean handleNonPacketMessage(MeshProtos.FromRadio message) {
         // my_info establishes the local node identity and should be reflected immediately in the DB.
         if (message.hasMyInfo()) {
@@ -120,7 +120,6 @@ public class LocalStateHandler extends BaseMeshHandler {
         return true;
     }
 
-    @Override
     /**
      * This handler is local-state only and does not process mesh packets.
      *
@@ -128,6 +127,7 @@ public class LocalStateHandler extends BaseMeshHandler {
      * @param ctx packet context (ignored).
      * @return always {@code false}.
      */
+    @Override
     protected boolean handlePacket(MeshProtos.MeshPacket packet, PacketContext ctx) {
         return false;
     }

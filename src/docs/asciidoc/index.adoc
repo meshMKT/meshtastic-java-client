@@ -16,8 +16,86 @@ Version: {project-version}
 - strongly-typed event dispatching
 - node database + snapshot status model
 - admin/config/channel APIs through `AdminService`
+- utility request APIs (fire-and-forget and payload-await)
+- OTA orchestration framework with pluggable upload strategies
+- BLE transport SPI for platform-specific BLE backends
 
 Javadocs are generated at link:{javadocs-url}[API Javadocs].
+
+== Current Scope And Gaps
+
+This project is production-focused for serial/TCP Meshtastic clients.
+
+- Production-ready now:
+  - Serial and TCP transports
+  - Event-driven client model
+  - Admin/config/channel refresh + write APIs
+  - Request lifecycle + startup lifecycle signaling
+
+- Pending major items:
+  - bundled production BLE backend (BLE SPI exists)
+  - full production OTA flashing integration (framework exists)
+
+[NOTE]
+====
+For first public release positioning, this library is best described as serial/TCP-first, with BLE and OTA remaining as the largest feature-completeness items.
+====
+
+== Feature Map
+
+[cols="1,1,3",options="header"]
+|===
+| Capability
+| Primary API
+| Notes
+
+| Transport lifecycle
+| `MeshtasticClient.connect()/disconnect()/shutdown()`
+| Serial/TCP are production-ready in core; BLE is SPI-backed.
+
+| Startup lifecycle
+| `StartupState` + `MeshtasticEventListener.onStartupStateChanged(...)`
+| State transitions: `DISCONNECTED -> SYNC_LOCAL_CONFIG -> SYNC_MESH_CONFIG -> READY`.
+
+| Mesh event stream
+| `MeshtasticEventListener`
+| Text, position, telemetry, node discovery, message status, request lifecycle, admin model updates.
+
+| Admin/config writes
+| `AdminService`
+| Accepted-only and verify-applied variants + structured `AdminWriteResult`.
+
+| Snapshot model
+| `AdminService.getSnapshot()` + typed getters
+| Instant read path for UI rendering before refresh.
+
+| Utility requests
+| `requestNodeInfo*`, `requestPosition*`, `requestTelemetry*`
+| Choose request-level completion or payload-level completion.
+
+| OTA orchestration
+| `OtaService`
+| Hash + OTA mode request + pluggable upload strategy.
+|===
+
+== API Catalog (By Class)
+
+Use this quick map when building app-level abstractions:
+
+- `MeshtasticClient`
+  Handles transport lifecycle, startup sync, text send helpers, utility node-info/position/telemetry requests, and event fan-out.
+- `MeshtasticEventListener`
+  Unified callback surface for startup state, request lifecycle, admin model updates, and mesh data events.
+- `AdminService`
+  Typed refresh/read/write operations for owner, metadata, channels, config sections, and module configs.
+- `ProtocolConstraints`
+  Pre-validation helpers for channel index/name/PSK and non-throwing validation issues for form UIs.
+- `NodeDatabase` + `MeshNode`
+  Snapshot store and node freshness/status modeling (`LIVE/IDLE/CACHED/OFFLINE`).
+- `OtaService`
+  OTA orchestration that composes admin OTA-mode request with pluggable upload strategies.
+- `SerialTransport` / `TcpTransport` / `BleTransport`
+  Physical transport adapters with framing, reconnect behavior, and pacing controls.
 
 == Quick Start
 
@@ -50,7 +128,7 @@ Use startup state events to drive UI readiness and progress indicators.
 
 [source,java]
 ----
-client.addListener(new MeshtasticEventListener() {
+client.addEventListener(new MeshtasticEventListener() {
     @Override
     public void onStartupStateChanged(StartupState previousState, StartupState newState) {
         switch (newState) {
@@ -66,6 +144,159 @@ client.connect(new SerialTransport(cfg));
 ----
 
 For tab gating, use `client.isReady()` and keep settings/message actions disabled until `READY`.
+
+== UI Client Workflow
+
+This workflow is recommended for desktop/mobile UI applications.
+
+1. Create `NodeDatabase` and `MeshtasticClient`.
+2. Register one event listener implementation that forwards to your UI state/store.
+3. Connect transport.
+4. Gate settings/actions until `StartupState.READY`.
+5. Render settings pages from snapshots first, then trigger section-specific refresh.
+
+[source,java]
+----
+NodeDatabase db = new InMemoryNodeDatabase();
+MeshtasticClient client = new MeshtasticClient(db);
+AdminService admin = client.getAdminService();
+
+client.addEventListener(new MeshtasticEventListener() {
+    @Override
+    public void onStartupStateChanged(StartupState previous, StartupState next) {
+        switch (next) {
+            case SYNC_LOCAL_CONFIG -> uiStore.setStatus("Reading local radio...");
+            case SYNC_MESH_CONFIG -> uiStore.setStatus("Reading mesh state...");
+            case READY -> uiStore.setStatus("Ready");
+            case DISCONNECTED -> uiStore.setStatus("Disconnected");
+        }
+    }
+
+    @Override
+    public void onNodeDiscovery(NodeDiscoveryEvent event) {
+        uiStore.upsertNode(event.getNode());
+    }
+
+    @Override
+    public void onTelemetryUpdate(TelemetryUpdateEvent event) {
+        uiStore.updateTelemetry(event.getNodeId(), event.getTelemetry());
+    }
+
+    @Override
+    public void onPositionUpdate(PositionUpdateEvent event) {
+        uiStore.updatePosition(event.getNodeId(), event.getPosition());
+    }
+
+    @Override
+    public void onAdminModelUpdate(AdminModelUpdateEvent event) {
+        // Keep settings pages in sync while app is connected.
+        uiStore.markAdminSectionDirty(event.getSection(), event.getChannelIndex());
+    }
+
+    @Override
+    public void onRequestLifecycleUpdate(RequestLifecycleEvent event) {
+        uiStore.logRequest(
+                event.getStage() + " id=" + event.getRequestId()
+                        + " port=" + event.getPort()
+                        + " msg=" + event.getMessage()
+        );
+    }
+});
+
+client.connect(new SerialTransport(cfg));
+----
+
+[plantuml,ui-workflow,svg]
+----
+@startuml
+title UI Workflow (Event-Driven)
+
+actor UI
+participant "MeshtasticClient" as Client
+participant "Event Listener" as Listener
+participant "AdminService" as Admin
+
+UI -> Client: addEventListener(listener)
+UI -> Client: connect(transport)
+Client --> Listener: onStartupStateChanged(..., SYNC_LOCAL_CONFIG)
+Client --> Listener: onStartupStateChanged(..., SYNC_MESH_CONFIG)
+Client --> Listener: onStartupStateChanged(..., READY)
+
+UI -> Admin: getSnapshot()/typed snapshot getters
+Admin --> UI: immediate cached model
+
+UI -> Admin: refresh section on page open
+Admin --> Listener: onAdminModelUpdate(...)
+Listener --> UI: update store/view model
+@enduml
+----
+
+== Headless Client Workflow
+
+This workflow is recommended for bots, services, and integrations without a GUI.
+
+1. Connect client with the target transport.
+2. Await `READY` before operational tasks.
+3. Use listeners for streaming behavior (telemetry, text, node updates).
+4. Use scheduled jobs for periodic refresh/write logic.
+5. Shutdown cleanly with `client.shutdown()`.
+
+[source,java]
+----
+NodeDatabase db = new InMemoryNodeDatabase();
+MeshtasticClient client = new MeshtasticClient(db);
+AdminService admin = client.getAdminService();
+
+CountDownLatch readyLatch = new CountDownLatch(1);
+
+client.addEventListener(new MeshtasticEventListener() {
+    @Override
+    public void onStartupStateChanged(StartupState previous, StartupState next) {
+        if (next == StartupState.READY) {
+            readyLatch.countDown();
+        }
+    }
+
+    @Override
+    public void onTextMessage(ChatMessageEvent event) {
+        botEngine.handleInboundMessage(event);
+    }
+});
+
+client.connect(new SerialTransport(cfg));
+readyLatch.await(45, TimeUnit.SECONDS);
+
+// Periodic task: refresh security + mqtt every 10 minutes.
+ScheduledExecutorService jobs = Executors.newSingleThreadScheduledExecutor();
+jobs.scheduleAtFixedRate(() ->
+        admin.refreshSecurityConfig()
+             .thenCompose(cfgSec -> admin.refreshMqttConfig())
+             .exceptionally(ex -> {
+                 log.warn("Periodic refresh failed: {}", ex.getMessage());
+                 return null;
+             }),
+        0, 10, TimeUnit.MINUTES
+);
+----
+
+[plantuml,headless-workflow,svg]
+----
+@startuml
+title Headless Workflow (Service/Bot)
+
+participant "Service Main" as Main
+participant "MeshtasticClient" as Client
+participant "Listener" as Listener
+participant "Scheduler Job" as Job
+
+Main -> Client: connect(transport)
+Client --> Listener: startup + mesh events
+Listener --> Main: domain actions
+Main -> Job: schedule periodic tasks
+Job -> Client: request/refresh/write APIs
+Client --> Job: futures complete/fail
+@enduml
+----
 
 == Architecture Diagram
 
@@ -178,6 +409,33 @@ client.requestPositionAwaitPayload(nodeId);
 client.requestTelemetryAwaitPayload(nodeId);
 ----
 
+=== Payload-Await with Snapshot Fallback
+
+When firmware/device timing is inconsistent, use `...AwaitPayloadOrSnapshot(...)` helpers.
+These complete with latest node snapshot when a live payload is not observed before timeout.
+
+[source,java]
+----
+client.requestNodeInfoAwaitPayloadOrSnapshot(nodeId, Duration.ofSeconds(15));
+client.requestPositionAwaitPayloadOrSnapshot(nodeId, Duration.ofSeconds(15));
+client.requestTelemetryAwaitPayloadOrSnapshot(nodeId, Duration.ofSeconds(15));
+----
+
+=== Messaging APIs
+
+Use convenience methods on `MeshtasticClient` for common text workflows:
+
+[source,java]
+----
+// Direct message to node over primary channel.
+client.sendDirectText(targetNodeId, "hello from java");
+
+// Channel message (broadcast to channel index).
+client.sendChannelText(0, "channel announcement");
+----
+
+Both methods automatically apply chunking for long payloads.
+
 [plantuml,request-correlation-lifecycle,svg]
 ----
 @startuml
@@ -258,16 +516,22 @@ admin.refreshSecurityConfig();  // security only
 
 == Admin Write Semantics
 
-Admin write methods use explicit completion semantics:
+Canonical write entry points:
 
-- `setChannel(index, channel)`: accepted + verified-applied by readback
-- `setChannel(index, channel, false)`: accepted-only
-- `setConfig(config)`: accepted-only
-- `setConfigAndVerify(config)`: accepted + verified-applied
-- `setModuleConfig(moduleConfig)`: accepted-only
-- `setModuleConfigAndVerify(moduleConfig)`: accepted + verified-applied
-- `setOwner(id, longName, shortName)`: accepted-only
-- `setOwnerAndVerify(id, longName, shortName)`: accepted + verified-applied
+- `setChannelResult(index, channel, verifyApplied)`
+- `setConfigResult(config, verifyApplied)`
+- `setModuleConfigResult(moduleConfig, verifyApplied)`
+- `setOwnerResult(targetNodeId, longName, shortName, verifyApplied)`
+
+Boolean-oriented variants are also available when structured status is not needed:
+
+- `setChannel(index, channel, verifyApplied)`
+- `setConfig(config, verifyApplied)`
+- `setModuleConfig(moduleConfig, verifyApplied)`
+- `setOwner(targetNodeId, longName, shortName, verifyApplied)`
+
+Accepted-only and verified semantics are expressed through the explicit `verifyApplied` boolean
+or structured `AdminWriteResult` status.
 
 === Eventual-Consistency Verification Policy
 
@@ -363,6 +627,26 @@ end
 
 == Common Admin Operations
 
+=== Protocol Constraints (Pre-validation)
+
+Use `ProtocolConstraints` to validate user input before sending requests.
+This is recommended for settings UIs to fail fast and avoid avoidable radio round trips.
+
+[source,java]
+----
+// Throwing validation.
+ProtocolConstraints.validateChannelIndex(slot);
+ProtocolConstraints.validateChannelName(channelName);
+ProtocolConstraints.validateChannelPsk(pskByteString);
+
+// Non-throwing validation for form-level error display.
+List<ProtocolConstraints.ValidationIssue> issues =
+        ProtocolConstraints.validateChannelIssues(channelPayload);
+if (!issues.isEmpty()) {
+    renderValidationErrors(issues);
+}
+----
+
 === Channel Helpers
 
 [source,java]
@@ -382,14 +666,14 @@ admin.setPrimaryChannelPassword("primary-secret");
 Config.SecurityConfig security = Config.SecurityConfig.newBuilder()
         .setAdminChannelEnabled(true)
         .build();
-admin.setSecurityConfigAndVerify(security);
+admin.setSecurityConfig(security, true);
 
 ModuleConfig.MQTTConfig mqtt = ModuleConfig.MQTTConfig.newBuilder()
         .setEnabled(true)
         .setAddress("mqtt.example.com")
         .setUsername("mesh-user")
         .build();
-admin.setMqttConfigAndVerify(mqtt);
+admin.setMqttConfig(mqtt, true);
 ----
 
 === Structured Result Variants
@@ -469,7 +753,7 @@ Config.SecurityConfig security = Config.SecurityConfig.newBuilder()
         .setAdminChannelEnabled(true)
         .build();
 
-admin.setSecurityConfigAndVerify(security)
+admin.setSecurityConfig(security, true)
      .thenAccept(applied -> {
          if (applied) showSuccess("Security settings applied.");
          else showWarning("Security settings accepted but not verified.");
@@ -509,7 +793,7 @@ ModuleConfig.MQTTConfig mqtt = ModuleConfig.MQTTConfig.newBuilder()
         // set password/tls/root fields as required by your deployment
         .build();
 
-admin.setMqttConfigAndVerify(mqtt).thenAccept(applied -> {
+admin.setMqttConfig(mqtt, true).thenAccept(applied -> {
     if (applied) {
         showSuccess("MQTT settings applied.");
     } else {

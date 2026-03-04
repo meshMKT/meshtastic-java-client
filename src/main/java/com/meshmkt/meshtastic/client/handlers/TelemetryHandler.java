@@ -26,12 +26,25 @@ public class TelemetryHandler extends BaseMeshHandler {
         super(nodeDb, dispatcher);
     }
 
+    /**
+     * Determines whether this handler can process the incoming message.
+     *
+     * @param message inbound message.
+     * @return {@code true} when this handler should process the message.
+     */
     @Override
     public boolean canHandle(MeshProtos.FromRadio message) {
         return message.hasPacket() && message.getPacket().hasDecoded()
                 && message.getPacket().getDecoded().getPortnum() == PortNum.TELEMETRY_APP;
     }
 
+    /**
+     * Processes one decoded mesh packet for this handler.
+     *
+     * @param packet decoded mesh packet.
+     * @param ctx packet context metadata.
+     * @return {@code true} when packet processing is complete for this handler.
+     */
     @Override
     protected boolean handlePacket(MeshProtos.MeshPacket packet, PacketContext ctx) {
         try {

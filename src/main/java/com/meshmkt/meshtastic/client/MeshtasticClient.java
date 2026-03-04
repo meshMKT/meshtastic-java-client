@@ -143,8 +143,9 @@ public class MeshtasticClient implements AdminRequestGateway {
     }
 
     /**
+     * Creates a new Meshtastic client using the provided node database.
      *
-     * @param database
+     * @param database node database for local/mesh state snapshots.
      */
     public MeshtasticClient(NodeDatabase database) {
         this.nodeDb = database;
@@ -174,6 +175,11 @@ public class MeshtasticClient implements AdminRequestGateway {
         initializeHandlers();
     }
 
+    /**
+     * Returns the admin service facade for settings operations.
+     *
+     * @return admin service instance for configuration and control operations.
+     */
     public AdminService getAdminService() {
         return adminService;
     }
@@ -263,6 +269,11 @@ public class MeshtasticClient implements AdminRequestGateway {
         return startupState == StartupState.READY;
     }
     
+    /**
+     * Returns the current local node id from the node database.
+     *
+     * @return current self node id, or {@code -1} when unavailable.
+     */
     @Override
     public int getSelfNodeId() {
         if (nodeDb == null) {
@@ -272,6 +283,10 @@ public class MeshtasticClient implements AdminRequestGateway {
         return nodeDb.getSelfNodeId();
     }
 
+    /**
+     * Registers built-in protocol handlers with the dispatcher.
+     *
+     */
     private void initializeHandlers() {
         dispatcher.registerHandler(new AdminHandler(nodeDb, internalDispatcher, adminService));
         dispatcher.registerHandler(new LocalStateHandler(nodeDb, internalDispatcher, adminService));
@@ -298,23 +313,22 @@ public class MeshtasticClient implements AdminRequestGateway {
     }
 
     /**
-     * Sends a Private Message (DM). DMs almost always go over the Primary
-     * channel (0).
+     * Sends a direct message (DM) to one node over channel index {@code 0}.
      *
-     * @param nodeId
-     * @param text
-     * @return
+     * @param nodeId destination node id.
+     * @param text message text (auto-chunked when needed).
+     * @return future completed when all message chunks are correlated as accepted.
      */
     public CompletableFuture<Boolean> sendDirectText(int nodeId, String text) {
         return sendText(nodeId, 0, text);
     }
 
     /**
-     * Broadcasts to a specific channel.
+     * Sends a channel broadcast message.
      *
-     * @param channelIndex
-     * @param text
-     * @return
+     * @param channelIndex destination channel index.
+     * @param text message text (auto-chunked when needed).
+     * @return future completed when all message chunks are correlated as accepted.
      */
     public CompletableFuture<Boolean> sendChannelText(int channelIndex, String text) {
         return sendText(MeshConstants.ID_BROADCAST, channelIndex, text);
@@ -374,11 +388,11 @@ public class MeshtasticClient implements AdminRequestGateway {
     // Core Engine
     // -------------------------------------------------------------------------
     /**
-     * Specialized version of executeRequest for Admin operations.
+     * Executes an admin request using default correlation mode inferred from payload type.
      *
-     * * @param destinationId The nodeId (or 0xFFFFFFFF for local)
-     * @param adminMsg The specific AdminMessage (get_config, set_owner, etc)
-     * @return A future containing the MeshPacket response from the radio
+     * @param destinationId destination node id.
+     * @param adminMsg admin payload to send.
+     * @return future containing correlated terminal response packet.
      */
     public CompletableFuture<MeshPacket> executeAdminRequest(int destinationId, AdminMessage adminMsg) {
         return executeAdminRequest(destinationId, adminMsg, isAdminReadRequest(adminMsg));
@@ -417,6 +431,12 @@ public class MeshtasticClient implements AdminRequestGateway {
                 && adminMsg.getPayloadVariantCase().name().startsWith("GET_");
     }
 
+    /**
+     * Builds, sends, and correlates one outbound mesh request.
+     *
+     * @param request outbound request payload.
+     * @return future resolved with correlated response packet or terminal failure.
+     */
     private CompletableFuture<MeshPacket> executeRequest(MeshRequest request) {
         CompletableFuture<MeshPacket> future = new CompletableFuture<>();
         final long submittedAtNanos = System.nanoTime();
@@ -543,6 +563,10 @@ public class MeshtasticClient implements AdminRequestGateway {
         return future;
     }
 
+    /**
+     * Waits for startup sync barrier completion before sending runtime requests.
+     *
+     */
     private void awaitStartupSyncBarrier() {
         CompletableFuture<Void> barrier = startupSyncBarrier;
         if (barrier != null && !barrier.isDone()) {
@@ -643,6 +667,11 @@ public class MeshtasticClient implements AdminRequestGateway {
     // -------------------------------------------------------------------------
     // Pipeline & Lifecycle
     // -------------------------------------------------------------------------
+    /**
+     * Wires transport callbacks into decode, correlation, and dispatch stages.
+     *
+     * @param t active transport instance.
+     */
     private void setupPipeline(MeshtasticTransport t) {
         t.addParsedPacketConsumer(data -> {
             try {
@@ -658,6 +687,10 @@ public class MeshtasticClient implements AdminRequestGateway {
         });
 
         t.addConnectionListener(new TransportConnectionListener() {
+            /**
+             * Handles transport-connected callback state transitions.
+             *
+             */
             @Override
             public void onConnected() {
                 connected = true;
@@ -665,6 +698,10 @@ public class MeshtasticClient implements AdminRequestGateway {
                 startStartupSync();
             }
 
+            /**
+             * Handles transport-disconnected callback state transitions.
+             *
+             */
             @Override
             public void onDisconnected() {
                 connected = false;
@@ -673,6 +710,11 @@ public class MeshtasticClient implements AdminRequestGateway {
                 cancelAllPending();
             }
 
+            /**
+             * Handles transport error callback state transitions.
+             *
+             * @param err transport error cause.
+             */
             @Override
             public void onError(Throwable err) {
                 connected = false;
@@ -684,8 +726,12 @@ public class MeshtasticClient implements AdminRequestGateway {
     }
 
     /**
+     * Connects the client using the given transport.
+     * <p>
+     * Any existing transport is disconnected before the new transport is started.
+     * </p>
      *
-     * @param newTransport
+     * @param newTransport transport instance to attach and start.
      */
     public synchronized void connect(MeshtasticTransport newTransport) {
         if (transport != null) {
@@ -698,7 +744,7 @@ public class MeshtasticClient implements AdminRequestGateway {
     }
 
     /**
-     *
+     * Disconnects the active transport and resets request/startup state.
      */
     public synchronized void disconnect() {
         if (transport != null) {
@@ -712,6 +758,10 @@ public class MeshtasticClient implements AdminRequestGateway {
         cancelAllPending();
     }
 
+    /**
+     * Cancels all pending correlated requests and resets lock/sync state.
+     *
+     */
     private void cancelAllPending() {
         // 1. Clear the mapping so no late ACKs try to trigger logic
         pendingRequests.forEach((id, pending) -> {
@@ -732,12 +782,20 @@ public class MeshtasticClient implements AdminRequestGateway {
         log.info("[CLEANUP] All pending requests cancelled and radio lock reset.");
     }
 
+    /**
+     * Initializes startup sync state for a new connection cycle.
+     *
+     */
     private synchronized void primeStartupSync() {
         startupSyncPhase = 1;
         sawMyInfoInCurrentPhase = false;
         startupSyncBarrier = new CompletableFuture<>();
     }
 
+    /**
+     * Starts startup synchronization using the current phase state.
+     *
+     */
     private synchronized void startStartupSync() {
         if (startupSyncPhase == 0) {
             primeStartupSync();
@@ -745,6 +803,10 @@ public class MeshtasticClient implements AdminRequestGateway {
         sendWantConfigForCurrentPhase();
     }
 
+    /**
+     * Sends the current startup-phase want_config request and arms timeout guard.
+     *
+     */
     private synchronized void sendWantConfigForCurrentPhase() {
         currentSyncId = (startupSyncPhase == 1) ? NODELESS_WANT_CONFIG_ID : FULL_WANT_CONFIG_ID;
         final int expectedNonce = currentSyncId;
@@ -765,6 +827,11 @@ public class MeshtasticClient implements AdminRequestGateway {
         }, STARTUP_SYNC_TIMEOUT_SECONDS, TimeUnit.SECONDS);
     }
 
+    /**
+     * Processes startup sync markers from inbound local radio messages.
+     *
+     * @param fromRadio inbound local radio envelope.
+     */
     private synchronized void processStartupSyncSignals(FromRadio fromRadio) {
         if (startupSyncPhase == 0) {
             return;
@@ -809,6 +876,10 @@ public class MeshtasticClient implements AdminRequestGateway {
         }
     }
 
+    /**
+     * Resets startup synchronization state and completes barrier exceptionally when needed.
+     *
+     */
     private synchronized void resetStartupSync() {
         startupSyncPhase = 0;
         sawMyInfoInCurrentPhase = false;
@@ -820,6 +891,11 @@ public class MeshtasticClient implements AdminRequestGateway {
         }
     }
 
+    /**
+     * Handles radio reboot markers and triggers guarded resynchronization.
+     *
+     * @param fromRadio inbound local radio envelope.
+     */
     private void handleRebootSignal(FromRadio fromRadio) {
         // Only react to explicit reboot markers.
         if (!fromRadio.hasRebooted()) {
@@ -857,6 +933,11 @@ public class MeshtasticClient implements AdminRequestGateway {
         }
     }
 
+    /**
+     * Writes a top-level ToRadio envelope through the active transport.
+     *
+     * @param toRadio outbound local radio envelope.
+     */
     private void sendToRadio(ToRadio toRadio) {
         if (isConnected()) {
             log.info("sendToRadio - Sending ToRadio: {}", toRadio);
@@ -919,8 +1000,9 @@ public class MeshtasticClient implements AdminRequestGateway {
     }
 
     /**
+     * Returns current link availability.
      *
-     * @return
+     * @return {@code true} when client state and underlying transport both report connected.
      */
     public boolean isConnected() {
         return connected && transport != null && transport.isConnected();
@@ -949,7 +1031,7 @@ public class MeshtasticClient implements AdminRequestGateway {
     }
 
     /**
-     *
+     * Shuts down the client and all internal executors/dispatchers.
      */
     public void shutdown() {
         disconnect();
@@ -1016,6 +1098,11 @@ public class MeshtasticClient implements AdminRequestGateway {
                 false,
                 () -> requestNodeInfo(nodeId),
                 completion -> new MeshtasticEventListener() {
+                    /**
+                     * Dispatches node-discovery events to registered listeners.
+                     *
+                     * @param event event payload.
+                     */
                     @Override
                     public void onNodeDiscovery(NodeDiscoveryEvent event) {
                         if (event.getNodeId() == nodeId && event.getRawPacket() != null) {
@@ -1053,6 +1140,11 @@ public class MeshtasticClient implements AdminRequestGateway {
                 true,
                 () -> requestNodeInfo(nodeId),
                 completion -> new MeshtasticEventListener() {
+                    /**
+                     * Dispatches node-discovery events to registered listeners.
+                     *
+                     * @param event event payload.
+                     */
                     @Override
                     public void onNodeDiscovery(NodeDiscoveryEvent event) {
                         if (event.getNodeId() == nodeId && event.getRawPacket() != null) {
@@ -1112,6 +1204,11 @@ public class MeshtasticClient implements AdminRequestGateway {
                 false,
                 () -> requestPosition(nodeId),
                 completion -> new MeshtasticEventListener() {
+                    /**
+                     * Dispatches position-update events to registered listeners.
+                     *
+                     * @param event event payload.
+                     */
                     @Override
                     public void onPositionUpdate(PositionUpdateEvent event) {
                         if (event.getNodeId() == nodeId && event.getRawPacket() != null) {
@@ -1148,6 +1245,11 @@ public class MeshtasticClient implements AdminRequestGateway {
                 true,
                 () -> requestPosition(nodeId),
                 completion -> new MeshtasticEventListener() {
+                    /**
+                     * Dispatches position-update events to registered listeners.
+                     *
+                     * @param event event payload.
+                     */
                     @Override
                     public void onPositionUpdate(PositionUpdateEvent event) {
                         if (event.getNodeId() == nodeId && event.getRawPacket() != null) {
@@ -1207,6 +1309,11 @@ public class MeshtasticClient implements AdminRequestGateway {
                 false,
                 () -> requestTelemetry(nodeId),
                 completion -> new MeshtasticEventListener() {
+                    /**
+                     * Dispatches telemetry-update events to registered listeners.
+                     *
+                     * @param event event payload.
+                     */
                     @Override
                     public void onTelemetryUpdate(TelemetryUpdateEvent event) {
                         if (event.getNodeId() == nodeId && event.getRawPacket() != null) {
@@ -1243,6 +1350,11 @@ public class MeshtasticClient implements AdminRequestGateway {
                 true,
                 () -> requestTelemetry(nodeId),
                 completion -> new MeshtasticEventListener() {
+                    /**
+                     * Dispatches telemetry-update events to registered listeners.
+                     *
+                     * @param event event payload.
+                     */
                     @Override
                     public void onTelemetryUpdate(TelemetryUpdateEvent event) {
                         if (event.getNodeId() == nodeId && event.getRawPacket() != null) {
@@ -1282,26 +1394,51 @@ public class MeshtasticClient implements AdminRequestGateway {
         AtomicInteger correlatedRequestId = new AtomicInteger(0);
         MeshtasticEventListener payloadListener = listenerFactory.apply(payloadFuture);
         MeshtasticEventListener listener = new MeshtasticEventListener() {
+            /**
+             * Delegates text-message listener callback handling.
+             *
+             * @param event event payload.
+             */
             @Override
             public void onTextMessage(ChatMessageEvent event) {
                 payloadListener.onTextMessage(event);
             }
 
+            /**
+             * Dispatches position-update events to registered listeners.
+             *
+             * @param event event payload.
+             */
             @Override
             public void onPositionUpdate(PositionUpdateEvent event) {
                 payloadListener.onPositionUpdate(event);
             }
 
+            /**
+             * Dispatches telemetry-update events to registered listeners.
+             *
+             * @param event event payload.
+             */
             @Override
             public void onTelemetryUpdate(TelemetryUpdateEvent event) {
                 payloadListener.onTelemetryUpdate(event);
             }
 
+            /**
+             * Dispatches node-discovery events to registered listeners.
+             *
+             * @param event event payload.
+             */
             @Override
             public void onNodeDiscovery(NodeDiscoveryEvent event) {
                 payloadListener.onNodeDiscovery(event);
             }
 
+            /**
+             * Dispatches message-status events to registered listeners.
+             *
+             * @param event event payload.
+             */
             @Override
             public void onMessageStatusUpdate(MessageStatusEvent event) {
                 payloadListener.onMessageStatusUpdate(event);
@@ -1398,6 +1535,10 @@ public class MeshtasticClient implements AdminRequestGateway {
         );
     }
 
+    /**
+     * Starts periodic heartbeat scheduling when startup is ready.
+     *
+     */
     private synchronized void startHeartbeatTask() {
         if (heartbeatFuture != null && !heartbeatFuture.isDone()) {
             return;
@@ -1405,6 +1546,10 @@ public class MeshtasticClient implements AdminRequestGateway {
         heartbeatFuture = scheduler.scheduleAtFixedRate(this::sendHeartbeat, 10, 30, TimeUnit.SECONDS);
     }
 
+    /**
+     * Stops and clears the active heartbeat schedule.
+     *
+     */
     private synchronized void stopHeartbeatTask() {
         if (heartbeatFuture != null) {
             heartbeatFuture.cancel(true);
@@ -1412,6 +1557,10 @@ public class MeshtasticClient implements AdminRequestGateway {
         }
     }
 
+    /**
+     * Sends one heartbeat envelope to maintain local link activity.
+     *
+     */
     private void sendHeartbeat() {
         if (!isConnected()) {
             return;
@@ -1433,33 +1582,66 @@ public class MeshtasticClient implements AdminRequestGateway {
     // -------------------------------------------------------------------------
     // Events
     // -------------------------------------------------------------------------
+    /**
+     * InternalDispatcher class.
+     */
     private class InternalDispatcher implements MeshEventDispatcher {
 
+        /**
+         * Dispatches chat-message events to registered listeners.
+         *
+         * @param e error or event payload, depending on callback context.
+         */
         @Override
         public void onChatMessage(ChatMessageEvent e) {
             notifyListeners(l -> l.onTextMessage(e));
         }
 
+        /**
+         * Dispatches position-update events to registered listeners.
+         *
+         * @param e error or event payload, depending on callback context.
+         */
         @Override
         public void onPositionUpdate(PositionUpdateEvent e) {
             notifyListeners(l -> l.onPositionUpdate(e));
         }
 
+        /**
+         * Dispatches telemetry-update events to registered listeners.
+         *
+         * @param e error or event payload, depending on callback context.
+         */
         @Override
         public void onTelemetryUpdate(TelemetryUpdateEvent e) {
             notifyListeners(l -> l.onTelemetryUpdate(e));
         }
 
+        /**
+         * Dispatches node-discovery events to registered listeners.
+         *
+         * @param e error or event payload, depending on callback context.
+         */
         @Override
         public void onNodeDiscovery(NodeDiscoveryEvent e) {
             notifyListeners(l -> l.onNodeDiscovery(e));
         }
 
+        /**
+         * Dispatches message-status events to registered listeners.
+         *
+         * @param e error or event payload, depending on callback context.
+         */
         @Override
         public void onMessageStatusUpdate(MessageStatusEvent e) {
             notifyListeners(l -> l.onMessageStatusUpdate(e));
         }
 
+        /**
+         * Dispatches admin-model update events to registered listeners.
+         *
+         * @param e error or event payload, depending on callback context.
+         */
         @Override
         public void onAdminModelUpdate(AdminModelUpdateEvent e) {
             notifyListeners(l -> l.onAdminModelUpdate(e));
@@ -1485,6 +1667,11 @@ public class MeshtasticClient implements AdminRequestGateway {
         listeners.remove(l);
     }
 
+    /**
+     * Dispatches one listener action across all registered event listeners.
+     *
+     * @param action listener callback action.
+     */
     private void notifyListeners(Consumer<MeshtasticEventListener> action) {
         listenerExecutor.execute(() -> {
             for (MeshtasticEventListener l : listeners) {

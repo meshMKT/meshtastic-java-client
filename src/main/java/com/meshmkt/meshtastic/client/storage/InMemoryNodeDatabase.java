@@ -85,6 +85,11 @@ public class InMemoryNodeDatabase extends AbstractNodeDatabase {
         notifyNodeUpdated(mapToDto(id, r));
     }
 
+    /**
+     * Recomputes cached node distances relative to the provided self node id.
+     *
+     * @param selfId local node id used as distance reference.
+     */
     @Override
     protected void refreshDistancesRelativeto(int selfId) {
         nodes.forEach((id, record) -> {
@@ -102,11 +107,23 @@ public class InMemoryNodeDatabase extends AbstractNodeDatabase {
         });
     }
 
+    /**
+     * Applies user identity fields from an inbound packet context into the node record.
+     *
+     * @param u user payload from node info.
+     * @param ctx packet context metadata.
+     */
     @Override
     public void updateUser(MeshProtos.User u, PacketContext ctx) {
         updateNodeRecord(ctx, r -> r.setUser(u));
     }
 
+    /**
+     * Applies node position fields from an inbound packet context into the node record.
+     *
+     * @param pos position payload.
+     * @param ctx packet context metadata.
+     */
     @Override
     public void updatePosition(MeshProtos.Position pos, PacketContext ctx) {
         // GATEKEEPER: Don't overwrite good data with "no fix" (0,0)
@@ -126,17 +143,34 @@ public class InMemoryNodeDatabase extends AbstractNodeDatabase {
         });
     }
 
+    /**
+     * Applies RF signal metrics from packet context into the node record.
+     *
+     * @param ctx packet context metadata.
+     */
     @Override
     public void updateSignal(PacketContext ctx) {
         updateNodeRecord(ctx, r -> {
             /* metadata updated in updateNodeRecord */ });
     }
 
+    /**
+     * Applies device telemetry metrics into the node record.
+     *
+     * @param m device metrics payload.
+     * @param ctx packet context metadata.
+     */
     @Override
     public void updateMetrics(TelemetryProtos.DeviceMetrics m, PacketContext ctx) {
         updateNodeRecord(ctx, r -> r.setMetrics(m));
     }
 
+    /**
+     * Applies environment telemetry metrics into the node record.
+     *
+     * @param e error or event payload, depending on callback context.
+     * @param ctx packet context metadata.
+     */
     @Override
     public void updateEnvMetrics(TelemetryProtos.EnvironmentMetrics e, PacketContext ctx) {
         updateNodeRecord(ctx, r -> r.setEnvMetrics(e));

@@ -3,9 +3,10 @@ package com.meshmkt.meshtastic.client.transport;
 import java.util.function.Consumer;
 
 /**
- * <h2>Meshtastic Transport Interface</h2>
+ * Common transport contract for Meshtastic link implementations.
  * <p>
- * The common contract for all communication methods (Serial, TCP, BLE).
+ * Implementations are responsible for physical connectivity (for example serial, TCP, BLE)
+ * while the client layer handles protocol orchestration and request correlation.
  * </p>
  */
 public interface MeshtasticTransport {
@@ -22,34 +23,36 @@ public interface MeshtasticTransport {
 
     /**
      * Sends a raw Protobuf payload to the radio.
-     * @param data
+     *
+     * @param data serialized protobuf payload bytes.
      */
     void write(byte[] data);
 
     /**
-     * Returns true if the physical link is currently active.
-     * @return 
+     * Returns whether the physical link is currently active.
+     *
+     * @return {@code true} when connected.
      */
     boolean isConnected();
 
     /**
-     * * Registers a callback for fully parsed (deframed) packets.
+     * Registers a callback for fully parsed (deframed) packets.
      *
-     * @param consumer A callback receiving raw Protobuf bytes.
+     * @param consumer callback receiving parsed protobuf payload bytes.
      */
     void addParsedPacketConsumer(Consumer<byte[]> consumer);
 
     /**
-     * * Registers a listener for connectivity state changes.
+     * Registers a listener for connectivity state changes.
      *
-     * @param listener The listener to be notified of connect/disconnect events.
+     * @param listener listener notified of connect/disconnect/error events.
      */
     void addConnectionListener(TransportConnectionListener listener);
 
     /**
-     * * Removes a previously registered connection listener.
+     * Removes a previously registered connection listener.
      *
-     * @param listener The listener to remove.
+     * @param listener listener to remove.
      */
     void removeConnectionListener(TransportConnectionListener listener);
 }

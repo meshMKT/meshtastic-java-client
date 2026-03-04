@@ -37,6 +37,10 @@ public class TcpTransport extends StreamTransport {
         setOutboundPacingDelay(config.getOutboundPacingDelayMs());
     }
 
+    /**
+     * Establishes the underlying transport connection.
+     *
+     */
     @Override
     protected void connect() throws Exception {
         attemptConnection();
@@ -95,6 +99,11 @@ public class TcpTransport extends StreamTransport {
         outputStream.flush();
     }
 
+    /**
+     * Handles transport failures and triggers reconnect flow when configured.
+     *
+     * @param e error or event payload, depending on callback context.
+     */
     @Override
     protected void handleTransportError(Exception e) {
         try {
@@ -110,6 +119,10 @@ public class TcpTransport extends StreamTransport {
         }
     }
 
+    /**
+     * Starts the reconnect retry loop after unexpected link loss.
+     *
+     */
     private void startRetryLoop() {
         if (!retryLoopActive.compareAndSet(false, true)) {
             return;
@@ -139,6 +152,10 @@ public class TcpTransport extends StreamTransport {
         retryThread.start();
     }
 
+    /**
+     * Closes the underlying transport connection and releases resources.
+     *
+     */
     @Override
     protected void disconnect() throws Exception {
         connected = false;
@@ -147,6 +164,11 @@ public class TcpTransport extends StreamTransport {
         }
     }
 
+    /**
+     * Reports whether the transport currently has an active connection.
+     *
+     * @return {@code true} when the TCP socket is open and connected.
+     */
     @Override
     public boolean isConnected() {
         return connected && socket != null && socket.isConnected() && !socket.isClosed();

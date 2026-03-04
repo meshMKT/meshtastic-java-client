@@ -54,6 +54,10 @@ public class SerialTransport extends StreamTransport {
         setOutboundPacingDelay(config.getOutboundPacingDelayMs());
     }
 
+    /**
+     * Establishes the underlying transport connection.
+     *
+     */
     @Override
     protected void connect() throws Exception {
         // Resolve against current enumerated ports so reconnect can survive descriptor changes after device reboot.
@@ -76,12 +80,22 @@ public class SerialTransport extends StreamTransport {
         dataQueue.clear();
 
         port.addDataListener(new SerialPortDataListener() {
+            /**
+             * Returns the serial event mask to subscribe to from the serial library.
+             *
+             * @return serial event bitmask handled by this listener.
+             */
             @Override
             public int getListeningEvents() {
                 return SerialPort.LISTENING_EVENT_DATA_AVAILABLE
                         | SerialPort.LISTENING_EVENT_PORT_DISCONNECTED;
             }
 
+            /**
+             * Handles one inbound serial-port event callback from the serial library.
+             *
+             * @param event event payload.
+             */
             @Override
             public void serialEvent(SerialPortEvent event) {
                 if (event.getEventType() == SerialPort.LISTENING_EVENT_PORT_DISCONNECTED) {
@@ -123,6 +137,11 @@ public class SerialTransport extends StreamTransport {
         }
     }
 
+    /**
+     * Handles transport failures and triggers reconnect flow when configured.
+     *
+     * @param e error or event payload, depending on callback context.
+     */
     @Override
     protected void handleTransportError(Exception e) {
         try {
@@ -138,6 +157,10 @@ public class SerialTransport extends StreamTransport {
         }
     }
 
+    /**
+     * Starts the reconnect retry loop after unexpected link loss.
+     *
+     */
     private void startRetryLoop() {
         if (!retryLoopActive.compareAndSet(false, true)) {
             return;
@@ -169,6 +192,10 @@ public class SerialTransport extends StreamTransport {
         retryThread.start();
     }
 
+    /**
+     * Closes the underlying transport connection and releases resources.
+     *
+     */
     @Override
     protected void disconnect() {
         if (port != null) {
@@ -179,6 +206,11 @@ public class SerialTransport extends StreamTransport {
         }
     }
 
+    /**
+     * Reports whether the transport currently has an active connection.
+     *
+     * @return {@code true} when the serial port is open.
+     */
     @Override
     public boolean isConnected() {
         return port != null && port.isOpen();

@@ -17,7 +17,6 @@ import org.meshtastic.proto.ModuleConfigProtos.ModuleConfig;
 import org.meshtastic.proto.Portnums.PortNum;
 import static org.meshtastic.proto.Portnums.PortNum.ADMIN_APP;
 
-@Slf4j
 /**
  * Handles packet-based {@code ADMIN_APP} payloads and forwards decoded admin messages into {@link AdminService}.
  * <p>
@@ -25,15 +24,30 @@ import static org.meshtastic.proto.Portnums.PortNum.ADMIN_APP;
  * to owner/config/channel/module/metadata changes while the link remains connected.
  * </p>
  */
+@Slf4j
 public class AdminHandler extends BaseMeshHandler {
 
     private final AdminService adminService;
 
+    /**
+     * Creates a new AdminHandler instance.
+     *
+     * @param nodeDb node database dependency.
+     * @param dispatcher event dispatcher dependency.
+     * @param adminService admin service dependency.
+     */
     public AdminHandler(NodeDatabase nodeDb, MeshEventDispatcher dispatcher, AdminService adminService) {
         super(nodeDb, dispatcher);
         this.adminService = adminService;
     }
 
+    /**
+     * Processes one decoded mesh packet for this handler.
+     *
+     * @param packet decoded mesh packet.
+     * @param ctx packet context metadata.
+     * @return {@code true} when packet processing is complete for this handler.
+     */
     @Override
     protected boolean handlePacket(MeshPacket packet, PacketContext ctx) {
         int portNum = packet.getDecoded().getPortnumValue();
@@ -64,6 +78,12 @@ public class AdminHandler extends BaseMeshHandler {
         return false;
     }
 
+    /**
+     * Determines whether this handler can process the incoming message.
+     *
+     * @param message inbound message.
+     * @return {@code true} when this handler should process the message.
+     */
     @Override
     public boolean canHandle(MeshProtos.FromRadio message) {
         return message.hasPacket() && message.getPacket().getDecoded().getPortnum() == ADMIN_APP;

@@ -24,17 +24,19 @@ public interface TransportConnectionListener {
 
     /**
      * Called when traffic is sent out the transport which can be used to
-     * trigger a visual indicator in a ui if desired
-     * <br>
-     * Optional and do nothing unless overridden
+     * trigger a visual indicator in a UI if desired.
+     * <p>
+     * Optional no-op unless overridden.
+     * </p>
      */
     default void onTrafficTransmitted() {}
 
     /**
      * Called when traffic is received from the transport which can be used to
-     * trigger a visual indicator in a ui if desired
-     * 
-     * Optional and do nothing unless overridden
+     * trigger a visual indicator in a UI if desired.
+     * <p>
+     * Optional no-op unless overridden.
+     * </p>
      */
     default void onTrafficReceived() {}
 }

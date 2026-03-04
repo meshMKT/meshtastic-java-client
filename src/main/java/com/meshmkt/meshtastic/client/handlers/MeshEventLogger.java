@@ -29,6 +29,12 @@ public class MeshEventLogger extends BaseMeshHandler {
         super(nodeDb, null);
     }
 
+    /**
+     * Determines whether this handler can process the incoming message.
+     *
+     * @param message inbound message.
+     * @return {@code true} when this logger should inspect the message.
+     */
     @Override
     public boolean canHandle(MeshProtos.FromRadio message) {
         return message.hasPacket() || message.hasNodeInfo() || message.hasMyInfo();

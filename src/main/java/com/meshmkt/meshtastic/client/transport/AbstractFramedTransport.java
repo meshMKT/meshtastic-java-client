@@ -80,6 +80,11 @@ public abstract class AbstractFramedTransport implements MeshtasticTransport {
         this.outboundPacingDelay = millis;
     }
 
+    /**
+     * Enqueues outbound protobuf bytes for framing and physical transmit.
+     *
+     * @param protobufData outbound protobuf bytes before framing.
+     */
     @Override
     public final void write(byte[] protobufData) {
         if (!isConnected() || protobufData == null) {
@@ -198,6 +203,10 @@ public abstract class AbstractFramedTransport implements MeshtasticTransport {
     }
 
     // --- Lifecycle Management ---
+    /**
+     * Starts transport workers and opens the underlying physical link.
+     *
+     */
     @Override
     public synchronized void start() {
         if (running) {
@@ -255,6 +264,10 @@ public abstract class AbstractFramedTransport implements MeshtasticTransport {
         }
     }
 
+    /**
+     * Stops transport workers and closes the underlying physical link.
+     *
+     */
     @Override
     public synchronized void stop() {
         if (!running) {
@@ -295,6 +308,11 @@ public abstract class AbstractFramedTransport implements MeshtasticTransport {
     }
 
     // --- Implementation Helpers ---
+    /**
+     * Registers a transport-connection listener callback.
+     *
+     * @param l listener instance to register.
+     */
     @Override
     public void addConnectionListener(TransportConnectionListener l) {
         if (l != null) {
@@ -302,11 +320,21 @@ public abstract class AbstractFramedTransport implements MeshtasticTransport {
         }
     }
 
+    /**
+     * Removes a previously registered transport-connection listener callback.
+     *
+     * @param l listener instance to remove.
+     */
     @Override
     public void removeConnectionListener(TransportConnectionListener l) {
         connectionListeners.remove(l);
     }
 
+    /**
+     * Registers a consumer for parsed inbound packet payload bytes.
+     *
+     * @param c parsed packet payload consumer callback.
+     */
     @Override
     public void addParsedPacketConsumer(Consumer<byte[]> c) {
         this.packetConsumer = (c != null) ? c : (d) -> {

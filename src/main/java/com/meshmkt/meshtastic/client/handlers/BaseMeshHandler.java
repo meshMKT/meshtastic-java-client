@@ -19,26 +19,56 @@ public abstract class BaseMeshHandler implements MeshtasticMessageHandler {
      * No-op dispatcher used by pure logging/diagnostic handlers that do not emit events.
      */
     private static final MeshEventDispatcher NO_OP_DISPATCHER = new MeshEventDispatcher() {
+        /**
+         * Dispatches chat-message events to registered listeners.
+         *
+         * @param event event payload.
+         */
         @Override
         public void onChatMessage(com.meshmkt.meshtastic.client.event.ChatMessageEvent event) {
         }
 
+        /**
+         * Dispatches position-update events to registered listeners.
+         *
+         * @param event event payload.
+         */
         @Override
         public void onPositionUpdate(com.meshmkt.meshtastic.client.event.PositionUpdateEvent event) {
         }
 
+        /**
+         * Dispatches telemetry-update events to registered listeners.
+         *
+         * @param event event payload.
+         */
         @Override
         public void onTelemetryUpdate(com.meshmkt.meshtastic.client.event.TelemetryUpdateEvent event) {
         }
 
+        /**
+         * Dispatches node-discovery events to registered listeners.
+         *
+         * @param event event payload.
+         */
         @Override
         public void onNodeDiscovery(com.meshmkt.meshtastic.client.event.NodeDiscoveryEvent event) {
         }
 
+        /**
+         * Dispatches message-status events to registered listeners.
+         *
+         * @param event event payload.
+         */
         @Override
         public void onMessageStatusUpdate(com.meshmkt.meshtastic.client.event.MessageStatusEvent event) {
         }
 
+        /**
+         * Dispatches admin-model update events to registered listeners.
+         *
+         * @param event event payload.
+         */
         @Override
         public void onAdminModelUpdate(com.meshmkt.meshtastic.client.event.AdminModelUpdateEvent event) {
         }
@@ -64,6 +94,12 @@ public abstract class BaseMeshHandler implements MeshtasticMessageHandler {
         this.dispatcher = dispatcher != null ? dispatcher : NO_OP_DISPATCHER;
     }
 
+    /**
+     * Routes one FromRadio message through this handler's dispatch flow.
+     *
+     * @param message inbound message.
+     * @return {@code true} when this handler consumed the message.
+     */
     @Override
     public final boolean handle(MeshProtos.FromRadio message) {
         // SCENARIO A: LOCAL HANDSHAKE / STATUS

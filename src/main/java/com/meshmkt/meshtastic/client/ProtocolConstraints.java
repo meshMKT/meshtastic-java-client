@@ -28,6 +28,10 @@ public final class ProtocolConstraints {
      */
     public static final int MAX_CHANNEL_NAME_UTF8_BYTES = 11;
 
+    /**
+     * Utility class; not intended to be instantiated.
+     *
+     */
     private ProtocolConstraints() {
     }
 

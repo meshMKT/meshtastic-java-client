@@ -24,6 +24,12 @@ public class MessageLoggingHandler extends BaseMeshHandler {
         super(nodeDb, null); // No dispatcher needed for simple logging
     }
 
+    /**
+     * Determines whether this handler can process the incoming message.
+     *
+     * @param message inbound message.
+     * @return {@code true} when this handler is interested in the message.
+     */
     @Override
     public boolean canHandle(MeshProtos.FromRadio message) {
         return message.hasPacket()
@@ -31,6 +37,13 @@ public class MessageLoggingHandler extends BaseMeshHandler {
                 && message.getPacket().getDecoded().getPortnumValue() == Portnums.PortNum.TEXT_MESSAGE_APP_VALUE;
     }
 
+    /**
+     * Processes one decoded mesh packet for this handler.
+     *
+     * @param packet decoded mesh packet.
+     * @param ctx packet context metadata.
+     * @return {@code true} when packet processing is terminal for this handler chain.
+     */
     @Override
     protected boolean handlePacket(MeshProtos.MeshPacket packet, PacketContext ctx) {
         String text = packet.getDecoded().getPayload().toString(StandardCharsets.UTF_8);

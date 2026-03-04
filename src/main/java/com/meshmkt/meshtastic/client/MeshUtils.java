@@ -37,6 +37,10 @@ public final class MeshUtils {
      */
     public static final double COORD_SCALE = 1e7;
 
+    /**
+     * Utility class; not intended to be instantiated.
+     *
+     */
     private MeshUtils() {
         // Prevent instantiation
     }

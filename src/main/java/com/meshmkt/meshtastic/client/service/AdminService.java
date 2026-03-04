@@ -55,19 +55,14 @@ import java.util.stream.IntStream;
  * {@code apply...} mutators to keep model updates consistent.
  * </p>
  * <p>
- * Write-operation completion semantics:
+ * Preferred write API:
  * </p>
  * <ul>
- * <li>{@link #setChannel(int, Channel)}: accepted + read-back verified (default behavior).</li>
- * <li>{@link #setChannel(int, Channel, boolean)}: caller chooses accepted-only vs verified-applied.</li>
- * <li>{@link #setConfig(Config)}: accepted-only.</li>
- * <li>{@link #setConfig(Config, boolean)} and {@link #setConfigAndVerify(Config)}: caller chooses or forces verification.</li>
- * <li>{@link #setModuleConfig(ModuleConfig)}: accepted-only.</li>
- * <li>{@link #setModuleConfig(ModuleConfig, boolean)} and {@link #setModuleConfigAndVerify(ModuleConfig)}:
- * caller chooses or forces verification.</li>
- * <li>{@link #setOwner(int, String, String)}: accepted-only.</li>
- * <li>{@link #setOwner(int, String, String, boolean)} and {@link #setOwnerAndVerify(int, String, String)}:
- * accepted-only or verified-applied.</li>
+ * <li>{@link #setChannelResult(int, Channel, boolean)}.</li>
+ * <li>{@link #setConfigResult(Config, boolean)}.</li>
+ * <li>{@link #setModuleConfigResult(ModuleConfig, boolean)}.</li>
+ * <li>{@link #setOwnerResult(int, String, String, boolean)}.</li>
+ * <li>Boolean convenience forms remain available via {@code setX(..., boolean verifyApplied)} methods.</li>
  * </ul>
  */
 @Slf4j
@@ -106,9 +101,9 @@ public class AdminService {
     private volatile AdminVerificationPolicy verificationPolicy = AdminVerificationPolicy.builder().build().validated();
 
     /**
-     * Creates a new admin service bound to one request gateway instance.
+     * Creates an admin service bound to a request gateway.
      *
-     * @param gateway admin request gateway runtime.
+     * @param gateway request gateway used for admin request/response operations.
      */
     public AdminService(AdminRequestGateway gateway) {
         this.gateway = gateway;
@@ -746,27 +741,6 @@ public class AdminService {
     }
 
     /**
-     * Writes a config block to the radio.
-     *
-     * @param config config payload.
-     * @return future completing when accepted by the radio.
-     */
-    public CompletableFuture<Void> setConfig(Config config) {
-        return setConfig(config, false).thenAccept(applied -> {
-        });
-    }
-
-    /**
-     * Writes one config payload and forces read-back verification.
-     *
-     * @param config config payload.
-     * @return future completing with {@code true} when accepted and verified-applied.
-     */
-    public CompletableFuture<Boolean> setConfigAndVerify(Config config) {
-        return setConfig(config, true);
-    }
-
-    /**
      * Writes one config payload and returns structured completion status.
      *
      * @param config config payload.
@@ -820,27 +794,6 @@ public class AdminService {
                     return verifyWithPolicy("setConfig", () -> refreshConfigs(impactedTypes)
                             .thenApply(observed -> isConfigApplied(config, observed)));
                 });
-    }
-
-    /**
-     * Writes one module config payload to the radio.
-     *
-     * @param moduleConfig module config payload.
-     * @return future completing when accepted by the radio.
-     */
-    public CompletableFuture<Void> setModuleConfig(ModuleConfig moduleConfig) {
-        return setModuleConfig(moduleConfig, false).thenAccept(applied -> {
-        });
-    }
-
-    /**
-     * Writes one module config payload and forces read-back verification.
-     *
-     * @param moduleConfig module config payload.
-     * @return future completing with {@code true} when accepted and verified-applied.
-     */
-    public CompletableFuture<Boolean> setModuleConfigAndVerify(ModuleConfig moduleConfig) {
-        return setModuleConfig(moduleConfig, true);
     }
 
     /**
@@ -904,27 +857,6 @@ public class AdminService {
         Objects.requireNonNull(mqttConfig, "mqttConfig must not be null");
         ModuleConfig moduleConfig = ModuleConfig.newBuilder().setMqtt(mqttConfig).build();
         return setModuleConfig(moduleConfig, verifyApplied);
-    }
-
-    /**
-     * Writes MQTT module settings using accepted-only completion semantics.
-     *
-     * @param mqttConfig MQTT module config payload.
-     * @return future completing when accepted by the radio.
-     */
-    public CompletableFuture<Void> setMqttConfig(ModuleConfig.MQTTConfig mqttConfig) {
-        return setMqttConfig(mqttConfig, false).thenAccept(applied -> {
-        });
-    }
-
-    /**
-     * Writes MQTT module settings and forces read-back verification.
-     *
-     * @param mqttConfig MQTT module config payload.
-     * @return future completing with {@code true} when accepted and verified-applied.
-     */
-    public CompletableFuture<Boolean> setMqttConfigAndVerify(ModuleConfig.MQTTConfig mqttConfig) {
-        return setMqttConfig(mqttConfig, true);
     }
 
     /**
@@ -1211,27 +1143,6 @@ public class AdminService {
     public CompletableFuture<Boolean> setDeviceUiConfig(DeviceUIConfig deviceUiConfig, boolean verifyApplied) {
         Objects.requireNonNull(deviceUiConfig, "deviceUiConfig must not be null");
         return setConfig(Config.newBuilder().setDeviceUi(deviceUiConfig).build(), verifyApplied);
-    }
-
-    /**
-     * Writes security config using accepted-only completion semantics.
-     *
-     * @param securityConfig security config payload.
-     * @return future completing when accepted by the radio.
-     */
-    public CompletableFuture<Void> setSecurityConfig(Config.SecurityConfig securityConfig) {
-        return setSecurityConfig(securityConfig, false).thenAccept(applied -> {
-        });
-    }
-
-    /**
-     * Writes security config to the local radio and forces read-back verification.
-     *
-     * @param securityConfig security config payload.
-     * @return future completing with {@code true} when accepted and verified-applied.
-     */
-    public CompletableFuture<Boolean> setSecurityConfigAndVerify(Config.SecurityConfig securityConfig) {
-        return setSecurityConfig(securityConfig, true);
     }
 
     /**
@@ -1668,12 +1579,22 @@ public class AdminService {
         }
     }
 
+    /**
+     * Applies owner data to the radio model cache.
+     *
+     * @param owner owner payload to apply.
+     */
     private void applyOwner(User owner) {
         if (owner != null) {
             radioModel.setOwner(owner);
         }
     }
 
+    /**
+     * Applies config payload data to the radio model cache.
+     *
+     * @param cfg config payload to apply.
+     */
     private void applyConfig(Config cfg) {
         if (cfg == null) {
             return;
@@ -1695,12 +1616,22 @@ public class AdminService {
         }
     }
 
+    /**
+     * Applies channel payload data to the radio model cache.
+     *
+     * @param channel channel payload to apply.
+     */
     private void applyChannel(Channel channel) {
         if (channel != null) {
             radioModel.setChannel(channel.getIndex(), channel);
         }
     }
 
+    /**
+     * Applies module-config payload data to the radio model cache.
+     *
+     * @param moduleConfig module-config payload to apply.
+     */
     private void applyModuleConfig(ModuleConfig moduleConfig) {
         ModuleConfigType type = toModuleConfigType(moduleConfig);
         if (type != null) {
@@ -1708,12 +1639,23 @@ public class AdminService {
         }
     }
 
+    /**
+     * Applies device metadata to the radio model cache.
+     *
+     * @param metadata metadata payload to apply.
+     */
     private void applyMetadata(DeviceMetadata metadata) {
         if (metadata != null) {
             radioModel.setDeviceMetadata(metadata);
         }
     }
 
+    /**
+     * Resolves the module-config payload variant into its module-config type enum.
+     *
+     * @param moduleConfig module-config payload to apply.
+     * @return corresponding module config type, or {@code null} when no concrete variant is set.
+     */
     private ModuleConfigType toModuleConfigType(ModuleConfig moduleConfig) {
         if (moduleConfig == null) {
             return null;
@@ -1873,6 +1815,12 @@ public class AdminService {
                 .exceptionally(ex -> false);
     }
 
+    /**
+     * Injects current session passkey into an admin message builder when available.
+     *
+     * @param builder admin message builder to enrich.
+     * @return same builder instance, optionally enriched with session passkey.
+     */
     private AdminMessage.Builder withSessionIfPresent(AdminMessage.Builder builder) {
         if (!lastSessionPasskey.isEmpty()) {
             builder.setSessionPasskey(lastSessionPasskey);
@@ -1880,6 +1828,13 @@ public class AdminService {
         return builder;
     }
 
+    /**
+     * Executes an admin request and maps the correlated admin response payload.
+     *
+     * @param request outbound admin request.
+     * @param extractor function mapping parsed admin payload to target result type.
+     * @return future completing with mapped response value.
+     */
     private <T> CompletableFuture<T> executeAndParse(AdminMessage request, Function<AdminMessage, T> extractor) {
         // Read operations must wait for correlated ADMIN_APP payloads, not just ROUTING NONE status.
         return gateway.executeAdminRequest(gateway.getSelfNodeId(), request, true)
@@ -1890,6 +1845,12 @@ public class AdminService {
                 });
     }
 
+    /**
+     * Parses an AdminMessage payload from a correlated mesh packet.
+     *
+     * @param packet decoded mesh packet.
+     * @return parsed admin payload.
+     */
     private AdminMessage parseAdminMessage(MeshPacket packet) {
         try {
             return AdminMessage.parseFrom(packet.getDecoded().getPayload());
@@ -1898,6 +1859,11 @@ public class AdminService {
         }
     }
 
+    /**
+     * Updates cached admin session passkey from inbound admin response payload.
+     *
+     * @param adminMsg parsed admin response payload.
+     */
     private void updateSessionKey(AdminMessage adminMsg) {
         if (!adminMsg.getSessionPasskey().isEmpty()) {
             this.lastSessionPasskey = adminMsg.getSessionPasskey();
@@ -1905,6 +1871,11 @@ public class AdminService {
         }
     }
 
+    /**
+     * Validates channel slot index bounds for admin channel operations.
+     *
+     * @param index channel slot index.
+     */
     private void validateChannelIndex(int index) {
         ProtocolConstraints.validateChannelIndex(index);
     }

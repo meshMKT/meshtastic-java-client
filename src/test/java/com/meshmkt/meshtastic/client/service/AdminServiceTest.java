@@ -487,7 +487,7 @@ class AdminServiceTest {
                 .setGetConfigResponse(requested)
                 .build());
 
-        boolean applied = service.setConfigAndVerify(requested).join();
+        boolean applied = service.setConfig(requested, true).join();
         assertTrue(applied);
         assertEquals(2, gateway.requests.size());
         assertTrue(gateway.requests.get(0).hasSetConfig());
@@ -521,7 +521,7 @@ class AdminServiceTest {
                 .setGetConfigResponse(observed)
                 .build());
 
-        boolean applied = service.setConfigAndVerify(requested).join();
+        boolean applied = service.setConfig(requested, true).join();
         assertFalse(applied);
         assertEquals(2, gateway.requests.size());
         assertTrue(gateway.requests.get(0).hasSetConfig());
@@ -547,7 +547,7 @@ class AdminServiceTest {
                 "Routing rejected request 1293257125 with status NO_RESPONSE"));
         gateway.enqueueAdminResponse(AdminMessage.newBuilder().setGetConfigResponse(requested).build());
 
-        boolean applied = service.setConfigAndVerify(requested).join();
+        boolean applied = service.setConfig(requested, true).join();
         assertTrue(applied);
         assertEquals(2, gateway.requests.size());
         assertTrue(gateway.requests.get(0).hasSetConfig());
@@ -586,7 +586,7 @@ class AdminServiceTest {
         gateway.enqueueAdminResponse(AdminMessage.newBuilder().setGetConfigResponse(staleObserved).build());
         gateway.enqueueAdminResponse(AdminMessage.newBuilder().setGetConfigResponse(requested).build());
 
-        boolean applied = service.setConfigAndVerify(requested).join();
+        boolean applied = service.setConfig(requested, true).join();
         assertTrue(applied);
         assertEquals(3, gateway.requests.size());
         assertTrue(gateway.requests.get(0).hasSetConfig());
@@ -615,7 +615,7 @@ class AdminServiceTest {
                 .setGetModuleConfigResponse(requested)
                 .build());
 
-        boolean applied = service.setModuleConfigAndVerify(requested).join();
+        boolean applied = service.setModuleConfig(requested, true).join();
         assertTrue(applied);
         assertEquals(2, gateway.requests.size());
         assertTrue(gateway.requests.get(0).hasSetModuleConfig());
@@ -647,7 +647,7 @@ class AdminServiceTest {
                 .setGetModuleConfigResponse(observed)
                 .build());
 
-        boolean applied = service.setModuleConfigAndVerify(requested).join();
+        boolean applied = service.setModuleConfig(requested, true).join();
         assertFalse(applied);
         assertEquals(2, gateway.requests.size());
         assertTrue(gateway.requests.get(0).hasSetModuleConfig());
@@ -673,7 +673,7 @@ class AdminServiceTest {
                 "Routing rejected request 2047045905 with status NO_RESPONSE"));
         gateway.enqueueAdminResponse(AdminMessage.newBuilder().setGetModuleConfigResponse(requested).build());
 
-        boolean applied = service.setModuleConfigAndVerify(requested).join();
+        boolean applied = service.setModuleConfig(requested, true).join();
         assertTrue(applied);
         assertEquals(2, gateway.requests.size());
         assertTrue(gateway.requests.get(0).hasSetModuleConfig());
@@ -713,7 +713,7 @@ class AdminServiceTest {
                 .setGetModuleConfigResponse(ModuleConfigProtos.ModuleConfig.newBuilder().setMqtt(mqtt).build())
                 .build());
 
-        boolean applied = service.setMqttConfigAndVerify(mqtt).join();
+        boolean applied = service.setMqttConfig(mqtt, true).join();
         assertTrue(applied);
         assertEquals(2, gateway.requests.size());
         assertTrue(gateway.requests.get(0).hasSetModuleConfig());
@@ -818,7 +818,7 @@ class AdminServiceTest {
                 .setGetConfigResponse(ConfigProtos.Config.newBuilder().setSecurity(security).build())
                 .build());
 
-        boolean applied = service.setSecurityConfigAndVerify(security).join();
+        boolean applied = service.setSecurityConfig(security, true).join();
         assertTrue(applied);
         assertEquals(2, gateway.requests.size());
         assertTrue(gateway.requests.get(0).hasSetConfig());

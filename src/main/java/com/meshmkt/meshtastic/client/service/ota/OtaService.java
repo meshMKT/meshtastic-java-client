@@ -144,12 +144,23 @@ public class OtaService {
         }
     }
 
+    /**
+     * Throws cancellation when the OTA context or session has been cancelled.
+     *
+     * @param cancelled cancellation flag.
+     */
     private static void ensureNotCancelled(AtomicBoolean cancelled) {
         if (cancelled.get()) {
             throw new CancellationException();
         }
     }
 
+    /**
+     * Sleeps in bounded steps while respecting OTA cancellation and interruption signals.
+     *
+     * @param duration requested sleep duration.
+     * @param cancelled cancellation flag.
+     */
     private static void sleepInterruptibly(Duration duration, AtomicBoolean cancelled) {
         long remainingMs = duration.toMillis();
         while (remainingMs > 0) {
@@ -165,6 +176,12 @@ public class OtaService {
         }
     }
 
+    /**
+     * Reads the firmware file size used for progress reporting.
+     *
+     * @param request outbound request payload.
+     * @return firmware file size in bytes, or {@code 0} when unreadable.
+     */
     private static long fileSize(OtaRequest request) {
         try {
             return Files.size(request.firmwarePath());
@@ -173,6 +190,12 @@ public class OtaService {
         }
     }
 
+    /**
+     * Computes SHA-256 digest bytes for the firmware image.
+     *
+     * @param request outbound request payload.
+     * @return firmware hash bytes.
+     */
     private static byte[] sha256(OtaRequest request) {
         try {
             byte[] bytes = Files.readAllBytes(request.firmwarePath());
@@ -185,6 +208,15 @@ public class OtaService {
         }
     }
 
+    /**
+     * Emits one OTA progress event to the registered listener.
+     *
+     * @param listener progress callback listener.
+     * @param stage OTA stage value.
+     * @param message inbound message.
+     * @param sent bytes sent so far.
+     * @param total total bytes expected.
+     */
     private static void emit(OtaProgressListener listener, OtaStage stage, String message, long sent, long total) {
         listener.onProgress(new OtaProgress(stage, message, sent, total));
     }
