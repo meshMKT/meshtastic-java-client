@@ -39,6 +39,9 @@ Optional environment variables:
 - `MESHTASTIC_TEST_TIMEOUT_SEC` (default: `45`)
 - `MESHTASTIC_TEST_MUTABLE_CHANNEL_INDEX` (default: `2`, should be an active non-primary slot)
 - `MESHTASTIC_TEST_ENABLE_OWNER_WRITE` (default: `false`; enables reversible owner write/readback/restore test)
+- `MESHTASTIC_TEST_ENABLE_SECURITY_WRITE` (default: `false`; enables reversible security config write/readback/restore test)
+- `MESHTASTIC_TEST_ENABLE_MQTT_WRITE` (default: `false`; enables reversible MQTT module config write/readback/restore test)
+- `MESHTASTIC_TEST_ENABLE_REBOOT_TEST` (default: `false`; enables reboot/reconnect resilience test)
 
 Run:
 
@@ -52,5 +55,9 @@ Hardware IT currently validates:
 - metadata/owner/channel read paths
 - core config read matrix
 - module config read matrix (capability-tolerant)
+- request burst lifecycle terminal events
 - reversible channel write/readback/restore
 - optional reversible owner write/readback/restore (explicitly enabled)
+- optional reversible security config write/readback/restore (explicitly enabled)
+- optional reversible MQTT module config write/readback/restore (explicitly enabled)
+- optional reboot/reconnect resilience (explicitly enabled)

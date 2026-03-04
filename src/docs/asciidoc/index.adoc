@@ -309,6 +309,9 @@ Hardware-in-the-loop tests are intentionally opt-in and isolated from default un
   - `MESHTASTIC_TEST_TIMEOUT_SEC` (default `45`)
   - `MESHTASTIC_TEST_MUTABLE_CHANNEL_INDEX` (default `2`)
   - `MESHTASTIC_TEST_ENABLE_OWNER_WRITE` (default `false`)
+  - `MESHTASTIC_TEST_ENABLE_SECURITY_WRITE` (default `false`)
+  - `MESHTASTIC_TEST_ENABLE_MQTT_WRITE` (default `false`)
+  - `MESHTASTIC_TEST_ENABLE_REBOOT_TEST` (default `false`)
 
 [source,bash]
 ----
@@ -327,8 +330,12 @@ Coverage in current hardware integration tests:
 - metadata/owner/likely-channel read path
 - core config read matrix
 - module config read matrix (capability tolerant)
+- request burst lifecycle terminal events
 - reversible channel write/readback/restore
 - optional reversible owner write/readback/restore (enabled with `MESHTASTIC_TEST_ENABLE_OWNER_WRITE=true`)
+- optional reversible security config write/readback/restore (enabled with `MESHTASTIC_TEST_ENABLE_SECURITY_WRITE=true`)
+- optional reversible MQTT module config write/readback/restore (enabled with `MESHTASTIC_TEST_ENABLE_MQTT_WRITE=true`)
+- optional reboot/reconnect resilience (enabled with `MESHTASTIC_TEST_ENABLE_REBOOT_TEST=true`)
 
 == Architecture Diagram
 

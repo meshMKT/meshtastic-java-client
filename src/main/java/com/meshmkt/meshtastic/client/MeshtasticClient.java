@@ -468,6 +468,14 @@ public class MeshtasticClient implements AdminRequestGateway {
                     return;
                 }
 
+                if (request.port() == PortNum.ADMIN_APP && !isKnownSelfNodeId(request.destinationId())) {
+                    radioLock.release();
+                    lockAcquired = false;
+                    future.completeExceptionally(new IllegalStateException(
+                            "Cannot send ADMIN_APP request without known local node id"));
+                    return;
+                }
+
                 // 1. Prepare Payload (Handling ByteString vs Raw)
                 ByteString payload = ByteString.EMPTY;
                 if (request.payload() != null) {
@@ -842,8 +850,12 @@ public class MeshtasticClient implements AdminRequestGateway {
         }
 
         if (fromRadio.hasMyInfo()) {
-            sawMyInfoInCurrentPhase = true;
             int selfId = fromRadio.getMyInfo().getMyNodeNum();
+            if (isKnownSelfNodeId(selfId)) {
+                sawMyInfoInCurrentPhase = true;
+            } else {
+                log.warn("[SYNC] Ignoring invalid my_info self id={} during startup sync", selfId);
+            }
             if (isKnownSelfNodeId(selfId) && selfId != nodeDb.getSelfNodeId()) {
                 // Establish self identity as soon as startup sync observes my_info so READY does not race
                 // ahead of LocalStateHandler dispatch on slower/async handler execution.
@@ -867,6 +879,11 @@ public class MeshtasticClient implements AdminRequestGateway {
 
         if (startupSyncPhase == 1) {
             log.info("[SYNC] Phase 1 complete (local identity pass). my_info_seen={}", sawMyInfoInCurrentPhase);
+            if (!sawMyInfoInCurrentPhase) {
+                log.warn("[SYNC] Phase 1 completed without valid my_info. Retrying local identity phase.");
+                sendWantConfigForCurrentPhase();
+                return;
+            }
             CompletableFuture<Void> barrier = startupSyncBarrier;
             if (barrier != null && !barrier.isDone()) {
                 barrier.complete(null);

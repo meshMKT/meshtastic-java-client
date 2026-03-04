@@ -4,6 +4,7 @@ import com.meshmkt.meshtastic.client.MeshtasticClient;
 import com.meshmkt.meshtastic.client.MeshConstants;
 import com.meshmkt.meshtastic.client.ProtocolConstraints;
 import com.meshmkt.meshtastic.client.event.MeshtasticEventListener;
+import com.meshmkt.meshtastic.client.event.RequestLifecycleEvent;
 import com.meshmkt.meshtastic.client.event.StartupState;
 import com.meshmkt.meshtastic.client.storage.InMemoryNodeDatabase;
 import com.meshmkt.meshtastic.client.storage.NodeDatabase;
@@ -30,11 +31,14 @@ import org.slf4j.LoggerFactory;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.EnumMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.function.Supplier;
@@ -76,6 +80,7 @@ class RealRadioAdminIT {
     private static final Duration READBACK_POLL_WINDOW = Duration.ofSeconds(35);
     private static final Duration READBACK_POLL_INTERVAL = Duration.ofMillis(800);
     private static final Duration RECONNECT_READY_TIMEOUT = Duration.ofSeconds(120);
+    private static final Duration SELF_ID_READY_TIMEOUT = Duration.ofSeconds(20);
     private static final Duration RESTORE_READBACK_WINDOW = Duration.ofSeconds(60);
     private static final int RESTORE_ATTEMPTS = 4;
     private static final List<ConfigType> CORE_CONFIG_MATRIX = List.of(
@@ -97,6 +102,10 @@ class RealRadioAdminIT {
     private Duration operationTimeout;
     private int mutableChannelIndex;
     private boolean enableOwnerWriteTest;
+    private boolean enableSecurityWriteTest;
+    private boolean enableMqttWriteTest;
+    private boolean enableRebootResilienceTest;
+    private final List<RequestLifecycleEvent> lifecycleEvents = new CopyOnWriteArrayList<>();
 
     /**
      * Connects to the configured real radio and waits for startup state {@link StartupState#READY}.
@@ -114,6 +123,9 @@ class RealRadioAdminIT {
         );
         this.mutableChannelIndex = parseMutableChannelIndex(trimToNull(System.getProperty("MESHTASTIC_TEST_MUTABLE_CHANNEL_INDEX")));
         this.enableOwnerWriteTest = parseBoolean(trimToNull(System.getProperty("MESHTASTIC_TEST_ENABLE_OWNER_WRITE")), false);
+        this.enableSecurityWriteTest = parseBoolean(trimToNull(System.getProperty("MESHTASTIC_TEST_ENABLE_SECURITY_WRITE")), false);
+        this.enableMqttWriteTest = parseBoolean(trimToNull(System.getProperty("MESHTASTIC_TEST_ENABLE_MQTT_WRITE")), false);
+        this.enableRebootResilienceTest = parseBoolean(trimToNull(System.getProperty("MESHTASTIC_TEST_ENABLE_REBOOT_TEST")), false);
 
         NodeDatabase nodeDatabase = new InMemoryNodeDatabase();
         client = new MeshtasticClient(nodeDatabase);
@@ -127,6 +139,11 @@ class RealRadioAdminIT {
                     readyLatch.countDown();
                 }
             }
+
+            @Override
+            public void onRequestLifecycleUpdate(RequestLifecycleEvent event) {
+                lifecycleEvents.add(event);
+            }
         });
 
         SerialConfig config = SerialConfig.builder()
@@ -136,6 +153,8 @@ class RealRadioAdminIT {
 
         boolean ready = client.isReady() || readyLatch.await(READY_TIMEOUT.toSeconds(), TimeUnit.SECONDS);
         assertTrue(ready, "Client did not reach READY within " + READY_TIMEOUT.toSeconds() + "s");
+        requireAssumption(awaitKnownSelfNodeId(SELF_ID_READY_TIMEOUT),
+                "Self node ID did not become available after READY.");
     }
 
     /**
@@ -316,6 +335,157 @@ class RealRadioAdminIT {
         } finally {
             restoreChannelWithRetry(mutableChannelIndex, original);
         }
+    }
+
+    /**
+     * Optional reversible security-config write/readback/restore.
+     * <p>
+     * Enabled with {@code MESHTASTIC_TEST_ENABLE_SECURITY_WRITE=true}.
+     * </p>
+     *
+     * @throws Exception when write/readback/restore fails.
+     */
+    @Test
+    @Timeout(value = 300)
+    void reversibleSecurityConfigWriteReadbackWhenEnabled() throws Exception {
+        requireAssumption(enableSecurityWriteTest,
+                "Set MESHTASTIC_TEST_ENABLE_SECURITY_WRITE=true to enable security write IT.");
+
+        Config current = awaitWithRetry(adminService::refreshSecurityConfig, 2);
+        requireAssumption(current != null && current.hasSecurity(), "Security config is unavailable on this device.");
+        Config.SecurityConfig original = current.getSecurity();
+
+        boolean proposed = !original.getDebugLogApiEnabled();
+        Config.SecurityConfig updated = original.toBuilder().setDebugLogApiEnabled(proposed).build();
+        Config writePayload = Config.newBuilder().setSecurity(updated).build();
+
+        try {
+            AdminWriteResult write = awaitWithRetry(() -> adminService.setConfigResult(writePayload, false), 2);
+            assertTrue(write.isSuccess(), "Security config write request did not succeed: " + write.message());
+
+            awaitBooleanCondition(
+                    () -> awaitWithRetry(adminService::refreshSecurityConfig, 2).getSecurity().getDebugLogApiEnabled() == proposed,
+                    READBACK_POLL_WINDOW,
+                    "Timed out waiting for security.debug_log_api_enabled to update."
+            );
+        } finally {
+            Config restorePayload = Config.newBuilder().setSecurity(original).build();
+            awaitWithRetry(() -> adminService.setConfigResult(restorePayload, false), 2);
+            awaitBooleanCondition(
+                    () -> awaitWithRetry(adminService::refreshSecurityConfig, 2).getSecurity().getDebugLogApiEnabled()
+                            == original.getDebugLogApiEnabled(),
+                    RESTORE_READBACK_WINDOW,
+                    "Timed out waiting for security config restore."
+            );
+        }
+    }
+
+    /**
+     * Optional reversible MQTT module-config write/readback/restore.
+     * <p>
+     * Enabled with {@code MESHTASTIC_TEST_ENABLE_MQTT_WRITE=true}.
+     * </p>
+     *
+     * @throws Exception when write/readback/restore fails.
+     */
+    @Test
+    @Timeout(value = 300)
+    void reversibleMqttModuleConfigWriteReadbackWhenEnabled() throws Exception {
+        requireAssumption(enableMqttWriteTest,
+                "Set MESHTASTIC_TEST_ENABLE_MQTT_WRITE=true to enable MQTT write IT.");
+
+        ModuleConfig current = awaitWithRetry(adminService::refreshMqttConfig, 2);
+        requireAssumption(current != null && current.hasMqtt(), "MQTT module config is unavailable on this device.");
+        ModuleConfig.MQTTConfig original = current.getMqtt();
+
+        boolean proposed = !original.getJsonEnabled();
+        ModuleConfig.MQTTConfig updated = original.toBuilder().setJsonEnabled(proposed).build();
+        ModuleConfig writePayload = ModuleConfig.newBuilder().setMqtt(updated).build();
+
+        try {
+            AdminWriteResult write = awaitWithRetry(() -> adminService.setModuleConfigResult(writePayload, false), 2);
+            assertTrue(write.isSuccess(), "MQTT config write request did not succeed: " + write.message());
+
+            awaitBooleanCondition(
+                    () -> awaitWithRetry(adminService::refreshMqttConfig, 2).getMqtt().getJsonEnabled() == proposed,
+                    READBACK_POLL_WINDOW,
+                    "Timed out waiting for mqtt.json_enabled to update."
+            );
+        } finally {
+            ModuleConfig restorePayload = ModuleConfig.newBuilder().setMqtt(original).build();
+            awaitWithRetry(() -> adminService.setModuleConfigResult(restorePayload, false), 2);
+            awaitBooleanCondition(
+                    () -> awaitWithRetry(adminService::refreshMqttConfig, 2).getMqtt().getJsonEnabled()
+                            == original.getJsonEnabled(),
+                    RESTORE_READBACK_WINDOW,
+                    "Timed out waiting for mqtt config restore."
+            );
+        }
+    }
+
+    /**
+     * Verifies request-lifecycle events produce terminal states for a burst of utility requests.
+     *
+     * @throws Exception when lifecycle terminal events do not arrive in time.
+     */
+    @Test
+    @Timeout(value = 240)
+    void requestBurstLifecycleEmitsTerminalStages() throws Exception {
+        requireAssumption(isKnownSelfNodeId(client.getSelfNodeId()), "Self node ID is unavailable.");
+        lifecycleEvents.clear();
+
+        int targetNodeId = client.getSelfNodeId();
+        int burstCount = 6;
+        for (int i = 0; i < burstCount; i++) {
+            int mod = i % 3;
+            if (mod == 0) {
+                awaitWithRetry(() -> client.requestTelemetry(targetNodeId), 2);
+            } else if (mod == 1) {
+                awaitWithRetry(() -> client.requestPosition(targetNodeId), 2);
+            } else {
+                awaitWithRetry(() -> client.requestNodeInfo(targetNodeId), 2);
+            }
+        }
+
+        awaitBooleanCondition(() -> {
+            Set<Integer> sent = new HashSet<>();
+            Set<Integer> terminal = new HashSet<>();
+            for (RequestLifecycleEvent event : lifecycleEvents) {
+                if (event.getDestinationNodeId() != targetNodeId) {
+                    continue;
+                }
+                if (event.getStage() == RequestLifecycleEvent.Stage.SENT) {
+                    sent.add(event.getRequestId());
+                } else if (isTerminalLifecycleStage(event.getStage())) {
+                    terminal.add(event.getRequestId());
+                }
+            }
+            return !sent.isEmpty() && terminal.containsAll(sent);
+        }, Duration.ofSeconds(45), "Timed out waiting for request burst terminal lifecycle events.");
+    }
+
+    /**
+     * Optional reboot/reconnect resilience test.
+     * <p>
+     * Enabled with {@code MESHTASTIC_TEST_ENABLE_REBOOT_TEST=true}.
+     * </p>
+     *
+     * @throws Exception when reboot request or reconnection validation fails.
+     */
+    @Test
+    @Timeout(value = 360)
+    void rebootReconnectResilienceWhenEnabled() throws Exception {
+        requireAssumption(enableRebootResilienceTest,
+                "Set MESHTASTIC_TEST_ENABLE_REBOOT_TEST=true to enable reboot resilience IT.");
+        requireAssumption(isKnownSelfNodeId(client.getSelfNodeId()), "Self node ID is unavailable.");
+
+        boolean accepted = awaitWithRetry(() -> adminService.reboot(1), 2);
+        assertTrue(accepted, "Reboot request was not accepted.");
+
+        awaitReadyState(Duration.ofSeconds(180));
+        requireAssumption(awaitKnownSelfNodeId(Duration.ofSeconds(45)),
+                "Self node ID did not recover after reboot.");
+        assertNotNull(awaitWithRetry(adminService::refreshMetadata, 2), "Metadata refresh after reboot should succeed.");
     }
 
     /**
@@ -549,6 +719,42 @@ class RealRadioAdminIT {
     }
 
     /**
+     * Functional supplier variant that may throw checked exceptions.
+     *
+     * @param <T> supplied type.
+     */
+    @FunctionalInterface
+    private interface ThrowingSupplier<T> {
+        /**
+         * Supplies a value and may throw.
+         *
+         * @return supplied value.
+         * @throws Exception when supply fails.
+         */
+        T get() throws Exception;
+    }
+
+    /**
+     * Polls a boolean condition until true or timeout, allowing checked exceptions in the condition.
+     *
+     * @param predicate condition supplier.
+     * @param timeout max wait duration.
+     * @param failureMessage failure message when timeout is reached.
+     * @throws Exception when predicate evaluation throws or timeout is reached.
+     */
+    private void awaitBooleanCondition(ThrowingSupplier<Boolean> predicate, Duration timeout, String failureMessage)
+            throws Exception {
+        long deadline = System.nanoTime() + timeout.toNanos();
+        while (System.nanoTime() < deadline) {
+            if (Boolean.TRUE.equals(predicate.get())) {
+                return;
+            }
+            Thread.sleep(READBACK_POLL_INTERVAL.toMillis());
+        }
+        throw new AssertionError(failureMessage);
+    }
+
+    /**
      * Restores original owner values with bounded retries and readback confirmation.
      *
      * @param selfNodeId local node id.
@@ -630,6 +836,20 @@ class RealRadioAdminIT {
     }
 
     /**
+     * Returns whether request lifecycle stage is terminal.
+     *
+     * @param stage lifecycle stage.
+     * @return true for terminal outcomes.
+     */
+    private boolean isTerminalLifecycleStage(RequestLifecycleEvent.Stage stage) {
+        return stage == RequestLifecycleEvent.Stage.ACCEPTED
+                || stage == RequestLifecycleEvent.Stage.REJECTED
+                || stage == RequestLifecycleEvent.Stage.TIMED_OUT
+                || stage == RequestLifecycleEvent.Stage.CANCELLED
+                || stage == RequestLifecycleEvent.Stage.FAILED;
+    }
+
+    /**
      * Returns whether node id is a usable local self id for targeted admin requests.
      *
      * @param nodeId node id candidate.
@@ -637,6 +857,24 @@ class RealRadioAdminIT {
      */
     private boolean isKnownSelfNodeId(int nodeId) {
         return nodeId != MeshConstants.ID_UNKNOWN && nodeId != MeshConstants.ID_BROADCAST;
+    }
+
+    /**
+     * Waits until client reports a known self node id.
+     *
+     * @param timeout max wait time.
+     * @return true when known self id becomes available before timeout.
+     * @throws InterruptedException when interrupted while waiting.
+     */
+    private boolean awaitKnownSelfNodeId(Duration timeout) throws InterruptedException {
+        long deadline = System.nanoTime() + timeout.toNanos();
+        while (System.nanoTime() < deadline) {
+            if (isKnownSelfNodeId(client.getSelfNodeId())) {
+                return true;
+            }
+            Thread.sleep(READBACK_POLL_INTERVAL.toMillis());
+        }
+        return isKnownSelfNodeId(client.getSelfNodeId());
     }
 
     /**
