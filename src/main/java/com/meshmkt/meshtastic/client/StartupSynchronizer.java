@@ -28,6 +28,8 @@ import java.util.function.IntSupplier;
 final class StartupSynchronizer {
     private static final int NODELESS_WANT_CONFIG_ID = 69420;
     private static final int FULL_WANT_CONFIG_ID = 69421;
+    private static final long STARTUP_REQUEST_NUDGE_DELAY_MS = 1_000L;
+    private static final int MAX_STARTUP_REQUEST_SENDS_PER_PHASE = 2;
 
     private final ScheduledExecutorService scheduler;
     private final long startupSyncTimeoutSeconds;
@@ -39,6 +41,7 @@ final class StartupSynchronizer {
     private volatile int startupSyncPhase = 0;
     private volatile int currentSyncId = 0;
     private volatile boolean sawMyInfoInCurrentPhase = false;
+    private volatile int currentPhaseSendCount = 0;
     private volatile CompletableFuture<Void> startupSyncBarrier = CompletableFuture.completedFuture(null);
 
     /**
@@ -73,6 +76,7 @@ final class StartupSynchronizer {
     synchronized void prime() {
         startupSyncPhase = 1;
         sawMyInfoInCurrentPhase = false;
+        currentPhaseSendCount = 0;
         startupSyncBarrier = new CompletableFuture<>();
     }
 
@@ -132,6 +136,8 @@ final class StartupSynchronizer {
         }
 
         int completedId = fromRadio.getConfigCompleteId();
+        log.debug("[SYNC] Observed config_complete_id={} while phase={} waiting_for={}",
+                completedId, startupSyncPhase, currentSyncId);
         if (completedId != currentSyncId) {
             log.debug("[SYNC] Ignoring stale config_complete_id={} while waiting for {}",
                     completedId, currentSyncId);
@@ -151,6 +157,8 @@ final class StartupSynchronizer {
             }
             startupSyncPhase = 2;
             sawMyInfoInCurrentPhase = false;
+            currentPhaseSendCount = 0;
+            startupSyncBarrier = new CompletableFuture<>();
             sendWantConfigForCurrentPhase();
             return;
         }
@@ -174,6 +182,7 @@ final class StartupSynchronizer {
         startupSyncPhase = 0;
         sawMyInfoInCurrentPhase = false;
         currentSyncId = 0;
+        currentPhaseSendCount = 0;
         CompletableFuture<Void> barrier = startupSyncBarrier;
         startupSyncBarrier = CompletableFuture.completedFuture(null);
         if (barrier != null && !barrier.isDone()) {
@@ -206,12 +215,20 @@ final class StartupSynchronizer {
         currentSyncId = (startupSyncPhase == 1) ? NODELESS_WANT_CONFIG_ID : FULL_WANT_CONFIG_ID;
         final int expectedNonce = currentSyncId;
         final int expectedPhase = startupSyncPhase;
+        final int sendCount = ++currentPhaseSendCount;
         startupStateConsumer.accept(startupSyncPhase == 1
                 ? StartupState.SYNC_LOCAL_CONFIG
                 : StartupState.SYNC_MESH_CONFIG);
 
-        log.info("[SYNC] Starting phase {} with want_config_id={}", expectedPhase, expectedNonce);
+        log.info("[SYNC] Starting phase {} with want_config_id={} (send {}/{})",
+                expectedPhase, expectedNonce, sendCount, MAX_STARTUP_REQUEST_SENDS_PER_PHASE);
         wantConfigSender.accept(expectedNonce);
+
+        if (sendCount < MAX_STARTUP_REQUEST_SENDS_PER_PHASE) {
+            scheduler.schedule(() -> retryWantConfigIfStillWaiting(expectedPhase, expectedNonce, sendCount),
+                    STARTUP_REQUEST_NUDGE_DELAY_MS,
+                    TimeUnit.MILLISECONDS);
+        }
 
         scheduler.schedule(() -> {
             CompletableFuture<Void> barrier = startupSyncBarrier;
@@ -222,5 +239,33 @@ final class StartupSynchronizer {
                         "Startup sync timeout (phase " + expectedPhase + ", nonce " + expectedNonce + ")"));
             }
         }, startupSyncTimeoutSeconds, TimeUnit.SECONDS);
+    }
+
+    /**
+     * Re-sends the active phase want-config request once when startup remains stuck waiting for completion.
+     * <p>
+     * This is a light-touch nudge to handle transports or firmware paths where the initial startup request
+     * may be delayed or dropped without requiring a full startup reset.
+     * </p>
+     *
+     * @param expectedPhase phase active when the original send occurred.
+     * @param expectedNonce want-config id sent for that phase.
+     * @param sendCountAtSchedule send count captured when the nudge was scheduled.
+     */
+    private synchronized void retryWantConfigIfStillWaiting(int expectedPhase, int expectedNonce, int sendCountAtSchedule) {
+        CompletableFuture<Void> barrier = startupSyncBarrier;
+        if (barrier == null || barrier.isDone()) {
+            return;
+        }
+        if (startupSyncPhase != expectedPhase || currentSyncId != expectedNonce) {
+            return;
+        }
+        if (currentPhaseSendCount != sendCountAtSchedule) {
+            return;
+        }
+
+        log.debug("[SYNC] Phase {} still waiting for config_complete_id={}; nudging want_config resend.",
+                expectedPhase, expectedNonce);
+        sendWantConfigForCurrentPhase();
     }
 }

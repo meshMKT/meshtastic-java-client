@@ -214,11 +214,21 @@ BLE transport skeleton behavior, and other non-hardware logic using fake/in-memo
 ### Hardware Integration Tests (Opt-In)
 
 Real-radio tests are available behind the Maven profile `hardware-it` and are not executed during normal `test`.
+This is one hardware test profile with two transport modes:
+- `serial`: validates direct USB/serial access to a radio
+- `tcp`: validates Meshtastic TCP access over the network
 
-Required environment variable:
-- `MESHTASTIC_TEST_PORT` (example: `/dev/cu.usbmodem80B54ED11F101`)
+Both modes run the same `RealRadioAdminIT` suite. This is useful because serial and TCP can expose different timing, reconnect, and startup-sync behavior even when the admin/config APIs are the same.
+
+Transport selection:
+- `MESHTASTIC_TEST_TRANSPORT` (`serial` by default, or `tcp`)
+
+Required transport-specific environment variables:
+- `MESHTASTIC_TEST_PORT` when `MESHTASTIC_TEST_TRANSPORT=serial` (example: `/dev/cu.usbmodem80B54ED11F101`)
+- `MESHTASTIC_TEST_TCP_HOST` when `MESHTASTIC_TEST_TRANSPORT=tcp` (example: `192.168.1.40`)
 
 Optional environment variables:
+- `MESHTASTIC_TEST_TCP_PORT` (default: `4403`, only used for TCP hardware tests)
 - `MESHTASTIC_TEST_TIMEOUT_SEC` (default: `45`)
 - `MESHTASTIC_TEST_MUTABLE_CHANNEL_INDEX` (default: `2`, should be an active non-primary slot)
 - `MESHTASTIC_TEST_ENABLE_OWNER_WRITE` (default: `false`; enables reversible owner write/readback/restore test)
@@ -226,14 +236,7 @@ Optional environment variables:
 - `MESHTASTIC_TEST_ENABLE_MQTT_WRITE` (default: `false`; enables reversible MQTT module config write/readback/restore test)
 - `MESHTASTIC_TEST_ENABLE_REBOOT_TEST` (default: `false`; enables reboot/reconnect resilience test)
 
-Run:
-
-```bash
-MESHTASTIC_TEST_PORT=/dev/cu.usbmodem80B54ED11F101 \
-mvn -Phardware-it verify
-```
-
-Hardware IT currently validates:
+What the hardware suite validates in either mode:
 - startup to `READY`
 - metadata/owner/channel read paths
 - core config read matrix
@@ -244,3 +247,49 @@ Hardware IT currently validates:
 - optional reversible security config write/readback/restore (explicitly enabled)
 - optional reversible MQTT module config write/readback/restore (explicitly enabled)
 - optional reboot/reconnect resilience (explicitly enabled)
+
+#### Serial Hardware Mode
+
+Use serial mode when you want to validate the library against a directly attached USB/serial radio. This is typically the simplest and most deterministic hardware test path.
+
+Required:
+- `MESHTASTIC_TEST_TRANSPORT=serial`
+- `MESHTASTIC_TEST_PORT=/dev/...`
+
+Example:
+
+```bash
+MESHTASTIC_TEST_TRANSPORT=serial \
+MESHTASTIC_TEST_PORT=/dev/cu.usbmodem80B54ED11F101 \
+mvn -Phardware-it verify
+```
+
+#### TCP Hardware Mode
+
+Use TCP mode when you want to validate the same admin/config flows over Meshtastic's network socket interface. This is useful for catching transport-specific issues such as slower startup sync, reconnect behavior, or network timing differences that may not appear over serial.
+
+Required:
+- `MESHTASTIC_TEST_TRANSPORT=tcp`
+- `MESHTASTIC_TEST_TCP_HOST=<radio-ip>`
+
+Optional:
+- `MESHTASTIC_TEST_TCP_PORT=4403`
+
+Example:
+
+```bash
+MESHTASTIC_TEST_TRANSPORT=tcp \
+MESHTASTIC_TEST_TCP_HOST=192.168.1.40 \
+MESHTASTIC_TEST_TCP_PORT=4403 \
+mvn -Phardware-it verify
+```
+
+#### Shared Optional Flags
+
+These apply to both serial and TCP hardware runs:
+- `MESHTASTIC_TEST_TIMEOUT_SEC`
+- `MESHTASTIC_TEST_MUTABLE_CHANNEL_INDEX`
+- `MESHTASTIC_TEST_ENABLE_OWNER_WRITE`
+- `MESHTASTIC_TEST_ENABLE_SECURITY_WRITE`
+- `MESHTASTIC_TEST_ENABLE_MQTT_WRITE`
+- `MESHTASTIC_TEST_ENABLE_REBOOT_TEST`

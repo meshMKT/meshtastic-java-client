@@ -179,6 +179,29 @@ class MeshtasticFrameDecoderTest {
     }
 
     /**
+     * Verifies a custom stalled-frame timeout can tolerate slower chunk delivery without resetting.
+     */
+    @Test
+    void customTimeoutAllowsSlowerChunkedFrameDelivery() throws InterruptedException {
+        List<byte[]> decodedPayloads = new ArrayList<>();
+        MeshtasticFrameDecoder decoder = new MeshtasticFrameDecoder(decodedPayloads::add, 2_000L);
+
+        byte[] payload = protoPayload(4501);
+        byte[] framed = frame(payload);
+
+        for (int i = 0; i < 4; i++) {
+            decoder.processByte(framed[i]);
+        }
+        Thread.sleep(250L);
+        for (int i = 4; i < framed.length; i++) {
+            decoder.processByte(framed[i]);
+        }
+
+        assertEquals(1, decodedPayloads.size());
+        assertArrayEquals(payload, decodedPayloads.get(0));
+    }
+
+    /**
      * Verifies payload data may legally contain magic-byte values without breaking framing.
      */
     @Test

@@ -18,6 +18,7 @@ import lombok.extern.slf4j.Slf4j;
  */
 @Slf4j
 public class TcpTransport extends StreamTransport {
+    private static final long TCP_STALLED_FRAME_TIMEOUT_MS = 2_000L;
 
     private final TcpConfig config;
     private Socket socket;
@@ -33,6 +34,7 @@ public class TcpTransport extends StreamTransport {
      * @param config
      */
     public TcpTransport(TcpConfig config) {
+        super(TCP_STALLED_FRAME_TIMEOUT_MS);
         this.config = config;
         setOutboundPacingDelay(config.getOutboundPacingDelayMs());
     }
@@ -130,13 +132,13 @@ public class TcpTransport extends StreamTransport {
 
         Thread retryThread = new Thread(() -> {
             try {
-                log.trace(">>> TCP Link lost. Retrying {}...", config.getHost());
+                log.debug(">>> TCP Link lost. Retrying {}...", config.getHost());
                 while (running && !isConnected()) {
                     try {
                         Thread.sleep(5000); // 5-second backoff
                         attemptConnection();
                         if (isConnected()) {
-                            log.trace(">>> TCP Link Restored!");
+                            log.debug(">>> TCP Link Restored!");
                             notifyConnected();
                             break;
                         }

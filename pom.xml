@@ -285,7 +285,10 @@
                                 <include>**/*IT.java</include>
                             </includes>
                             <systemPropertyVariables>
+                                <MESHTASTIC_TEST_TRANSPORT>${env.MESHTASTIC_TEST_TRANSPORT}</MESHTASTIC_TEST_TRANSPORT>
                                 <MESHTASTIC_TEST_PORT>${env.MESHTASTIC_TEST_PORT}</MESHTASTIC_TEST_PORT>
+                                <MESHTASTIC_TEST_TCP_HOST>${env.MESHTASTIC_TEST_TCP_HOST}</MESHTASTIC_TEST_TCP_HOST>
+                                <MESHTASTIC_TEST_TCP_PORT>${env.MESHTASTIC_TEST_TCP_PORT}</MESHTASTIC_TEST_TCP_PORT>
                                 <MESHTASTIC_TEST_TIMEOUT_SEC>${env.MESHTASTIC_TEST_TIMEOUT_SEC}</MESHTASTIC_TEST_TIMEOUT_SEC>
                                 <MESHTASTIC_TEST_MUTABLE_CHANNEL_INDEX>${env.MESHTASTIC_TEST_MUTABLE_CHANNEL_INDEX}</MESHTASTIC_TEST_MUTABLE_CHANNEL_INDEX>
                                 <MESHTASTIC_TEST_ENABLE_OWNER_WRITE>${env.MESHTASTIC_TEST_ENABLE_OWNER_WRITE}</MESHTASTIC_TEST_ENABLE_OWNER_WRITE>

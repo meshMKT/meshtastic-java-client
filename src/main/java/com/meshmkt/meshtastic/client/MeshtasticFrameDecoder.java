@@ -27,8 +27,10 @@ public class MeshtasticFrameDecoder {
     private static final int MAX_PAYLOAD_SIZE = 512;
     private static final int START_1 = 0x94;
     private static final int START_2 = 0xC3;
+    private static final long DEFAULT_STALLED_FRAME_TIMEOUT_MS = 200L;
 
     private final Consumer<byte[]> packetConsumer;
+    private final long stalledFrameTimeoutMs;
 
     /**
      * Internal states for the serial stream parser.
@@ -64,7 +66,25 @@ public class MeshtasticFrameDecoder {
      * @param packetConsumer receives payload bytes for each fully framed packet.
      */
     public MeshtasticFrameDecoder(Consumer<byte[]> packetConsumer) {
+        this(packetConsumer, DEFAULT_STALLED_FRAME_TIMEOUT_MS);
+    }
+
+    /**
+     * Creates a frame decoder with a custom stalled-frame timeout.
+     * <p>
+     * Serial links usually benefit from a short resynchronization timeout, while TCP/BLE links may need a
+     * more tolerant window to avoid dropping valid frames that arrive in delayed chunks.
+     * </p>
+     *
+     * @param packetConsumer receives payload bytes for each fully framed packet.
+     * @param stalledFrameTimeoutMs maximum inter-byte gap tolerated while decoding one frame.
+     */
+    public MeshtasticFrameDecoder(Consumer<byte[]> packetConsumer, long stalledFrameTimeoutMs) {
         this.packetConsumer = packetConsumer;
+        if (stalledFrameTimeoutMs <= 0) {
+            throw new IllegalArgumentException("stalledFrameTimeoutMs must be > 0");
+        }
+        this.stalledFrameTimeoutMs = stalledFrameTimeoutMs;
     }
 
     /**
@@ -78,7 +98,7 @@ public class MeshtasticFrameDecoder {
         long now = System.currentTimeMillis();
         
         // If mid-packet data pauses for too long, drop partial state and resync.
-        if (state != State.LOOKING_FOR_START1 && (now - lastByteTime > 200)) {
+        if (state != State.LOOKING_FOR_START1 && (now - lastByteTime > stalledFrameTimeoutMs)) {
             resetParser();
         }
         lastByteTime = now;

@@ -22,7 +22,16 @@ public abstract class StreamTransport extends AbstractFramedTransport {
      *
      */
     protected StreamTransport() {
-        this.frameDecoder = new MeshtasticFrameDecoder(this::dispatchToConsumer);
+        this(200L);
+    }
+
+    /**
+     * Creates a stream transport with a custom stalled-frame timeout.
+     *
+     * @param stalledFrameTimeoutMs maximum inter-byte gap tolerated while decoding a frame.
+     */
+    protected StreamTransport(long stalledFrameTimeoutMs) {
+        this.frameDecoder = new MeshtasticFrameDecoder(this::dispatchToConsumer, stalledFrameTimeoutMs);
     }
 
     /**

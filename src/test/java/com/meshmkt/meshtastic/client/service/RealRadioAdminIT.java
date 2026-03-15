@@ -8,15 +8,17 @@ import com.meshmkt.meshtastic.client.event.RequestLifecycleEvent;
 import com.meshmkt.meshtastic.client.event.StartupState;
 import com.meshmkt.meshtastic.client.storage.InMemoryNodeDatabase;
 import com.meshmkt.meshtastic.client.storage.NodeDatabase;
+import com.meshmkt.meshtastic.client.transport.MeshtasticTransport;
 import com.meshmkt.meshtastic.client.transport.stream.serial.SerialConfig;
 import com.meshmkt.meshtastic.client.transport.stream.serial.SerialTransport;
+import com.meshmkt.meshtastic.client.transport.stream.tcp.TcpConfig;
+import com.meshmkt.meshtastic.client.transport.stream.tcp.TcpTransport;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
 import org.junit.jupiter.api.Timeout;
-import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
 import org.meshtastic.proto.AdminProtos.AdminMessage.ConfigType;
 import org.meshtastic.proto.AdminProtos.AdminMessage.ModuleConfigType;
 import org.meshtastic.proto.ConfigProtos.Config;
@@ -50,7 +52,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 /**
- * Hardware-in-the-loop integration tests for admin/config flows against a real serial radio.
+ * Hardware-in-the-loop integration tests for admin/config flows against a real radio.
  * <p>
  * These tests are intentionally excluded from the default unit-test lifecycle and are executed only
  * through the {@code hardware-it} Maven profile.
@@ -59,19 +61,21 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
  * Required runtime input:
  * </p>
  * <ul>
- * <li>{@code MESHTASTIC_TEST_PORT}: serial device path (for example {@code /dev/cu.usbmodem80B54ED11F101}).</li>
+ * <li>{@code MESHTASTIC_TEST_TRANSPORT}: transport kind, either {@code serial} (default) or {@code tcp}.</li>
+ * <li>{@code MESHTASTIC_TEST_PORT}: required when {@code MESHTASTIC_TEST_TRANSPORT=serial}.</li>
+ * <li>{@code MESHTASTIC_TEST_TCP_HOST}: required when {@code MESHTASTIC_TEST_TRANSPORT=tcp}.</li>
  * </ul>
  * <p>
  * Optional runtime input:
  * </p>
  * <ul>
+ * <li>{@code MESHTASTIC_TEST_TCP_PORT}: TCP port when {@code MESHTASTIC_TEST_TRANSPORT=tcp} (default: 4403).</li>
  * <li>{@code MESHTASTIC_TEST_TIMEOUT_SEC}: per-future timeout in seconds (default: 45).</li>
  * <li>{@code MESHTASTIC_TEST_MUTABLE_CHANNEL_INDEX}: channel slot used for reversible write test (default: 2).</li>
  * </ul>
  */
 @Tag("hardware")
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
-@EnabledIfSystemProperty(named = "MESHTASTIC_TEST_PORT", matches = ".+")
 class RealRadioAdminIT {
     private static final Logger log = LoggerFactory.getLogger(RealRadioAdminIT.class);
 
@@ -105,6 +109,7 @@ class RealRadioAdminIT {
     private boolean enableSecurityWriteTest;
     private boolean enableMqttWriteTest;
     private boolean enableRebootResilienceTest;
+    private String transportKind;
     private final List<RequestLifecycleEvent> lifecycleEvents = new CopyOnWriteArrayList<>();
 
     /**
@@ -114,9 +119,7 @@ class RealRadioAdminIT {
      */
     @BeforeAll
     void connectToHardware() throws Exception {
-        String port = trimToNull(System.getProperty("MESHTASTIC_TEST_PORT"));
-        requireAssumption(port != null, "MESHTASTIC_TEST_PORT is required for hardware integration tests.");
-
+        this.transportKind = parseTransportKind(trimToNull(System.getProperty("MESHTASTIC_TEST_TRANSPORT")));
         this.operationTimeout = parseDurationSeconds(
                 trimToNull(System.getProperty("MESHTASTIC_TEST_TIMEOUT_SEC")),
                 DEFAULT_OPERATION_TIMEOUT
@@ -146,10 +149,7 @@ class RealRadioAdminIT {
             }
         });
 
-        SerialConfig config = SerialConfig.builder()
-                .portName(port)
-                .build();
-        client.connect(new SerialTransport(config));
+        client.connect(buildTransport());
 
         boolean ready = client.isReady() || readyLatch.await(READY_TIMEOUT.toSeconds(), TimeUnit.SECONDS);
         assertTrue(ready, "Client did not reach READY within " + READY_TIMEOUT.toSeconds() + "s");
@@ -716,6 +716,65 @@ class RealRadioAdminIT {
             case "false", "0", "no", "n", "off" -> false;
             default -> fallback;
         };
+    }
+
+    /**
+     * Builds the requested hardware test transport from system properties.
+     *
+     * @return configured serial or TCP transport.
+     */
+    private MeshtasticTransport buildTransport() {
+        if ("tcp".equals(transportKind)) {
+            String host = trimToNull(System.getProperty("MESHTASTIC_TEST_TCP_HOST"));
+            requireAssumption(host != null,
+                    "MESHTASTIC_TEST_TCP_HOST is required when MESHTASTIC_TEST_TRANSPORT=tcp.");
+            return new TcpTransport(TcpConfig.builder()
+                    .host(host)
+                    .port(parseTcpPort(trimToNull(System.getProperty("MESHTASTIC_TEST_TCP_PORT"))))
+                    .build());
+        }
+
+        String port = trimToNull(System.getProperty("MESHTASTIC_TEST_PORT"));
+        requireAssumption(port != null,
+                "MESHTASTIC_TEST_PORT is required when MESHTASTIC_TEST_TRANSPORT=serial.");
+        return new SerialTransport(SerialConfig.builder()
+                .portName(port)
+                .build());
+    }
+
+    /**
+     * Parses the hardware test transport kind.
+     *
+     * @param raw transport property value.
+     * @return validated transport kind.
+     */
+    private String parseTransportKind(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return "serial";
+        }
+        String normalized = raw.trim().toLowerCase(Locale.ROOT);
+        requireAssumption("serial".equals(normalized) || "tcp".equals(normalized),
+                "MESHTASTIC_TEST_TRANSPORT must be 'serial' or 'tcp'.");
+        return normalized;
+    }
+
+    /**
+     * Parses the optional TCP port property for hardware integration testing.
+     *
+     * @param raw optional TCP port value.
+     * @return TCP port or the Meshtastic default of 4403.
+     */
+    private int parseTcpPort(String raw) {
+        int fallback = 4403;
+        if (raw == null) {
+            return fallback;
+        }
+        try {
+            int port = Integer.parseInt(raw.trim());
+            return port > 0 ? port : fallback;
+        } catch (NumberFormatException ignored) {
+            return fallback;
+        }
     }
 
     /**
