@@ -41,6 +41,13 @@ This project is production-focused for serial/TCP Meshtastic clients.
 For first public release positioning, this library is best described as serial/TCP-first, with BLE and OTA remaining as the largest feature-completeness items.
 ====
 
+[IMPORTANT]
+====
+BLE and OTA should currently be understood as supported extension points rather than fully turnkey, end-to-end
+features inside this repository. The public APIs are present, but they still require concrete backend/uploader
+implementations validated for the target platform and hardware.
+====
+
 == Feature Map
 
 [cols="1,1,3",options="header"]
@@ -110,16 +117,28 @@ SerialConfig cfg = SerialConfig.builder()
         .outboundPacingDelayMs(200)
         .build();
 
-client.connect(new SerialTransport(cfg));
-
 // Optional advanced request-timing tuning (defaults shown)
 client.setRequestLockReleaseCooldownMs(200);               // default: 200ms
 client.setRequestCorrelationTimeout(Duration.ofSeconds(30)); // default: 30s
+
+client.connect(new SerialTransport(cfg));
 ----
 
 [NOTE]
 ====
 Keep defaults unless you have measured evidence your radio/firmware tolerates tighter pacing.
+====
+
+[TIP]
+====
+Order matters for some settings:
+
+- Transport config such as `SerialConfig.outboundPacingDelayMs`, `TcpConfig.outboundPacingDelayMs`,
+  BLE reconnect/backoff settings, and other transport-builder values are startup-time settings. Set them before
+  `connect(...)`. To change them later, rebuild/reconnect the transport.
+- `MeshtasticClient` request timing knobs such as `setRequestLockReleaseCooldownMs(...)` and
+  `setRequestCorrelationTimeout(...)` are runtime-tunable and can be changed before or after `connect(...)`.
+- `AdminService.setVerificationPolicy(...)` is also runtime-tunable and affects future verify-applied admin writes.
 ====
 
 == Startup Flow (Recommended)
@@ -402,6 +421,9 @@ TcpConfig tcpCfg = TcpConfig.builder()
         .build();
 ----
 
+These are startup-time transport settings. They are read from the transport config during transport construction/connect.
+If you want to change them later, create a new transport/config and reconnect.
+
 ==== Request Correlation Controls
 
 `MeshtasticClient` exposes:
@@ -416,6 +438,31 @@ Usage:
 client.setRequestLockReleaseCooldownMs(120);
 client.setRequestCorrelationTimeout(Duration.ofSeconds(20));
 ----
+
+These settings are runtime-tunable. You can change them before or after `connect(...)`, and future requests will use
+the updated values.
+
+==== Admin Verification Policy
+
+`AdminService` exposes:
+
+- `setVerificationPolicy(AdminVerificationPolicy)`
+
+Usage:
+
+[source,java]
+----
+client.getAdminService().setVerificationPolicy(
+        AdminVerificationPolicy.builder()
+                .maxAttempts(3)
+                .initialRetryDelay(Duration.ofMillis(400))
+                .retryBackoffMultiplier(1.8)
+                .maxRetryDelay(Duration.ofSeconds(2))
+                .build()
+);
+----
+
+This setting is also runtime-tunable and affects future `verifyApplied=true` admin writes.
 
 Example TRACE output when timing diagnostics are enabled:
 
@@ -466,14 +513,101 @@ Use convenience methods on `MeshtasticClient` for common text workflows:
 
 [source,java]
 ----
-// Direct message to node over primary channel.
+// 1) Typical direct message to a single node on the primary channel.
 client.sendDirectText(targetNodeId, "hello from java");
 
-// Channel message (broadcast to channel index).
-client.sendChannelText(0, "channel announcement");
+// 2) Broadcast to the public/default chat on the primary channel.
+client.sendChannelText(MeshConstants.PRIMARY_CHANNEL_INDEX, "hello mesh");
+
+// 3) Broadcast to a specific shared channel such as channel 1 ("Test").
+client.sendChannelText(1, "hello test channel");
+
+// 4) Advanced: direct message to one node while using a non-primary
+// shared channel context for encryption/key selection.
+client.sendDirectText(targetNodeId, 1, "hello on channel 1");
 ----
 
 Both methods automatically apply chunking for long payloads.
+
+[NOTE]
+====
+For direct messages, the destination node controls whether the packet is one-to-one, while the channel index
+selects the shared channel/key context used for that packet. For channel messages, the destination is broadcast
+and the channel index selects which group channel receives the message.
+====
+
+==== Which Method Should I Use?
+
+[cols="1,3",options="header"]
+|===
+| Goal
+| Method
+
+| Send a private message to one device using the normal/default path
+| `client.sendDirectText(nodeId, "hello")`
+
+| Send a message to everyone on the public/default channel
+| `client.sendChannelText(MeshConstants.PRIMARY_CHANNEL_INDEX, "hello everyone")`
+
+| Send a message to everyone on a secondary channel such as "Test"
+| `client.sendChannelText(channelIndex, "hello test")`
+
+| Send a private message to one device while using a specific shared channel's key/context
+| `client.sendDirectText(nodeId, channelIndex, "hello")`
+|===
+
+==== UI Example
+
+This is a common UI pattern:
+
+- DM conversation view: call `sendDirectText(selectedNodeId, message)`
+- Public chat view: call `sendChannelText(MeshConstants.PRIMARY_CHANNEL_INDEX, message)`
+- Secondary channel chat view (for example "Test"): call `sendChannelText(selectedChannel.index(), message)`
+
+[source,java]
+----
+if (conversation.isDirect()) {
+    client.sendDirectText(conversation.targetNodeId(), messageText);
+} else {
+    client.sendChannelText(conversation.channelIndex(), messageText);
+}
+----
+
+==== Bot Or Integration Example
+
+Bots often need both broadcast and direct-reply behavior.
+
+[source,java]
+----
+client.addEventListener(new MeshtasticEventListener() {
+    @Override
+    public void onChatMessage(ChatMessageEvent event) {
+        String text = event.getText();
+        int fromNode = event.getFromNodeId();
+
+        if ("ping".equalsIgnoreCase(text)) {
+            client.sendDirectText(fromNode, "pong");
+        }
+
+        if ("announce".equalsIgnoreCase(text)) {
+            client.sendChannelText(MeshConstants.PRIMARY_CHANNEL_INDEX, "bot online");
+        }
+    }
+});
+----
+
+==== Advanced Channel Context Example
+
+If two nodes share a private secondary channel, a direct message can still use that channel's
+shared key/context rather than the primary channel.
+
+[source,java]
+----
+int opsNodeId = 0x00ba0dd0;
+int opsChannelIndex = 2;
+
+client.sendDirectText(opsNodeId, opsChannelIndex, "check-in complete");
+----
 
 [plantuml,request-correlation-lifecycle,svg]
 ----
@@ -513,6 +647,74 @@ end
 ----
 AdminService admin = client.getAdminService();
 ----
+
+`AdminService` is the high-level settings/configuration facade for the library.
+It exists so application code does not have to manually build every admin protobuf request,
+track every response variant, merge incoming admin snapshots into a coherent radio model, or
+re-implement write verification rules.
+
+In practice, `MeshtasticClient` and `AdminService` have different jobs:
+
+- `MeshtasticClient` owns transport lifecycle, startup sync, request correlation, messaging helpers, and event fan-out.
+- `AdminService` owns radio settings/domain state: owner, metadata, channels, config sections, module configs, and
+  admin-oriented write/readback workflows.
+
+Why this layer exists:
+
+- Meshtastic admin/config data arrives across multiple message types and at multiple times.
+- Settings UIs usually need both instant cached reads and explicit refresh-on-open behavior.
+- Admin writes often need eventual-consistency handling because some radios apply writes asynchronously.
+- It is easier for app developers to work with a stable service-oriented API than with dozens of raw admin message variants.
+
+What `AdminService` gives you:
+
+- a live `RadioModel` snapshot via `getSnapshot()`
+- typed snapshot accessors for channels/config/module-config sections
+- explicit async refresh methods for page-specific data loads
+- typed write helpers for channel/config/module/owner operations
+- optional verify-applied semantics with structured `AdminWriteResult`
+
+Mental model:
+
+- use `AdminService` as your settings/read-write facade
+- use `MeshtasticEventListener.onAdminModelUpdate(...)` to keep UI state in sync while connected
+- use snapshots for instant rendering
+- use refresh methods when a page opens or when a user explicitly asks to reload
+
+This split keeps the lower-level client API clean while still giving UI and headless applications
+a practical, higher-level surface for Meshtastic settings workflows.
+
+==== Snapshot Model And Refresh Model
+
+`AdminService` is intentionally snapshot-first.
+
+- Snapshot reads are immediate and are ideal for first paint in a UI.
+- Refresh methods are explicit and async so callers control when radio traffic is generated.
+- Incoming admin/local-state packets continuously update the in-memory `RadioModel`.
+
+Typical pattern:
+
+1. render immediately from snapshot
+2. trigger a focused refresh for the active page
+3. listen for `onAdminModelUpdate(...)` to keep the view/store current
+
+This avoids both extremes:
+
+- blocking UI on a full radio sweep every time
+- forcing application code to manually merge incoming admin packets
+
+==== Who Should Use It?
+
+Use `AdminService` when your application needs:
+
+- settings screens
+- channel editors
+- owner/metadata display
+- config/module configuration
+- lifecycle admin actions such as reboot/factory reset/OTA-mode request
+
+If you are building a simple bot or telemetry consumer and do not need radio settings,
+you may spend most of your time in `MeshtasticClient` plus event listeners and rarely touch `AdminService`.
 
 == Settings Page Patterns
 
@@ -1040,6 +1242,8 @@ The OTA API is split into two parts:
 - `OtaService` orchestrates hash + OTA mode request + uploader strategy.
 
 This keeps OTA transport-agnostic. You can use a Linux serial uploader now and reuse the same orchestration later for BLE.
+It also means the repository does not currently ship one universally ready OTA uploader for every board/transport;
+that last-mile implementation is expected to be provided and validated per environment.
 
 === OTA Orchestration Example
 
@@ -1093,6 +1297,8 @@ session.resultFuture().thenAccept(result -> {
 - OTA upload implementation is intentionally externalized via `OtaUploadStrategy`.
 - Linux serial release can ship with `CommandLineOtaUploadStrategy` + CLI tooling.
 - BLE transport can later provide another `OtaUploadStrategy` without changing OTA API or UI flow.
+- This separation is intentional so contributors can add hardware-specific or platform-specific OTA implementations
+  without forcing one uploader stack into core.
 
 === OTA Support Matrix (Current)
 
@@ -1184,6 +1390,26 @@ client.connect(new BleTransport(cfg, backend));
 ----
 
 This keeps the core API stable while allowing platform-specific BLE implementations without hard-coding one dependency.
+
+[IMPORTANT]
+====
+BLE support is not 100% implemented out of the box. `BleTransport` provides the Meshtastic-facing transport behavior,
+but a real platform BLE driver/backend still needs to be supplied by the application or by a community module.
+====
+
+=== Candidate BLE Backends
+
+Depending on OS/runtime, a contributor or application can wire `BleLinkBackend` to a concrete Java BLE library such as:
+
+- Gluon Attach BluetoothLE for Gluon/JavaFX-oriented applications
+- TinyB for Linux/BlueZ environments
+- a BlueZ D-Bus integration built on a Java D-Bus library for Linux-specific apps
+
+[NOTE]
+====
+These are examples of possible backend choices, not official bundled dependencies of this project. The right backend
+depends on packaging constraints, runtime environment, and the target operating system.
+====
 
 == Build Outputs
 

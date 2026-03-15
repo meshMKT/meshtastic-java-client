@@ -20,6 +20,11 @@ public final class MeshConstants {
      */
     public static final int ID_UNKNOWN = 0;
 
+    /**
+     * Meshtastic primary channel slot index.
+     */
+    public static final int PRIMARY_CHANNEL_INDEX = 0;
+
     // --- Distance Constants ---
 
     /**

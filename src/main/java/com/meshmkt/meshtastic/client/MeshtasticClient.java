@@ -317,14 +317,30 @@ public class MeshtasticClient implements AdminRequestGateway {
     }
 
     /**
-     * Sends a direct message (DM) to one node over channel index {@code 0}.
+     * Sends a direct message (DM) to one node over {@link MeshConstants#PRIMARY_CHANNEL_INDEX}.
      *
      * @param nodeId destination node id.
      * @param text message text (auto-chunked when needed).
      * @return future completed when all message chunks are correlated as accepted.
      */
     public CompletableFuture<Boolean> sendDirectText(int nodeId, String text) {
-        return sendText(nodeId, 0, text);
+        return sendText(nodeId, MeshConstants.PRIMARY_CHANNEL_INDEX, text);
+    }
+
+    /**
+     * Sends a direct message (DM) to one node using an explicit channel context.
+     * <p>
+     * This still targets a single destination node, but uses the supplied channel slot to select
+     * the shared channel settings/keying context for the packet.
+     * </p>
+     *
+     * @param nodeId destination node id.
+     * @param channelIndex channel slot to use for the direct message.
+     * @param text message text (auto-chunked when needed).
+     * @return future completed when all message chunks are correlated as accepted.
+     */
+    public CompletableFuture<Boolean> sendDirectText(int nodeId, int channelIndex, String text) {
+        return sendText(nodeId, channelIndex, text);
     }
 
     /**

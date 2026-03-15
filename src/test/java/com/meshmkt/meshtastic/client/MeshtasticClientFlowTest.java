@@ -829,6 +829,47 @@ class MeshtasticClientFlowTest {
     }
 
     /**
+     * Verifies direct text can target a specific node while using an explicit non-primary
+     * channel context for the packet.
+     */
+    @Test
+    void sendDirectTextUsesExplicitChannelIndex() throws Exception {
+        FakeTransport transport = new FakeTransport();
+        client = new MeshtasticClient(new InMemoryNodeDatabase());
+        client.connect(transport);
+        completeStartupSync(transport, 7555);
+
+        int targetNodeId = 0x00ba0dd0;
+        int channelIndex = 2;
+        CompletableFuture<Boolean> future = client.sendDirectText(targetNodeId, channelIndex, "ops");
+        MeshProtos.ToRadio outbound = awaitToRadio(transport,
+                tr -> tr.hasPacket() && tr.getPacket().getDecoded().getPortnum() == Portnums.PortNum.TEXT_MESSAGE_APP,
+                Duration.ofSeconds(2));
+
+        assertEquals(targetNodeId, outbound.getPacket().getTo());
+        assertEquals(client.getSelfNodeId(), outbound.getPacket().getFrom());
+        assertEquals(channelIndex, outbound.getPacket().getChannel());
+        assertEquals("ops", outbound.getPacket().getDecoded().getPayload().toStringUtf8());
+
+        MeshProtos.Routing noResponse = MeshProtos.Routing.newBuilder()
+                .setErrorReason(MeshProtos.Routing.Error.NO_RESPONSE)
+                .build();
+        MeshProtos.MeshPacket routingNoResponse = MeshProtos.MeshPacket.newBuilder()
+                .setFrom(client.getSelfNodeId())
+                .setTo(client.getSelfNodeId())
+                .setDecoded(MeshProtos.Data.newBuilder()
+                        .setPortnum(Portnums.PortNum.ROUTING_APP)
+                        .setRequestId(outbound.getPacket().getId())
+                        .setPayload(noResponse.toByteString())
+                        .build())
+                .setId(902201)
+                .build();
+        transport.emitParsedPacket(MeshProtos.FromRadio.newBuilder().setPacket(routingNoResponse).build().toByteArray());
+
+        assertTrue(future.get(2, TimeUnit.SECONDS));
+    }
+
+    /**
      * Verifies await-style request emits PAYLOAD_RECEIVED when matching payload event arrives.
      */
     @Test
