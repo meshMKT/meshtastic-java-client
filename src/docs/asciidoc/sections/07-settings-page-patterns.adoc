@@ -1,0 +1,39 @@
+== Settings Page Patterns
+
+=== Read-on-open (Snapshot + Refresh)
+
+Render from snapshot immediately, then refresh only the page-specific state:
+
+[source,java]
+----
+AdminService admin = client.getAdminService();
+
+// Immediate render from cached state
+renderChannels(admin.getChannelSnapshots());
+renderConfig(admin.getConfigSnapshots());
+renderModules(admin.getModuleConfigSnapshots());
+
+// On-demand refresh for a channels/security page
+admin.refreshChannelsAndSecurity().thenAccept(model -> {
+    renderChannels(admin.getChannelSnapshots());
+    renderSecurity(admin.getConfigSnapshot(ConfigType.SECURITY_CONFIG).orElse(null));
+    renderMqtt(admin.getModuleConfigSnapshot(ModuleConfigType.MQTT_CONFIG).orElse(null));
+});
+
+// Explicit deep refresh (all channel slots 0..7)
+admin.refreshAllChannelsAndSecurity().thenAccept(model -> {
+    renderChannels(admin.getChannelSnapshots());
+});
+----
+
+=== Module/Config Refresh by Section
+
+[source,java]
+----
+admin.refreshCore();            // metadata + owner + core config blocks
+admin.refreshCoreConfigs();     // lora/device/display/network
+admin.refreshModules();         // all supported module config sections
+admin.refreshMqttConfig();      // mqtt only
+admin.refreshSecurityConfig();  // security only
+----
+

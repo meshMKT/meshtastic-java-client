@@ -3,18 +3,16 @@ package com.meshmkt.meshtastic.client.handlers;
 import com.meshmkt.meshtastic.client.MeshUtils;
 import com.meshmkt.meshtastic.client.storage.NodeDatabase;
 import com.meshmkt.meshtastic.client.storage.PacketContext;
+import lombok.extern.slf4j.Slf4j;
 import org.meshtastic.proto.MeshProtos;
 import org.meshtastic.proto.Portnums;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import java.nio.charset.StandardCharsets;
 
 /**
  * Dedicated logger for Chat messages.
  */
+@Slf4j(topic = "MeshChat")
 public class MessageLoggingHandler extends BaseMeshHandler {
-
-    private static final Logger log = LoggerFactory.getLogger("MeshChat");
 
     /**
      *

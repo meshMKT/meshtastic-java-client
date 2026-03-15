@@ -1,0 +1,127 @@
+== Overview
+
+`{project-name}` is an async Java client for Meshtastic radios that provides:
+
+- transport and reconnect management
+- startup synchronization
+- strongly-typed event dispatching
+- node database + snapshot status model
+- admin/config/channel APIs through `AdminService`
+- utility request APIs (fire-and-forget and payload-await)
+- OTA orchestration framework with pluggable upload strategies
+- BLE transport SPI for platform-specific BLE backends
+
+Javadocs are generated at link:{javadocs-url}[API Javadocs].
+
+== Why This Project Exists
+
+This library exists because there was no clean, reusable low-level Meshtastic Java client readily available for normal
+Java applications.
+
+The Java code that did exist was largely embedded inside the Android client, which is useful as an application but not
+ideal as a standalone library for:
+
+- headless services
+- bots that listen and respond to mesh messages
+- server-side Java integrations
+- custom desktop Java UI clients
+
+The original motivation for this project was simple: build a Meshtastic bot in Java that could listen on the mesh and
+respond to messages without having to repurpose an application codebase.
+
+That led to a broader goal:
+
+- provide a clean event-driven core for headless and bot-style applications
+- expose enough API surface to build a full Java desktop/mobile UI client on top
+
+The architecture is intentionally designed to balance those two use cases. It tries to stay low-level enough to be
+flexible, while still offering practical higher-level helpers for the workflows most Meshtastic apps need.
+
+[NOTE]
+====
+There may still be bugs, missing convenience APIs, or firmware-specific edge cases. Contributions, bug reports, and
+feedback are welcome.
+====
+
+== Current Scope And Gaps
+
+This project is production-focused for serial/TCP Meshtastic clients.
+
+- Production-ready now:
+  - Serial and TCP transports
+  - Event-driven client model
+  - Admin/config/channel refresh + write APIs
+  - Request lifecycle + startup lifecycle signaling
+
+- Pending major items:
+  - bundled production BLE backend (BLE SPI exists)
+  - full production OTA flashing integration (framework exists)
+
+[NOTE]
+====
+For first public release positioning, this library is best described as serial/TCP-first, with BLE and OTA remaining as the largest feature-completeness items.
+====
+
+[IMPORTANT]
+====
+BLE and OTA should currently be understood as supported extension points rather than fully turnkey, end-to-end
+features inside this repository. The public APIs are present, but they still require concrete backend/uploader
+implementations validated for the target platform and hardware.
+====
+
+== Feature Map
+
+[cols="1,1,3",options="header"]
+|===
+| Capability
+| Primary API
+| Notes
+
+| Transport lifecycle
+| `MeshtasticClient.connect()/disconnect()/shutdown()`
+| Serial/TCP are production-ready in core; BLE is SPI-backed.
+
+| Startup lifecycle
+| `StartupState` + `MeshtasticEventListener.onStartupStateChanged(...)`
+| State transitions: `DISCONNECTED -> SYNC_LOCAL_CONFIG -> SYNC_MESH_CONFIG -> READY`.
+
+| Mesh event stream
+| `MeshtasticEventListener`
+| Text, position, telemetry, node discovery, message status, request lifecycle, admin model updates.
+
+| Admin/config writes
+| `AdminService`
+| Accepted-only and verify-applied variants + structured `AdminWriteResult`.
+
+| Snapshot model
+| `AdminService.getSnapshot()` + typed getters
+| Instant read path for UI rendering before refresh.
+
+| Utility requests
+| `requestNodeInfo*`, `requestPosition*`, `requestTelemetry*`
+| Choose request-level completion or payload-level completion.
+
+| OTA orchestration
+| `OtaService`
+| Hash + OTA mode request + pluggable upload strategy.
+|===
+
+== API Catalog (By Class)
+
+Use this quick map when building app-level abstractions:
+
+- `MeshtasticClient`
+  Handles transport lifecycle, startup sync, text send helpers, utility node-info/position/telemetry requests, and event fan-out.
+- `MeshtasticEventListener`
+  Unified callback surface for startup state, request lifecycle, admin model updates, and mesh data events.
+- `AdminService`
+  Typed refresh/read/write operations for owner, metadata, channels, config sections, and module configs.
+- `ProtocolConstraints`
+  Pre-validation helpers for channel index/name/PSK and non-throwing validation issues for form UIs.
+- `NodeDatabase` + `MeshNode`
+  Snapshot store and node freshness/status modeling (`LIVE/IDLE/CACHED/OFFLINE`).
+- `OtaService`
+  OTA orchestration that composes admin OTA-mode request with pluggable upload strategies.
+- `SerialTransport` / `TcpTransport` / `BleTransport`
+  Physical transport adapters with framing, reconnect behavior, and pacing controls.
+

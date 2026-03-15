@@ -1,0 +1,178 @@
+== Settings Cookbook
+
+This section shows practical UI workflows by page. The pattern is consistent:
+
+1. Render immediately from snapshots.
+2. Trigger page-specific refresh on page open.
+3. On save, use a write method with verification where correctness matters.
+4. Handle `AdminWriteResult` for user-facing success/failure messaging.
+
+=== Channels Page
+
+Recommended open flow:
+
+[source,java]
+----
+// 1) Snapshot render (instant)
+renderChannels(admin.getChannelSnapshots());
+
+// 2) Refresh slots on page open
+admin.refreshChannels().thenAccept(channels -> {
+    renderChannels(channels);
+});
+----
+
+Recommended writes:
+
+[source,java]
+----
+// rename slot 2
+admin.setChannelName(2, "meshMKT")
+     .thenAccept(applied -> refreshChannelsUi());
+
+// set password/psk on slot 2
+admin.setChannelPassword(2, "shared-secret")
+     .thenAccept(applied -> refreshChannelsUi());
+
+// full channel payload update with structured status
+admin.setChannelResult(2, updatedChannel, true)
+     .thenAccept(this::handleWriteResult);
+----
+
+=== Security Page
+
+Recommended open flow:
+
+[source,java]
+----
+admin.getConfigSnapshot(ConfigType.SECURITY_CONFIG)
+     .ifPresent(this::renderSecuritySnapshot);
+
+admin.refreshSecurityConfig().thenAccept(config -> {
+    if (config.hasSecurity()) {
+        renderSecurity(config.getSecurity());
+    }
+});
+----
+
+Recommended write:
+
+[source,java]
+----
+Config.SecurityConfig security = Config.SecurityConfig.newBuilder()
+        .setAdminChannelEnabled(true)
+        .build();
+
+admin.setSecurityConfig(security, true)
+     .thenAccept(applied -> {
+         if (applied) showSuccess("Security settings applied.");
+         else showWarning("Security settings accepted but not verified.");
+     });
+----
+
+=== MQTT Page
+
+MQTT in Meshtastic is a module config section, not a top-level config section.
+
+Recommended open flow:
+
+[source,java]
+----
+admin.getModuleConfigSnapshot(ModuleConfigType.MQTT_CONFIG)
+     .ifPresent(snapshot -> {
+         if (snapshot.hasMqtt()) {
+             renderMqtt(snapshot.getMqtt());
+         }
+     });
+
+admin.refreshMqttConfig().thenAccept(moduleConfig -> {
+    if (moduleConfig.hasMqtt()) {
+        renderMqtt(moduleConfig.getMqtt());
+    }
+});
+----
+
+Recommended write:
+
+[source,java]
+----
+ModuleConfig.MQTTConfig mqtt = ModuleConfig.MQTTConfig.newBuilder()
+        .setEnabled(true)
+        .setAddress("mqtt.example.com")
+        .setUsername("mesh-user")
+        // set password/tls/root fields as required by your deployment
+        .build();
+
+admin.setMqttConfig(mqtt, true).thenAccept(applied -> {
+    if (applied) {
+        showSuccess("MQTT settings applied.");
+    } else {
+        showWarning("MQTT settings accepted but read-back mismatch.");
+    }
+});
+----
+
+How MQTT settings are used in a client app:
+
+- Your app writes MQTT module settings via `AdminService`.
+- The radio firmware applies those settings and controls MQTT bridge behavior.
+- Your Java app usually does not need a separate MQTT client just to enable radio MQTT forwarding.
+- If your app also consumes broker traffic directly (analytics/backend tooling), run a separate MQTT client in your app process; that is independent of radio admin configuration.
+
+=== Device / LoRa / Network / Display Pages
+
+Use typed config refresh/write wrappers:
+
+[source,java]
+----
+// open page
+admin.refreshDeviceConfig().thenAccept(this::renderDevice);
+admin.refreshLoraConfig().thenAccept(this::renderLora);
+admin.refreshNetworkConfig().thenAccept(this::renderNetwork);
+admin.refreshDisplayConfig().thenAccept(this::renderDisplay);
+
+// save page
+admin.setDeviceConfig(deviceConfig, true).thenAccept(this::handleBooleanWrite);
+admin.setLoraConfig(loraConfig, true).thenAccept(this::handleBooleanWrite);
+admin.setNetworkConfig(networkConfig, true).thenAccept(this::handleBooleanWrite);
+admin.setDisplayConfig(displayConfig, true).thenAccept(this::handleBooleanWrite);
+----
+
+=== Modules Page (Full Refresh)
+
+For a consolidated modules page:
+
+[source,java]
+----
+admin.refreshModules().thenAccept(model -> {
+    renderModules(admin.getModuleConfigSnapshots());
+});
+----
+
+For specific module cards, prefer targeted calls:
+
+[source,java]
+----
+admin.refreshTelemetryModuleConfig().thenAccept(this::renderTelemetryModule);
+admin.refreshSerialModuleConfig().thenAccept(this::renderSerialModule);
+admin.refreshStoreForwardModuleConfig().thenAccept(this::renderStoreForwardModule);
+----
+
+=== Write Result Handling Pattern
+
+Reusable UI handler:
+
+[source,java]
+----
+private void handleWriteResult(AdminWriteResult result) {
+    switch (result.status()) {
+        case VERIFIED_APPLIED -> showSuccess(result.operation() + ": verified.");
+        case ACCEPTED -> showSuccess(result.operation() + ": accepted.");
+        case REJECTED -> showError(result.operation() + ": rejected (" + result.message() + ")");
+        case TIMEOUT -> showError(result.operation() + ": timeout (" + result.message() + ")");
+        case VERIFICATION_FAILED -> showWarning(result.operation() + ": verification failed.");
+        case FAILED -> showError(result.operation() + ": failed (" + result.message() + ")");
+    }
+}
+----
+

@@ -1,0 +1,54 @@
+== BLE Transport SPI (Skeleton)
+
+The core includes a BLE transport skeleton with a pluggable backend SPI:
+
+- `BleConfig` (connection IDs/UUIDs/timeouts/reconnect policy)
+- `BleLinkBackend` (backend adapter contract to your BLE library)
+- `BleTransport` (meshtastic framing + reconnect + lifecycle wiring)
+
+Example bootstrap:
+
+[source,java]
+----
+BleConfig cfg = BleConfig.builder()
+        .deviceId("AA:BB:CC:DD:EE:FF")
+        .serviceUuid("service-uuid")
+        .toRadioCharacteristicUuid("to-radio-char-uuid")
+        .fromRadioCharacteristicUuid("from-radio-char-uuid")
+        .connectTimeout(Duration.ofSeconds(10))
+        .reconnectBackoff(Duration.ofSeconds(2))
+        .autoReconnect(true)
+        .build();
+
+BleLinkBackend backend = new MyBleBackend(); // your adapter for a concrete BLE stack
+client.connect(new BleTransport(cfg, backend));
+----
+
+This keeps the core API stable while allowing platform-specific BLE implementations without hard-coding one dependency.
+
+[IMPORTANT]
+====
+BLE support is not 100% implemented out of the box. `BleTransport` provides the Meshtastic-facing transport behavior,
+but a real platform BLE driver/backend still needs to be supplied by the application or by a community module.
+====
+
+[TIP]
+====
+When implementing a BLE backend, focus on scan/connect/notify/write behavior and reconnect policy. The existing
+request correlation, admin verification retries, and startup resync flow already live in the core client.
+====
+
+=== Candidate BLE Backends
+
+Depending on OS/runtime, a contributor or application can wire `BleLinkBackend` to a concrete Java BLE library such as:
+
+- Gluon Attach BluetoothLE for Gluon/JavaFX-oriented applications
+- TinyB for Linux/BlueZ environments
+- a BlueZ D-Bus integration built on a Java D-Bus library for Linux-specific apps
+
+[NOTE]
+====
+These are examples of possible backend choices, not official bundled dependencies of this project. The right backend
+depends on packaging constraints, runtime environment, and the target operating system.
+====
+

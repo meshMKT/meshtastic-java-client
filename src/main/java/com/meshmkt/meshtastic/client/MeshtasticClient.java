@@ -28,21 +28,18 @@ import com.meshmkt.meshtastic.client.storage.MeshNode;
 import com.meshmkt.meshtastic.client.storage.NodeDatabase;
 import com.meshmkt.meshtastic.client.transport.MeshtasticTransport;
 import com.meshmkt.meshtastic.client.transport.TransportConnectionListener;
+import lombok.extern.slf4j.Slf4j;
 import org.meshtastic.proto.MeshProtos.*;
 import org.meshtastic.proto.Portnums.PortNum;
 import org.meshtastic.proto.XmodemProtos.XModem;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.List;
-import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.Supplier;
@@ -59,9 +56,8 @@ import org.meshtastic.proto.AdminProtos.AdminMessage;
  * <li>This client exposes higher-level async operations and sequencing rules.</li>
  * </ul>
  */
+@Slf4j
 public class MeshtasticClient implements AdminRequestGateway {
-
-    private static final Logger log = LoggerFactory.getLogger(MeshtasticClient.class);
 
     private volatile MeshtasticTransport transport;
     private final MeshtasticDispatcher dispatcher;
@@ -72,35 +68,18 @@ public class MeshtasticClient implements AdminRequestGateway {
 
     private volatile boolean connected = false;
     private volatile StartupState startupState = StartupState.DISCONNECTED;
-    private int currentSyncId;
-    private volatile int startupSyncPhase = 0;
-    private volatile boolean sawMyInfoInCurrentPhase = false;
-    private volatile CompletableFuture<Void> startupSyncBarrier = CompletableFuture.completedFuture(null);
     /**
      * Single-flight guard for reboot-triggered resync orchestration.
      * Prevents overlapping cleanup/reprime when duplicate reboot signals are received.
      */
     private final AtomicBoolean rebootResyncInProgress = new AtomicBoolean(false);
-    // This ensures only one request is "In-Flight" to the radio at a time
-    private final Semaphore radioLock = new Semaphore(1);
-    /**
-     * Monotonic lock epoch used to invalidate delayed lock-release tasks across disconnect/reboot cleanup cycles.
-     */
-    private final AtomicLong requestLockEpoch = new AtomicLong(0);
+    private final RequestCoordinator requestCoordinator;
+    private final StartupSynchronizer startupSynchronizer;
     
     private AdminService adminService;
     private OtaService otaService;
     private final MeshEventDispatcher internalDispatcher = new InternalDispatcher();
 
-    /**
-     * The Correlation Map. Maps our generated Packet ID -> The Future waiting
-     * for hardware confirmation.
-     */
-    /**
-     * Correlation registry keyed by outbound packet ID. Each entry carries both the waiting future and
-     * correlation behavior (for example, admin reads that must wait for ADMIN_APP payloads).
-     */
-    private final Map<Integer, PendingRequest> pendingRequests = new ConcurrentHashMap<>();
     private static final long STARTUP_SYNC_TIMEOUT_SECONDS = 45;
     private static final Duration DEFAULT_PAYLOAD_WAIT_TIMEOUT = Duration.ofSeconds(30);
     private static final long DEFAULT_LOCK_RELEASE_COOLDOWN_MS = 200L;
@@ -127,20 +106,6 @@ public class MeshtasticClient implements AdminRequestGateway {
      * </p>
      */
     private final BlockingQueue<XModem.Control> xmodemControlQueue = new LinkedBlockingQueue<>(256);
-
-    /**
-     * Correlation metadata for one in-flight outbound request.
-     *
-     * @param future waiting completion target.
-     * @param expectAdminAppResponse when true, a ROUTING ACK with NONE is not terminal; wait for ADMIN_APP reply.
-     * @param allowRoutingNoResponseAsAccept when true, ROUTING NO_RESPONSE is treated as soft-accept.
-     */
-    private record PendingRequest(
-            CompletableFuture<MeshPacket> future,
-            boolean expectAdminAppResponse,
-            boolean allowRoutingNoResponseAsAccept
-    ) {
-    }
 
     /**
      * Creates a new Meshtastic client using the provided node database.
@@ -171,6 +136,24 @@ public class MeshtasticClient implements AdminRequestGateway {
 
         adminService = new AdminService(this);
         otaService = new OtaService(adminService);
+        requestCoordinator = new RequestCoordinator(
+                scheduler,
+                this::getRequestLockReleaseCooldownMs,
+                this::getRequestCorrelationTimeout
+        );
+        startupSynchronizer = new StartupSynchronizer(
+                scheduler,
+                STARTUP_SYNC_TIMEOUT_SECONDS,
+                this::setStartupState,
+                nonce -> sendToRadio(ToRadio.newBuilder().setWantConfigId(nonce).build()),
+                selfId -> {
+                    nodeDb.setSelfNodeId(selfId);
+                    adminService.ingestMyInfo(selfId);
+                    log.debug("[SYNC] Self node id established from my_info during startup sync: {}",
+                            MeshUtils.formatId(selfId));
+                },
+                this::startHeartbeatTask
+        );
         
         initializeHandlers();
     }
@@ -302,9 +285,9 @@ public class MeshtasticClient implements AdminRequestGateway {
     }
 
     /**
-     * Wrapper for mesh requests.
+     * Internal request envelope used by the client execution pipeline.
      */
-    public record MeshRequest(
+    private record MeshRequest(
             int destinationId,
             PortNum port,
             Message payload,
@@ -378,7 +361,7 @@ public class MeshtasticClient implements AdminRequestGateway {
             return;
         }
 
-        log.info("[CHUNKER] Sending chunk {}/{} to {} on channel index {}",
+        log.debug("[CHUNKER] Sending chunk {}/{} to {} on channel index {}",
                 index + 1, chunks.size(), Integer.toHexString(destinationId), channelIndex);
 
         byte[] chunkBytes = chunks.get(index).getBytes(StandardCharsets.UTF_8);
@@ -467,9 +450,8 @@ public class MeshtasticClient implements AdminRequestGateway {
             try {
                 ProtocolConstraints.validateChannelIndex(request.channelIndex());
                 awaitStartupSyncBarrier();
-                radioLock.acquire();
+                long lockEpoch = requestCoordinator.acquireRadioLock();
                 lockAcquired = true;
-                long lockEpoch = requestLockEpoch.get();
                 if (log.isTraceEnabled()) {
                     long queueDelayMs = TimeUnit.NANOSECONDS.toMillis(executorStartNanos - submittedAtNanos);
                     long lockWaitMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - executorStartNanos);
@@ -478,14 +460,14 @@ public class MeshtasticClient implements AdminRequestGateway {
                 }
 
                 if (!isConnected()) {
-                    radioLock.release();
+                    requestCoordinator.releaseRadioLock();
                     lockAcquired = false;
                     future.completeExceptionally(new IllegalStateException("Transport disconnected before send"));
                     return;
                 }
 
                 if (request.port() == PortNum.ADMIN_APP && !isKnownSelfNodeId(request.destinationId())) {
-                    radioLock.release();
+                    requestCoordinator.releaseRadioLock();
                     lockAcquired = false;
                     future.completeExceptionally(new IllegalStateException(
                             "Cannot send ADMIN_APP request without known local node id"));
@@ -525,14 +507,15 @@ public class MeshtasticClient implements AdminRequestGateway {
                 // even when routing ACK is disabled.
                 boolean awaitCorrelation = request.wantAck() || request.port() == PortNum.ADMIN_APP;
                 if (awaitCorrelation) {
-                    pendingRequests.put(myPacketId, new PendingRequest(
+                    requestCoordinator.registerPendingRequest(
+                            myPacketId,
                             future,
                             request.port() == PortNum.ADMIN_APP && request.expectAdminAppResponse(),
                             request.port() == PortNum.TEXT_MESSAGE_APP
-                    ));
+                    );
                 }
 
-                log.info("[TX] Lock Acquired. Sending ID: {} | Port: {}", myPacketId, request.port());
+                log.debug("[TX] Lock Acquired. Sending ID: {} | Port: {}", myPacketId, request.port());
                 sendToRadio(ToRadio.newBuilder().setPacket(packet).build());
                 emitRequestLifecycle(myPacketId,
                         request.destinationId(),
@@ -562,27 +545,22 @@ public class MeshtasticClient implements AdminRequestGateway {
                 // 4. Handle Lock Release with built-in Cooldown
                 if (!awaitCorrelation) {
                     // Immediate release if no ACK needed
-                    radioLock.release();
+                    requestCoordinator.releaseRadioLock();
                     future.complete(packet);
                 } else {
                     future.handle((res, err) -> {
                         // This triggers when correlateResponse completes the future or it times out
-                        scheduleLockReleaseAfterCooldown(myPacketId, lockEpoch);
+                        requestCoordinator.scheduleLockReleaseAfterCooldown(myPacketId, lockEpoch);
                         return null;
                     });
 
                     // Fail-safe Timeout
-                    scheduler.schedule(() -> {
-                        if (!future.isDone()) {
-                            pendingRequests.remove(myPacketId);
-                            future.completeExceptionally(new TimeoutException("Response timeout for: " + myPacketId));
-                        }
-                    }, requestCorrelationTimeout.toMillis(), TimeUnit.MILLISECONDS);
+                    requestCoordinator.scheduleCorrelationTimeout(myPacketId, future);
                 }
 
             } catch (Exception e) {
                 if (lockAcquired) {
-                    radioLock.release();
+                    requestCoordinator.releaseRadioLock();
                 }
                 future.completeExceptionally(e);
             }
@@ -596,13 +574,10 @@ public class MeshtasticClient implements AdminRequestGateway {
      *
      */
     private void awaitStartupSyncBarrier() {
-        CompletableFuture<Void> barrier = startupSyncBarrier;
-        if (barrier != null && !barrier.isDone()) {
-            try {
-                barrier.get(STARTUP_SYNC_TIMEOUT_SECONDS + 5, TimeUnit.SECONDS);
-            } catch (Exception e) {
-                log.warn("[SYNC] Proceeding without completed startup barrier: {}", e.getMessage());
-            }
+        try {
+            startupSynchronizer.awaitBarrier(STARTUP_SYNC_TIMEOUT_SECONDS + 5, TimeUnit.SECONDS);
+        } catch (Exception e) {
+            log.warn("[SYNC] Proceeding without completed startup barrier: {}", e.getMessage());
         }
     }
 
@@ -610,86 +585,7 @@ public class MeshtasticClient implements AdminRequestGateway {
      * The Correlator: Matches incoming radio responses to our pending futures.
      */
     private void correlateResponse(FromRadio fromRadio) {
-        if (!fromRadio.hasPacket()) {
-            return;
-        }
-
-        MeshPacket incoming = fromRadio.getPacket();
-        Data decoded = incoming.getDecoded();
-
-        log.debug("correlateResponse - Packet from={} to={} id={} request_id={} port={}",
-                incoming.getFrom(), incoming.getTo(), incoming.getId(), decoded.getRequestId(), decoded.getPortnum());
-
-        // Some responses include the original request id in decoded.request_id.
-        // We complete the pending request immediately when we see that correlation.
-        int confirmedId = decoded.getRequestId();
-        if (confirmedId != 0) {
-            PendingRequest pending = pendingRequests.get(confirmedId);
-            if (pending != null) {
-                if (decoded.getPortnum() == PortNum.ROUTING_APP) {
-                    handleRoutingCorrelation(confirmedId, pending, incoming);
-                    return;
-                }
-
-                if (pending.expectAdminAppResponse() && decoded.getPortnum() != PortNum.ADMIN_APP) {
-                    // Read-style admin request: ignore unrelated correlated traffic until ADMIN_APP arrives.
-                    return;
-                }
-
-                if (pendingRequests.remove(confirmedId, pending)) {
-                    log.info("[CORRELATOR] Match found for Packet ID: {} via port {}. Releasing queue.",
-                            confirmedId, decoded.getPortnum());
-                    pending.future().complete(incoming);
-                }
-            }
-        }
-    }
-
-    /**
-     * Handles correlated ROUTING_APP responses.
-     * <p>
-     * Rules:
-     * </p>
-     * <ul>
-     * <li>Routing error != NONE is terminal failure for all request types.</li>
-     * <li>Routing NONE is terminal success for non-admin-read requests.</li>
-     * <li>Routing NONE is non-terminal for admin-read requests; wait for ADMIN_APP payload.</li>
-     * </ul>
-     */
-    private void handleRoutingCorrelation(int confirmedId, PendingRequest pending, MeshPacket incoming) {
-        try {
-            org.meshtastic.proto.MeshProtos.Routing routing = org.meshtastic.proto.MeshProtos.Routing
-                    .parseFrom(incoming.getDecoded().getPayload());
-
-            if (routing.getErrorReason() != org.meshtastic.proto.MeshProtos.Routing.Error.NONE) {
-                // Some bot-style peers process/answer text payloads but do not emit routing confirmation.
-                // For TEXT_MESSAGE_APP requests we treat NO_RESPONSE as a soft-accept to avoid false-negative UX.
-                if (routing.getErrorReason() == org.meshtastic.proto.MeshProtos.Routing.Error.NO_RESPONSE
-                        && pending.allowRoutingNoResponseAsAccept()) {
-                    if (pendingRequests.remove(confirmedId, pending)) {
-                        log.debug("[CORRELATOR] Treating ROUTING NO_RESPONSE as soft-accept for text request {}",
-                                confirmedId);
-                        pending.future().complete(incoming);
-                    }
-                    return;
-                }
-                if (pendingRequests.remove(confirmedId, pending)) {
-                    pending.future().completeExceptionally(new IllegalStateException(
-                            "Routing rejected request " + confirmedId + " with status " + routing.getErrorReason()));
-                }
-                return;
-            }
-
-            if (!pending.expectAdminAppResponse() && pendingRequests.remove(confirmedId, pending)) {
-                log.info("[CORRELATOR] Match found for Packet ID: {} via ROUTING_APP. Releasing queue.", confirmedId);
-                pending.future().complete(incoming);
-            }
-        } catch (Exception ex) {
-            if (pendingRequests.remove(confirmedId, pending)) {
-                pending.future().completeExceptionally(new IllegalStateException(
-                        "Failed to parse ROUTING_APP correlation for request " + confirmedId, ex));
-            }
-        }
+        requestCoordinator.correlateResponse(fromRadio);
     }
 
     // -------------------------------------------------------------------------
@@ -791,19 +687,7 @@ public class MeshtasticClient implements AdminRequestGateway {
      *
      */
     private void cancelAllPending() {
-        // 1. Clear the mapping so no late ACKs try to trigger logic
-        pendingRequests.forEach((id, pending) -> {
-            pending.future().cancel(true);
-        });
-        pendingRequests.clear();
-
-        // Invalidate delayed lock-release tasks created by older request completions.
-        requestLockEpoch.incrementAndGet();
-
-        // 2. FORCE release the lock so the next connection starts fresh
-        // drainPermits() + release() ensures we are back to exactly 1 permit
-        radioLock.drainPermits();
-        radioLock.release();
+        requestCoordinator.cancelAllPending();
         resetStartupSync();
         clearXmodemControlBuffer();
 
@@ -815,9 +699,7 @@ public class MeshtasticClient implements AdminRequestGateway {
      *
      */
     private synchronized void primeStartupSync() {
-        startupSyncPhase = 1;
-        sawMyInfoInCurrentPhase = false;
-        startupSyncBarrier = new CompletableFuture<>();
+        startupSynchronizer.prime();
     }
 
     /**
@@ -825,34 +707,7 @@ public class MeshtasticClient implements AdminRequestGateway {
      *
      */
     private synchronized void startStartupSync() {
-        if (startupSyncPhase == 0) {
-            primeStartupSync();
-        }
-        sendWantConfigForCurrentPhase();
-    }
-
-    /**
-     * Sends the current startup-phase want_config request and arms timeout guard.
-     *
-     */
-    private synchronized void sendWantConfigForCurrentPhase() {
-        currentSyncId = (startupSyncPhase == 1) ? NODELESS_WANT_CONFIG_ID : FULL_WANT_CONFIG_ID;
-        final int expectedNonce = currentSyncId;
-        final int expectedPhase = startupSyncPhase;
-        setStartupState(startupSyncPhase == 1 ? StartupState.SYNC_LOCAL_CONFIG : StartupState.SYNC_MESH_CONFIG);
-
-        log.info("[SYNC] Starting phase {} with want_config_id={}", expectedPhase, expectedNonce);
-        sendToRadio(ToRadio.newBuilder().setWantConfigId(expectedNonce).build());
-
-        scheduler.schedule(() -> {
-            CompletableFuture<Void> barrier = startupSyncBarrier;
-            if (barrier != null && !barrier.isDone()
-                    && startupSyncPhase == expectedPhase
-                    && currentSyncId == expectedNonce) {
-                barrier.completeExceptionally(new TimeoutException(
-                        "Startup sync timeout (phase " + expectedPhase + ", nonce " + expectedNonce + ")"));
-            }
-        }, STARTUP_SYNC_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        startupSynchronizer.start();
     }
 
     /**
@@ -861,65 +716,7 @@ public class MeshtasticClient implements AdminRequestGateway {
      * @param fromRadio inbound local radio envelope.
      */
     private synchronized void processStartupSyncSignals(FromRadio fromRadio) {
-        if (startupSyncPhase == 0) {
-            return;
-        }
-
-        if (fromRadio.hasMyInfo()) {
-            int selfId = fromRadio.getMyInfo().getMyNodeNum();
-            if (isKnownSelfNodeId(selfId)) {
-                sawMyInfoInCurrentPhase = true;
-            } else {
-                log.warn("[SYNC] Ignoring invalid my_info self id={} during startup sync", selfId);
-            }
-            if (isKnownSelfNodeId(selfId) && selfId != nodeDb.getSelfNodeId()) {
-                // Establish self identity as soon as startup sync observes my_info so READY does not race
-                // ahead of LocalStateHandler dispatch on slower/async handler execution.
-                nodeDb.setSelfNodeId(selfId);
-                adminService.ingestMyInfo(selfId);
-                log.debug("[SYNC] Self node id established from my_info during startup sync: {}",
-                        MeshUtils.formatId(selfId));
-            }
-        }
-
-        if (!fromRadio.hasConfigCompleteId()) {
-            return;
-        }
-
-        int completedId = fromRadio.getConfigCompleteId();
-        if (completedId != currentSyncId) {
-            log.debug("[SYNC] Ignoring stale config_complete_id={} while waiting for {}",
-                    completedId, currentSyncId);
-            return;
-        }
-
-        if (startupSyncPhase == 1) {
-            log.info("[SYNC] Phase 1 complete (local identity pass). my_info_seen={}", sawMyInfoInCurrentPhase);
-            if (!sawMyInfoInCurrentPhase) {
-                log.warn("[SYNC] Phase 1 completed without valid my_info. Retrying local identity phase.");
-                sendWantConfigForCurrentPhase();
-                return;
-            }
-            CompletableFuture<Void> barrier = startupSyncBarrier;
-            if (barrier != null && !barrier.isDone()) {
-                barrier.complete(null);
-            }
-            startupSyncPhase = 2;
-            sawMyInfoInCurrentPhase = false;
-            sendWantConfigForCurrentPhase();
-            return;
-        }
-
-        if (startupSyncPhase == 2) {
-            log.info("[SYNC] Phase 2 complete (full config/node sync).");
-            startupSyncPhase = 0;
-            setStartupState(StartupState.READY);
-            startHeartbeatTask();
-            CompletableFuture<Void> barrier = startupSyncBarrier;
-            if (barrier != null && !barrier.isDone()) {
-                barrier.complete(null);
-            }
-        }
+        startupSynchronizer.processSignals(fromRadio, this::isKnownSelfNodeId, nodeDb::getSelfNodeId);
     }
 
     /**
@@ -927,14 +724,7 @@ public class MeshtasticClient implements AdminRequestGateway {
      *
      */
     private synchronized void resetStartupSync() {
-        startupSyncPhase = 0;
-        sawMyInfoInCurrentPhase = false;
-        currentSyncId = 0;
-        CompletableFuture<Void> barrier = startupSyncBarrier;
-        startupSyncBarrier = CompletableFuture.completedFuture(null);
-        if (barrier != null && !barrier.isDone()) {
-            barrier.completeExceptionally(new CancellationException("Disconnected before startup sync completed"));
-        }
+        startupSynchronizer.reset();
     }
 
     /**
@@ -950,9 +740,9 @@ public class MeshtasticClient implements AdminRequestGateway {
 
         // If startup sync is already running, this reboot marker is redundant.
         // We avoid interrupting an active phase handshake with another reset/reprime cycle.
-        if (startupSyncPhase != 0) {
+        if (startupSynchronizer.isActive()) {
             log.debug("[SYNC] Reboot signal received during active startup sync phase {}. Ignoring duplicate resync trigger.",
-                    startupSyncPhase);
+                    startupSynchronizer.getPhase());
             return;
         }
 
@@ -986,7 +776,7 @@ public class MeshtasticClient implements AdminRequestGateway {
      */
     private void sendToRadio(ToRadio toRadio) {
         if (isConnected()) {
-            log.info("sendToRadio - Sending ToRadio: {}", toRadio);
+            log.trace("sendToRadio - Sending ToRadio: {}", toRadio);
             transport.write(toRadio.toByteArray());
         }
     }
@@ -1102,7 +892,7 @@ public class MeshtasticClient implements AdminRequestGateway {
      * @return future completed on request acceptance/correlation.
      */
     public CompletableFuture<MeshPacket> requestNodeInfo(int nodeId) {
-        log.info("[UTIL] Requesting NodeInfo from {}", MeshUtils.formatId(nodeId));
+        log.debug("[UTIL] Requesting NodeInfo from {}", MeshUtils.formatId(nodeId));
         return executeRequest(new MeshRequest(
                 nodeId,
                 PortNum.NODEINFO_APP,
@@ -1212,7 +1002,7 @@ public class MeshtasticClient implements AdminRequestGateway {
      * @return future completed on request acceptance/correlation.
      */
     public CompletableFuture<MeshPacket> requestPosition(int nodeId) {
-        log.info("[UTIL] Requesting Position from {}", MeshUtils.formatId(nodeId));
+        log.debug("[UTIL] Requesting Position from {}", MeshUtils.formatId(nodeId));
         return executeRequest(new MeshRequest(
                 nodeId,
                 PortNum.POSITION_APP,
@@ -1317,7 +1107,7 @@ public class MeshtasticClient implements AdminRequestGateway {
      * @return future completed on request acceptance/correlation.
      */
     public CompletableFuture<MeshPacket> requestTelemetry(int nodeId) {
-        log.info("[UTIL] Requesting Telemetry from {}", MeshUtils.formatId(nodeId));
+        log.debug("[UTIL] Requesting Telemetry from {}", MeshUtils.formatId(nodeId));
         return executeRequest(new MeshRequest(
                 nodeId,
                 PortNum.TELEMETRY_APP,
@@ -1614,13 +1404,13 @@ public class MeshtasticClient implements AdminRequestGateway {
 
         // We use tryAcquire so we don't block the scheduler thread.
         // If a text message is sending, we just skip this heartbeat.
-        if (radioLock.tryAcquire()) {
+        if (requestCoordinator.tryAcquireRadioLock() != null) {
             try {
                 log.trace("[TX] Sending Heartbeat");
                 sendToRadio(ToRadio.newBuilder().setHeartbeat(Heartbeat.newBuilder().build()).build());
             } finally {
                 // Heartbeats are instant, no ACK needed, release immediately
-                radioLock.release();
+                requestCoordinator.releaseRadioLock();
             }
         }
     }
@@ -1729,30 +1519,6 @@ public class MeshtasticClient implements AdminRequestGateway {
                 }
             }
         });
-    }
-
-    /**
-     * Releases the radio lock after configured cooldown if the request lock epoch is still current.
-     * <p>
-     * Epoch guarding prevents delayed releases from canceled/disconnected requests from inflating semaphore permits.
-     * </p>
-     *
-     * @param requestId correlated request id for diagnostics.
-     * @param lockEpochAtAcquire lock epoch captured when this request acquired the radio lock.
-     */
-    private void scheduleLockReleaseAfterCooldown(int requestId, long lockEpochAtAcquire) {
-        scheduler.schedule(() -> {
-            if (requestLockEpoch.get() != lockEpochAtAcquire) {
-                log.trace("[TX] Skipping stale lock release for ID {} due to epoch change.", requestId);
-                return;
-            }
-            if (radioLock.availablePermits() == 0) {
-                log.trace("[TX] Cooldown finished. Releasing radio lock for ID: {}", requestId);
-                radioLock.release();
-            } else {
-                log.trace("[TX] Skipping lock release for ID {} because permit is already available.", requestId);
-            }
-        }, requestLockReleaseCooldownMs, TimeUnit.MILLISECONDS);
     }
 
     /**

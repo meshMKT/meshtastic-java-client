@@ -1,0 +1,63 @@
+== Common Admin Operations
+
+=== Protocol Constraints (Pre-validation)
+
+Use `ProtocolConstraints` to validate user input before sending requests.
+This is recommended for settings UIs to fail fast and avoid avoidable radio round trips.
+
+[source,java]
+----
+// Throwing validation.
+ProtocolConstraints.validateChannelIndex(slot);
+ProtocolConstraints.validateChannelName(channelName);
+ProtocolConstraints.validateChannelPsk(pskByteString);
+
+// Non-throwing validation for form-level error display.
+List<ProtocolConstraints.ValidationIssue> issues =
+        ProtocolConstraints.validateChannelIssues(channelPayload);
+if (!issues.isEmpty()) {
+    renderValidationErrors(issues);
+}
+----
+
+=== Channel Helpers
+
+[source,java]
+----
+// Name update (default verifies by readback)
+admin.setChannelName(2, "meshMKT");
+
+// Password/PSK update
+admin.setChannelPassword(2, "shared-secret");
+admin.setPrimaryChannelPassword("primary-secret");
+----
+
+=== Security + MQTT Helpers
+
+[source,java]
+----
+Config.SecurityConfig security = Config.SecurityConfig.newBuilder()
+        .setAdminChannelEnabled(true)
+        .build();
+admin.setSecurityConfig(security, true);
+
+ModuleConfig.MQTTConfig mqtt = ModuleConfig.MQTTConfig.newBuilder()
+        .setEnabled(true)
+        .setAddress("mqtt.example.com")
+        .setUsername("mesh-user")
+        .build();
+admin.setMqttConfig(mqtt, true);
+----
+
+=== Structured Result Variants
+
+All major write paths have result-returning variants:
+
+[source,java]
+----
+admin.setChannelResult(2, channel, true);
+admin.setConfigResult(config, true);
+admin.setModuleConfigResult(moduleConfig, true);
+admin.setOwnerResult(targetNodeId, "Long Name", "short", true);
+----
+

@@ -1,0 +1,138 @@
+== OTA Framework (Serial-First)
+
+[IMPORTANT]
+====
+OTA support in this Java client is currently **advanced/experimental**.
+
+For most production users, the recommended firmware update path is the official Meshtastic web flasher/updater.
+Use the OTA APIs here when you explicitly need programmatic control and can validate behavior on your target
+hardware/firmware combinations.
+====
+
+The OTA API is split into two parts:
+
+- `AdminService` requests OTA mode (`requestOtaModeResult(...)`).
+- `OtaService` orchestrates hash + OTA mode request + uploader strategy.
+
+This keeps OTA transport-agnostic. You can use a Linux serial uploader now and reuse the same orchestration later for BLE.
+It also means the repository does not currently ship one universally ready OTA uploader for every board/transport;
+that last-mile implementation is expected to be provided and validated per environment.
+
+=== OTA Orchestration Example
+
+[source,java]
+----
+OtaService ota = client.getOtaService();
+
+OtaRequest request = OtaRequest.builder()
+        .targetNodeId(targetNodeId)
+        .firmwarePath(Path.of("/path/to/firmware.bin"))
+        .otaMode(OTAMode.OTA_BLE)
+        .rebootWait(Duration.ofSeconds(5))
+        .build();
+
+OtaUploadStrategy uploader = new CommandLineOtaUploadStrategy(List.of(
+        "esptool.py",
+        "--port", "/dev/ttyUSB0",
+        "write_flash",
+        "0x10000",
+        "{firmware}"
+));
+
+OtaSession session = ota.start(
+        request,
+        uploader,
+        progress -> {
+            switch (progress.stage()) {
+                case HASHING_FIRMWARE -> showStatus("Hashing firmware...");
+                case REQUESTING_OTA_MODE -> showStatus("Requesting OTA mode...");
+                case WAITING_FOR_REBOOT -> showStatus("Waiting for reboot...");
+                case UPLOADING_FIRMWARE -> showProgress(progress.bytesSent(), progress.totalBytes());
+                case COMPLETED -> showStatus("OTA complete");
+                case FAILED -> showError(progress.message());
+                case CANCELLED -> showWarning("OTA cancelled");
+                default -> { }
+            }
+        }
+);
+
+session.resultFuture().thenAccept(result -> {
+    if (result.isSuccess()) {
+        showSuccess("OTA finished");
+    } else {
+        showError("OTA failed: " + result.message());
+    }
+});
+----
+
+=== OTA Design Notes
+
+- OTA upload implementation is intentionally externalized via `OtaUploadStrategy`.
+- Linux serial release can ship with `CommandLineOtaUploadStrategy` + CLI tooling.
+- BLE transport can later provide another `OtaUploadStrategy` without changing OTA API or UI flow.
+- This separation is intentional so contributors can add hardware-specific or platform-specific OTA implementations
+  without forcing one uploader stack into core.
+
+=== OTA Support Matrix (Current)
+
+[cols="1,1,2",options="header"]
+|===
+| Path
+| Status
+| Notes
+
+| `CommandLineOtaUploadStrategy`
+| Usable
+| Requires external uploader tool installed/configured by app/developer (for example board-specific CLI flash utility).
+
+| `SerialXmodemUploadStrategy`
+| Experimental
+| In-process protocol loop is implemented, but requires a concrete `XmodemDuplex` adapter bound to real radio OTA link behavior.
+
+| BLE OTA uploader strategy
+| Planned
+| Intended future strategy once BLE transport path is implemented/stabilized.
+|===
+
+Recommended product behavior:
+
+- If OTA path/model is not explicitly supported/tested, direct users to the official web flasher.
+- Keep OTA actions behind an “Advanced” UI section until path support is validated.
+
+=== In-Process XMODEM Strategy (Experimental)
+
+For environments where you do not want external command-line tools, use the experimental in-process uploader:
+
+[source,java]
+----
+OtaService ota = client.getOtaService();
+
+// Firmware path is defined here and passed into the upload strategy via OtaUploadContext.
+OtaRequest request = OtaRequest.builder()
+        .targetNodeId(targetNodeId)
+        .firmwarePath(Path.of("/path/to/firmware.bin"))
+        .otaMode(OTAMode.OTA_BLE)
+        .rebootWait(Duration.ofSeconds(5))
+        .build();
+
+MeshtasticXmodemDuplex duplex = client.createXmodemDuplex();
+duplex.reset(); // clear stale control events before a new upload attempt
+
+OtaUploadStrategy uploader = new SerialXmodemUploadStrategy(
+        duplex,
+        Duration.ofSeconds(2),
+        10
+);
+
+OtaSession session = ota.start(request, uploader, progress -> {
+    // update UI / logs
+});
+----
+
+Notes:
+
+- This strategy is CLI-free and uses top-level protobuf envelopes: `ToRadio.xmodemPacket` and `FromRadio.xmodemPacket`.
+- `OtaRequest.firmwarePath` is the source of the upload file for all strategies.
+- `duplex.reset()` is recommended at session start to avoid consuming stale controls from prior attempts.
+- Keep this path experimental until validated against your target hardware/firmware variants.
+

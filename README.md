@@ -2,6 +2,33 @@
 
 Async Java client library for Meshtastic radios.
 
+## Why This Project Exists
+
+This project started because there was no clean, low-level Meshtastic Java client library available for regular Java
+applications.
+
+Java support existed mostly inside the Android client itself, but that code was part of a full application rather than
+a reusable library designed for:
+
+- headless services
+- bots that listen and respond to mesh traffic
+- desktop/server Java applications
+- custom Java UI clients
+
+The original need here was practical: build a Meshtastic bot in Java that could listen for messages and respond to
+them cleanly. Since there was no current standalone Java client that fit that use case, this library was built to fill
+that gap.
+
+The architecture aims to support both:
+
+- headless/bot scenarios that want a straightforward event-driven client
+- full UI applications that need refresh/write APIs, state snapshots, and lifecycle hooks
+
+The goal has been to keep the architecture clean, composable, and friendly to extension. There may still be missing
+features or bugs, especially around less-common firmware behaviors or hardware combinations.
+
+Contributions, bug reports, and design feedback are welcome.
+
 ## What It Supports Today
 
 - Serial and TCP transports
@@ -34,6 +61,7 @@ BLE parity and full OTA integration are the major remaining items for full proto
 ## Documentation
 
 - API guide: `src/docs/asciidoc/index.adoc`
+- contributor guide: `CONTRIBUTING.md`
 - Generated Javadocs and docs are produced during Maven package phases (see `pom.xml` plugin config)
 
 The generated documentation is an important part of this project, not just a side artifact.
@@ -52,6 +80,9 @@ Treat the generated docs as the user manual for the library, especially for:
 - `AdminService` usage
 - settings-page refresh/write patterns
 - OTA/BLE extension guidance
+
+Contributor-facing project conventions such as logging levels and `record` vs Lombok usage are documented in
+`CONTRIBUTING.md`.
 
 ## Building
 
@@ -72,6 +103,9 @@ Build outputs include:
 
 If you are evaluating or onboarding to the project, it is worth opening the generated HTML docs after a build.
 They are intended to function as a practical guide to the API, not just reference output.
+
+The guide includes application patterns for UI clients and headless/bot services built with this library. Those
+sections are examples of how to use the library API; this repository does not bundle a ready-made UI app or bot.
 
 ## Messaging Examples
 
@@ -96,6 +130,48 @@ Rule of thumb:
 - use `sendChannelText(...)` for channel/group chat
 - use the overload with `channelIndex` when you need a DM to use a specific shared channel's key/context
 
+## Retry And Reconnect Model
+
+The library intentionally splits resilience behavior into two layers:
+
+- request-level retry/correlation logic in the core client
+- link-level reconnect behavior in the transport
+
+The core client owns:
+
+- request correlation by packet/request id
+- request timeout handling
+- radio lock/cooldown sequencing
+- admin write verification and verification retries
+- startup resync sequencing after a connection is restored
+
+The transport owns:
+
+- opening and closing the physical link
+- detecting disconnects
+- reconnecting when supported
+- delivering framed Meshtastic bytes back to the client
+
+In practice, this means request verification and admin retry behavior are transport-agnostic. Serial, TCP, and BLE
+can all use the same request lifecycle machinery. What changes between transports is whether the physical connection
+can be restored automatically and how that restoration happens.
+
+If you are implementing a new transport, you do not need to re-implement:
+
+- request correlation
+- admin verification retries
+- startup resync logic
+- request lifecycle event publishing
+
+Your transport does need to provide:
+
+- framed reads/writes
+- connection/disconnection callbacks
+- reconnect behavior if that transport should recover automatically
+
+So for BLE specifically: the core retry model already applies, but BLE reconnect reliability depends on the BLE backend
+and transport implementation, not on separate retry logic in application code.
+
 ## BLE And OTA Extension Notes
 
 BLE and OTA are intentionally documented as extension-oriented features rather than fully bundled production paths.
@@ -113,6 +189,9 @@ Examples of Java BLE stacks/backends that may be suitable depending on platform/
 
 These should be treated as examples, not official project dependencies. The right choice depends on OS, packaging,
 and whether the target app is desktop, mobile, or embedded.
+
+For transport authors, the key point is that `BleTransport` only needs to solve BLE link behavior. The shared
+Meshtastic request, retry, and startup mechanics already live in the core client layers.
 
 ## Testing
 

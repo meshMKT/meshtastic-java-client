@@ -1,0 +1,37 @@
+== Quick Start
+
+[source,java]
+----
+NodeDatabase db = new InMemoryNodeDatabase();
+MeshtasticClient client = new MeshtasticClient(db);
+
+SerialConfig cfg = SerialConfig.builder()
+        .portName("/dev/cu.usbmodem80B54ED11F101")
+        // Optional transport pacing between framed writes (default: 200ms)
+        .outboundPacingDelayMs(200)
+        .build();
+
+// Optional advanced request-timing tuning (defaults shown)
+client.setRequestLockReleaseCooldownMs(200);               // default: 200ms
+client.setRequestCorrelationTimeout(Duration.ofSeconds(30)); // default: 30s
+
+client.connect(new SerialTransport(cfg));
+----
+
+[NOTE]
+====
+Keep defaults unless you have measured evidence your radio/firmware tolerates tighter pacing.
+====
+
+[TIP]
+====
+Order matters for some settings:
+
+- Transport config such as `SerialConfig.outboundPacingDelayMs`, `TcpConfig.outboundPacingDelayMs`,
+  BLE reconnect/backoff settings, and other transport-builder values are startup-time settings. Set them before
+  `connect(...)`. To change them later, rebuild/reconnect the transport.
+- `MeshtasticClient` request timing knobs such as `setRequestLockReleaseCooldownMs(...)` and
+  `setRequestCorrelationTimeout(...)` are runtime-tunable and can be changed before or after `connect(...)`.
+- `AdminService.setVerificationPolicy(...)` is also runtime-tunable and affects future verify-applied admin writes.
+====
+

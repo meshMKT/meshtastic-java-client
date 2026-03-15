@@ -1,0 +1,188 @@
+== Application Use Cases
+
+This repository provides a library, not a bundled UI application or bot.
+
+The following sections show recommended usage patterns for applications built on top of the library:
+
+- desktop/mobile UI clients
+- headless services
+- bots and integrations
+
+Use them as reference architectures, not as included runtime modules.
+
+=== Shared Startup Flow (Recommended)
+
+Use startup state events to drive UI readiness and progress indicators.
+
+[source,java]
+----
+client.addEventListener(new MeshtasticEventListener() {
+    @Override
+    public void onStartupStateChanged(StartupState previousState, StartupState newState) {
+        switch (newState) {
+            case SYNC_LOCAL_CONFIG -> statusLabel.setText("Reading local radio...");
+            case SYNC_MESH_CONFIG -> statusLabel.setText("Reading mesh state...");
+            case READY -> statusLabel.setText("Ready");
+            case DISCONNECTED -> statusLabel.setText("Disconnected");
+        }
+    }
+});
+
+client.connect(new SerialTransport(cfg));
+----
+
+For tab gating, use `client.isReady()` and keep settings/message actions disabled until `READY`.
+
+=== UI Client Pattern
+
+This workflow is recommended for desktop/mobile UI applications built on top of the library.
+
+1. Create `NodeDatabase` and `MeshtasticClient`.
+2. Register one event listener implementation that forwards to your UI state/store.
+3. Connect transport.
+4. Gate settings/actions until `StartupState.READY`.
+5. Render settings pages from snapshots first, then trigger section-specific refresh.
+
+[source,java]
+----
+NodeDatabase db = new InMemoryNodeDatabase();
+MeshtasticClient client = new MeshtasticClient(db);
+AdminService admin = client.getAdminService();
+
+client.addEventListener(new MeshtasticEventListener() {
+    @Override
+    public void onStartupStateChanged(StartupState previous, StartupState next) {
+        switch (next) {
+            case SYNC_LOCAL_CONFIG -> uiStore.setStatus("Reading local radio...");
+            case SYNC_MESH_CONFIG -> uiStore.setStatus("Reading mesh state...");
+            case READY -> uiStore.setStatus("Ready");
+            case DISCONNECTED -> uiStore.setStatus("Disconnected");
+        }
+    }
+
+    @Override
+    public void onNodeDiscovery(NodeDiscoveryEvent event) {
+        uiStore.upsertNode(event.getNode());
+    }
+
+    @Override
+    public void onTelemetryUpdate(TelemetryUpdateEvent event) {
+        uiStore.updateTelemetry(event.getNodeId(), event.getTelemetry());
+    }
+
+    @Override
+    public void onPositionUpdate(PositionUpdateEvent event) {
+        uiStore.updatePosition(event.getNodeId(), event.getPosition());
+    }
+
+    @Override
+    public void onAdminModelUpdate(AdminModelUpdateEvent event) {
+        // Keep settings pages in sync while app is connected.
+        uiStore.markAdminSectionDirty(event.getSection(), event.getChannelIndex());
+    }
+
+    @Override
+    public void onRequestLifecycleUpdate(RequestLifecycleEvent event) {
+        uiStore.logRequest(
+                event.getStage() + " id=" + event.getRequestId()
+                        + " port=" + event.getPort()
+                        + " msg=" + event.getMessage()
+        );
+    }
+});
+
+client.connect(new SerialTransport(cfg));
+----
+
+[plantuml,ui-workflow,svg]
+----
+@startuml
+title UI Workflow (Event-Driven)
+
+actor UI
+participant "MeshtasticClient" as Client
+participant "Event Listener" as Listener
+participant "AdminService" as Admin
+
+UI -> Client: addEventListener(listener)
+UI -> Client: connect(transport)
+Client --> Listener: onStartupStateChanged(..., SYNC_LOCAL_CONFIG)
+Client --> Listener: onStartupStateChanged(..., SYNC_MESH_CONFIG)
+Client --> Listener: onStartupStateChanged(..., READY)
+
+UI -> Admin: getSnapshot()/typed snapshot getters
+Admin --> UI: immediate cached model
+
+UI -> Admin: refresh section on page open
+Admin --> Listener: onAdminModelUpdate(...)
+Listener --> UI: update store/view model
+@enduml
+----
+
+=== Headless Client Pattern
+
+This workflow is recommended for bots, services, and integrations without a GUI.
+
+1. Connect client with the target transport.
+2. Await `READY` before operational tasks.
+3. Use listeners for streaming behavior (telemetry, text, node updates).
+4. Use scheduled jobs for periodic refresh/write logic.
+5. Shutdown cleanly with `client.shutdown()`.
+
+[source,java]
+----
+NodeDatabase db = new InMemoryNodeDatabase();
+MeshtasticClient client = new MeshtasticClient(db);
+AdminService admin = client.getAdminService();
+
+CountDownLatch readyLatch = new CountDownLatch(1);
+
+client.addEventListener(new MeshtasticEventListener() {
+    @Override
+    public void onStartupStateChanged(StartupState previous, StartupState next) {
+        if (next == StartupState.READY) {
+            readyLatch.countDown();
+        }
+    }
+
+    @Override
+    public void onTextMessage(ChatMessageEvent event) {
+        botEngine.handleInboundMessage(event);
+    }
+});
+
+client.connect(new SerialTransport(cfg));
+readyLatch.await(45, TimeUnit.SECONDS);
+
+// Periodic task: refresh security + mqtt every 10 minutes.
+ScheduledExecutorService jobs = Executors.newSingleThreadScheduledExecutor();
+jobs.scheduleAtFixedRate(() ->
+        admin.refreshSecurityConfig()
+             .thenCompose(cfgSec -> admin.refreshMqttConfig())
+             .exceptionally(ex -> {
+                 log.warn("Periodic refresh failed: {}", ex.getMessage());
+                 return null;
+             }),
+        0, 10, TimeUnit.MINUTES
+);
+----
+
+[plantuml,headless-workflow,svg]
+----
+@startuml
+title Headless Workflow (Service/Bot)
+
+participant "Service Main" as Main
+participant "MeshtasticClient" as Client
+participant "Listener" as Listener
+participant "Scheduler Job" as Job
+
+Main -> Client: connect(transport)
+Client --> Listener: startup + mesh events
+Listener --> Main: domain actions
+Main -> Job: schedule periodic tasks
+Job -> Client: request/refresh/write APIs
+Client --> Job: futures complete/fail
+@enduml
+----
+

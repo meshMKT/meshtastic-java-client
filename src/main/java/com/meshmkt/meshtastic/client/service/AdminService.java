@@ -1,7 +1,6 @@
 package com.meshmkt.meshtastic.client.service;
 
 import com.google.protobuf.ByteString;
-import com.meshmkt.meshtastic.client.MeshConstants;
 import com.meshmkt.meshtastic.client.MeshUtils;
 import com.meshmkt.meshtastic.client.ProtocolConstraints;
 import com.meshmkt.meshtastic.client.model.RadioModel;
@@ -33,12 +32,10 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.time.Duration;
 import java.nio.charset.StandardCharsets;
 import java.util.function.Function;
-import java.util.function.Supplier;
 import java.util.stream.IntStream;
 
 /**
@@ -52,8 +49,8 @@ import java.util.stream.IntStream;
  * <li>Write operations for owner/config/channel plus lifecycle commands.</li>
  * </ul>
  * <p>
- * All incoming radio data is funneled through ingest methods and applied by a single set of private
- * {@code apply...} mutators to keep model updates consistent.
+ * Internally, snapshot mutation/session-key handling and verify-applied policy logic are delegated to
+ * focused helpers so this class can remain the single public facade without also carrying every low-level concern.
  * </p>
  * <p>
  * Preferred write API:
@@ -95,11 +92,8 @@ public class AdminService {
 
     private final AdminRequestGateway gateway;
     private final RadioModel radioModel = new RadioModel();
-    private ByteString lastSessionPasskey = ByteString.EMPTY;
-    /**
-     * Verification retry/backoff policy used by write methods when {@code verifyApplied=true}.
-     */
-    private volatile AdminVerificationPolicy verificationPolicy = AdminVerificationPolicy.builder().build().validated();
+    private final AdminSnapshotApplier snapshotApplier = new AdminSnapshotApplier(radioModel);
+    private final AdminVerificationEngine verificationEngine = new AdminVerificationEngine();
 
     /**
      * Creates an admin service bound to a request gateway.
@@ -116,7 +110,7 @@ public class AdminService {
      * @return active verification policy.
      */
     public AdminVerificationPolicy getVerificationPolicy() {
-        return verificationPolicy;
+        return verificationEngine.getVerificationPolicy();
     }
 
     /**
@@ -128,8 +122,7 @@ public class AdminService {
      * @param verificationPolicy new verification policy.
      */
     public void setVerificationPolicy(AdminVerificationPolicy verificationPolicy) {
-        this.verificationPolicy = Objects.requireNonNull(verificationPolicy, "verificationPolicy must not be null")
-                .validated();
+        verificationEngine.setVerificationPolicy(verificationPolicy);
     }
 
     /**
@@ -211,13 +204,13 @@ public class AdminService {
      * @return future completing with parsed metadata.
      */
     public CompletableFuture<DeviceMetadata> refreshMetadata() {
-        AdminMessage request = withSessionIfPresent(AdminMessage.newBuilder().setGetDeviceMetadataRequest(true)).build();
+        AdminMessage request = snapshotApplier.withSessionIfPresent(AdminMessage.newBuilder().setGetDeviceMetadataRequest(true)).build();
         return executeAndParse(request, msg -> {
             if (!msg.hasGetDeviceMetadataResponse()) {
                 throw new IllegalStateException("Missing get_device_metadata_response");
             }
             DeviceMetadata metadata = msg.getGetDeviceMetadataResponse();
-            applyMetadata(metadata);
+            snapshotApplier.applyMetadata(metadata);
             return metadata;
         });
     }
@@ -228,13 +221,13 @@ public class AdminService {
      * @return future completing with parsed owner response.
      */
     public CompletableFuture<User> refreshOwner() {
-        AdminMessage request = withSessionIfPresent(AdminMessage.newBuilder().setGetOwnerRequest(true)).build();
+        AdminMessage request = snapshotApplier.withSessionIfPresent(AdminMessage.newBuilder().setGetOwnerRequest(true)).build();
         return executeAndParse(request, msg -> {
             if (!msg.hasGetOwnerResponse()) {
                 throw new IllegalStateException("Missing get_owner_response");
             }
             User owner = msg.getGetOwnerResponse();
-            applyOwner(owner);
+            snapshotApplier.applyOwner(owner);
             return owner;
         });
     }
@@ -254,13 +247,13 @@ public class AdminService {
                 : CompletableFuture.completedFuture(null);
 
         return preflight.thenCompose(unused -> {
-            AdminMessage request = withSessionIfPresent(AdminMessage.newBuilder().setGetConfigRequest(type)).build();
+            AdminMessage request = snapshotApplier.withSessionIfPresent(AdminMessage.newBuilder().setGetConfigRequest(type)).build();
             return executeAndParse(request, msg -> {
                 if (!msg.hasGetConfigResponse()) {
                     throw new IllegalStateException("Missing get_config_response");
                 }
                 Config config = msg.getGetConfigResponse();
-                applyConfig(config);
+                snapshotApplier.applyConfig(config);
                 return config;
             });
         });
@@ -388,13 +381,13 @@ public class AdminService {
      */
     public CompletableFuture<Channel> refreshChannel(int index) {
         validateChannelIndex(index);
-        AdminMessage request = withSessionIfPresent(AdminMessage.newBuilder().setGetChannelRequest(index + 1)).build();
+        AdminMessage request = snapshotApplier.withSessionIfPresent(AdminMessage.newBuilder().setGetChannelRequest(index + 1)).build();
         return executeAndParse(request, msg -> {
             if (!msg.hasGetChannelResponse()) {
                 throw new IllegalStateException("Missing get_channel_response");
             }
             Channel channel = msg.getGetChannelResponse();
-            applyChannel(channel);
+            snapshotApplier.applyChannel(channel);
             return channel;
         });
     }
@@ -478,13 +471,13 @@ public class AdminService {
      * @return future completing with parsed module config response.
      */
     public CompletableFuture<ModuleConfig> refreshModuleConfig(ModuleConfigType type) {
-        AdminMessage request = withSessionIfPresent(AdminMessage.newBuilder().setGetModuleConfigRequest(type)).build();
+        AdminMessage request = snapshotApplier.withSessionIfPresent(AdminMessage.newBuilder().setGetModuleConfigRequest(type)).build();
         return executeAndParse(request, msg -> {
             if (!msg.hasGetModuleConfigResponse()) {
                 throw new IllegalStateException("Missing get_module_config_response");
             }
             ModuleConfig moduleConfig = msg.getGetModuleConfigResponse();
-            applyModuleConfig(moduleConfig);
+            snapshotApplier.applyModuleConfig(moduleConfig);
             return moduleConfig;
         });
     }
@@ -703,12 +696,12 @@ public class AdminService {
                     if (log.isDebugEnabled()) {
                         log.debug("[ADMIN] setChannel tx payload -> {}", describeChannelForLog(channelWithIndex));
                     }
-                    AdminMessage request = withSessionIfPresent(AdminMessage.newBuilder().setSetChannel(channelWithIndex)).build();
+                    AdminMessage request = snapshotApplier.withSessionIfPresent(AdminMessage.newBuilder().setSetChannel(channelWithIndex)).build();
                     // Channel write is a mutating operation: routing NONE is terminal success, routing errors fail fast.
                     return gateway.executeAdminRequest(gateway.getSelfNodeId(), request, false)
                             .thenCompose(packet -> {
                                 if (!verifyApplied) {
-                                    applyChannel(channelWithIndex);
+                                    snapshotApplier.applyChannel(channelWithIndex);
                                     log.info("[ADMIN] Channel {} request accepted by radio", index);
                                     return CompletableFuture.completedFuture(true);
                                 }
@@ -766,21 +759,21 @@ public class AdminService {
     public CompletableFuture<Boolean> setConfig(Config config, boolean verifyApplied) {
         Objects.requireNonNull(config, "config must not be null");
 
-        AdminMessage request = withSessionIfPresent(AdminMessage.newBuilder().setSetConfig(config)).build();
+        AdminMessage request = snapshotApplier.withSessionIfPresent(AdminMessage.newBuilder().setSetConfig(config)).build();
         return gateway.executeAdminRequest(gateway.getSelfNodeId(), request, false)
                 .thenCompose(packet -> {
-                    applyConfig(config);
+                    snapshotApplier.applyConfig(config);
                     if (!verifyApplied) {
                         return CompletableFuture.completedFuture(true);
                     }
 
-                    List<ConfigType> impactedTypes = extractConfigTypes(config);
+                    List<ConfigType> impactedTypes = snapshotApplier.extractConfigTypes(config);
                     if (impactedTypes.isEmpty()) {
                         return CompletableFuture.completedFuture(false);
                     }
 
-                    return verifyWithPolicy("setConfig", () -> refreshConfigs(impactedTypes)
-                            .thenApply(observed -> isConfigApplied(config, observed)));
+                    return verificationEngine.verifyWithPolicy("setConfig", () -> refreshConfigs(impactedTypes)
+                            .thenApply(observed -> verificationEngine.isConfigApplied(config, observed, impactedTypes)));
                 })
                 .exceptionallyCompose(ex -> {
                     if (!verifyApplied || !isRoutingNoResponse(ex)) {
@@ -788,12 +781,12 @@ public class AdminService {
                     }
 
                     log.warn("[ADMIN] setConfig returned ROUTING NO_RESPONSE; verifying by read-back");
-                    List<ConfigType> impactedTypes = extractConfigTypes(config);
+                    List<ConfigType> impactedTypes = snapshotApplier.extractConfigTypes(config);
                     if (impactedTypes.isEmpty()) {
                         return CompletableFuture.completedFuture(false);
                     }
-                    return verifyWithPolicy("setConfig", () -> refreshConfigs(impactedTypes)
-                            .thenApply(observed -> isConfigApplied(config, observed)));
+                    return verificationEngine.verifyWithPolicy("setConfig", () -> refreshConfigs(impactedTypes)
+                            .thenApply(observed -> verificationEngine.isConfigApplied(config, observed, impactedTypes)));
                 });
     }
 
@@ -819,22 +812,22 @@ public class AdminService {
     public CompletableFuture<Boolean> setModuleConfig(ModuleConfig moduleConfig, boolean verifyApplied) {
         Objects.requireNonNull(moduleConfig, "moduleConfig must not be null");
 
-        ModuleConfigType moduleType = toModuleConfigType(moduleConfig);
+        ModuleConfigType moduleType = snapshotApplier.toModuleConfigType(moduleConfig);
         if (moduleType == null) {
             return CompletableFuture.failedFuture(
                     new IllegalArgumentException("moduleConfig must include a concrete payload variant"));
         }
 
-        AdminMessage request = withSessionIfPresent(AdminMessage.newBuilder().setSetModuleConfig(moduleConfig)).build();
+        AdminMessage request = snapshotApplier.withSessionIfPresent(AdminMessage.newBuilder().setSetModuleConfig(moduleConfig)).build();
         return gateway.executeAdminRequest(gateway.getSelfNodeId(), request, false)
                 .thenCompose(packet -> {
-                    applyModuleConfig(moduleConfig);
+                    snapshotApplier.applyModuleConfig(moduleConfig);
                     if (!verifyApplied) {
                         return CompletableFuture.completedFuture(true);
                     }
 
-                    return verifyWithPolicy("setModuleConfig(" + moduleType + ")", () -> refreshModuleConfig(moduleType)
-                            .thenApply(observed -> isModuleConfigApplied(moduleConfig, observed)));
+                    return verificationEngine.verifyWithPolicy("setModuleConfig(" + moduleType + ")", () -> refreshModuleConfig(moduleType)
+                            .thenApply(observed -> verificationEngine.isModuleConfigApplied(moduleConfig, observed)));
                 })
                 .exceptionallyCompose(ex -> {
                     if (!verifyApplied || !isRoutingNoResponse(ex)) {
@@ -842,8 +835,8 @@ public class AdminService {
                     }
 
                     log.warn("[ADMIN] setModuleConfig returned ROUTING NO_RESPONSE; verifying by read-back for {}", moduleType);
-                    return verifyWithPolicy("setModuleConfig(" + moduleType + ")", () -> refreshModuleConfig(moduleType)
-                            .thenApply(observed -> isModuleConfigApplied(moduleConfig, observed)));
+                    return verificationEngine.verifyWithPolicy("setModuleConfig(" + moduleType + ")", () -> refreshModuleConfig(moduleType)
+                            .thenApply(observed -> verificationEngine.isModuleConfigApplied(moduleConfig, observed)));
                 });
     }
 
@@ -1354,17 +1347,17 @@ public class AdminService {
                 .setShortName(shortName)
                 .build();
 
-        AdminMessage request = withSessionIfPresent(AdminMessage.newBuilder().setSetOwner(updatedUser)).build();
+        AdminMessage request = snapshotApplier.withSessionIfPresent(AdminMessage.newBuilder().setSetOwner(updatedUser)).build();
 
         log.info("[ADMIN] Requesting rename for !{} to {}", Integer.toHexString(targetNodeId), longName);
         return gateway.executeAdminRequest(targetNodeId, request, false)
                 .thenCompose(packet -> {
-                    applyOwner(updatedUser);
+                    snapshotApplier.applyOwner(updatedUser);
                     log.info("[ADMIN] Rename accepted by radio for !{}", Integer.toHexString(targetNodeId));
                     if (!verifyApplied) {
                         return CompletableFuture.completedFuture(true);
                     }
-                    return verifyWithPolicy("setOwner(" + MeshUtils.formatId(targetNodeId) + ")",
+                    return verificationEngine.verifyWithPolicy("setOwner(" + MeshUtils.formatId(targetNodeId) + ")",
                             () -> verifyOwnerApplied(targetNodeId, longName, shortName));
                 })
                 .exceptionallyCompose(ex -> {
@@ -1374,7 +1367,7 @@ public class AdminService {
 
                     log.warn("[ADMIN] setOwner returned ROUTING NO_RESPONSE for !{}; verifying by read-back",
                             Integer.toHexString(targetNodeId));
-                    return verifyWithPolicy("setOwner(" + MeshUtils.formatId(targetNodeId) + ")",
+                    return verificationEngine.verifyWithPolicy("setOwner(" + MeshUtils.formatId(targetNodeId) + ")",
                             () -> verifyOwnerApplied(targetNodeId, longName, shortName));
                 });
     }
@@ -1401,7 +1394,7 @@ public class AdminService {
      * @return future completing with {@code true} when accepted by the radio.
      */
     public CompletableFuture<Boolean> reboot(int seconds) {
-        AdminMessage request = withSessionIfPresent(
+        AdminMessage request = snapshotApplier.withSessionIfPresent(
                 AdminMessage.newBuilder().setRebootSeconds(seconds == 0 ? 1 : seconds)).build();
 
         log.info("[ADMIN] Requesting radio reboot in {} seconds...", seconds);
@@ -1430,7 +1423,7 @@ public class AdminService {
                 .setRebootOtaMode(mode)
                 .setOtaHash(hash)
                 .build();
-        AdminMessage request = withSessionIfPresent(AdminMessage.newBuilder().setOtaRequest(otaEvent)).build();
+        AdminMessage request = snapshotApplier.withSessionIfPresent(AdminMessage.newBuilder().setOtaRequest(otaEvent)).build();
         String operation = "requestOtaMode(" + MeshUtils.formatId(targetNodeId) + ")";
 
         return gateway.executeAdminRequest(targetNodeId, request, false)
@@ -1438,33 +1431,16 @@ public class AdminService {
     }
 
     /**
-     * Ingests decoded admin message payload from {@code ADMIN_APP} packets.
+     * Internal pipeline hook that applies decoded {@code ADMIN_APP} payloads to the cached radio model.
+     * <p>
+     * This method is used by built-in handlers and startup/correlation flows. Application code should
+     * normally use refresh APIs and snapshot getters instead of calling ingestion methods directly.
+     * </p>
      *
      * @param msg decoded admin message.
      */
     public void ingestAdminMessage(AdminMessage msg) {
-        updateSessionKey(msg);
-
-        if (msg.hasGetOwnerResponse()) {
-            applyOwner(msg.getGetOwnerResponse());
-            log.info("[ADMIN] Model Updated: Owner");
-        }
-        if (msg.hasGetConfigResponse()) {
-            applyConfig(msg.getGetConfigResponse());
-            log.info("[ADMIN] Model Updated: Config");
-        }
-        if (msg.hasGetChannelResponse()) {
-            applyChannel(msg.getGetChannelResponse());
-            log.info("[ADMIN] Model Updated: Channel Slot {}", msg.getGetChannelResponse().getIndex());
-        }
-        if (msg.hasGetModuleConfigResponse()) {
-            applyModuleConfig(msg.getGetModuleConfigResponse());
-            log.info("[ADMIN] Model Updated: Module Config");
-        }
-        if (msg.hasGetDeviceMetadataResponse()) {
-            applyMetadata(msg.getGetDeviceMetadataResponse());
-            log.info("[ADMIN] Model Updated: Device Metadata");
-        }
+        snapshotApplier.ingestAdminMessage(msg);
     }
 
     /**
@@ -1527,288 +1503,33 @@ public class AdminService {
     }
 
     /**
-     * Ingests startup snapshot variants from {@link FromRadio} messages.
+     * Internal pipeline hook that applies top-level startup snapshot variants from {@link FromRadio}.
+     * <p>
+     * This is intended for the client's startup-sync path, not for normal application calls.
+     * </p>
      *
      * @param message startup snapshot message.
      */
     public void ingestStartupSnapshot(FromRadio message) {
-        if (message.hasMyInfo()) {
-            ingestMyInfo(message.getMyInfo().getMyNodeNum());
-        }
-        if (message.hasNodeInfo()) {
-            ingestNodeInfo(message.getNodeInfo());
-        }
-        if (message.hasConfig()) {
-            applyConfig(message.getConfig());
-        }
-        if (message.hasChannel()) {
-            applyChannel(message.getChannel());
-        }
-        if (message.hasModuleConfig()) {
-            applyModuleConfig(message.getModuleConfig());
-        }
-        if (message.hasMetadata()) {
-            applyMetadata(message.getMetadata());
-        }
+        snapshotApplier.ingestStartupSnapshot(message);
     }
 
     /**
-     * Ingests node id from {@code my_info} startup message.
+     * Internal pipeline hook that applies local identity from {@code my_info}.
      *
      * @param nodeId local node id.
      */
     public void ingestMyInfo(int nodeId) {
-        if (isKnownNodeId(nodeId)) {
-            radioModel.setNodeId(nodeId);
-        }
+        snapshotApplier.ingestMyInfo(nodeId);
     }
 
     /**
-     * Ingests owner/node identity from node info payload.
+     * Internal pipeline hook that applies owner/node identity from a node-info payload.
      *
      * @param info node info payload.
      */
     public void ingestNodeInfo(NodeInfo info) {
-        if (info == null) {
-            return;
-        }
-        if (info.hasUser()) {
-            applyOwner(info.getUser());
-        }
-        if (isKnownNodeId(info.getNum())) {
-            radioModel.setNodeId(info.getNum());
-        }
-    }
-
-    /**
-     * Applies owner data to the radio model cache.
-     *
-     * @param owner owner payload to apply.
-     */
-    private void applyOwner(User owner) {
-        if (owner != null) {
-            radioModel.setOwner(owner);
-            // Some firmware paths provide owner identity before/without my_info.
-            // Mirror owner.id into local node id cache so callers can resolve self id reliably.
-            String ownerId = owner.getId();
-            if (ownerId != null && !ownerId.isBlank()) {
-                int parsedId = MeshUtils.parseId(ownerId);
-                if (isKnownNodeId(parsedId)) {
-                    radioModel.setNodeId(parsedId);
-                }
-            }
-        }
-    }
-
-    /**
-     * Returns whether node id is a usable concrete node identifier.
-     *
-     * @param nodeId node id candidate.
-     * @return {@code true} when id is neither unknown nor broadcast.
-     */
-    private boolean isKnownNodeId(int nodeId) {
-        return nodeId != MeshConstants.ID_UNKNOWN && nodeId != MeshConstants.ID_BROADCAST;
-    }
-
-    /**
-     * Applies config payload data to the radio model cache.
-     *
-     * @param cfg config payload to apply.
-     */
-    private void applyConfig(Config cfg) {
-        if (cfg == null) {
-            return;
-        }
-        for (ConfigType type : extractConfigTypes(cfg)) {
-            radioModel.putConfig(type, cfg);
-        }
-        if (cfg.hasLora()) {
-            radioModel.setLoraConfig(cfg.getLora());
-        }
-        if (cfg.hasDevice()) {
-            radioModel.setDeviceConfig(cfg.getDevice());
-        }
-        if (cfg.hasDisplay()) {
-            radioModel.setDisplayConfig(cfg.getDisplay());
-        }
-        if (cfg.hasNetwork()) {
-            radioModel.setNetworkConfig(cfg.getNetwork());
-        }
-    }
-
-    /**
-     * Applies channel payload data to the radio model cache.
-     *
-     * @param channel channel payload to apply.
-     */
-    private void applyChannel(Channel channel) {
-        if (channel != null) {
-            radioModel.setChannel(channel.getIndex(), channel);
-        }
-    }
-
-    /**
-     * Applies module-config payload data to the radio model cache.
-     *
-     * @param moduleConfig module-config payload to apply.
-     */
-    private void applyModuleConfig(ModuleConfig moduleConfig) {
-        ModuleConfigType type = toModuleConfigType(moduleConfig);
-        if (type != null) {
-            radioModel.putModuleConfig(type, moduleConfig);
-        }
-    }
-
-    /**
-     * Applies device metadata to the radio model cache.
-     *
-     * @param metadata metadata payload to apply.
-     */
-    private void applyMetadata(DeviceMetadata metadata) {
-        if (metadata != null) {
-            radioModel.setDeviceMetadata(metadata);
-        }
-    }
-
-    /**
-     * Resolves the module-config payload variant into its module-config type enum.
-     *
-     * @param moduleConfig module-config payload to apply.
-     * @return corresponding module config type, or {@code null} when no concrete variant is set.
-     */
-    private ModuleConfigType toModuleConfigType(ModuleConfig moduleConfig) {
-        if (moduleConfig == null) {
-            return null;
-        }
-
-        return switch (moduleConfig.getPayloadVariantCase()) {
-            case MQTT -> ModuleConfigType.MQTT_CONFIG;
-            case SERIAL -> ModuleConfigType.SERIAL_CONFIG;
-            case EXTERNAL_NOTIFICATION -> ModuleConfigType.EXTNOTIF_CONFIG;
-            case STORE_FORWARD -> ModuleConfigType.STOREFORWARD_CONFIG;
-            case RANGE_TEST -> ModuleConfigType.RANGETEST_CONFIG;
-            case TELEMETRY -> ModuleConfigType.TELEMETRY_CONFIG;
-            case CANNED_MESSAGE -> ModuleConfigType.CANNEDMSG_CONFIG;
-            case AUDIO -> ModuleConfigType.AUDIO_CONFIG;
-            case REMOTE_HARDWARE -> ModuleConfigType.REMOTEHARDWARE_CONFIG;
-            case NEIGHBOR_INFO -> ModuleConfigType.NEIGHBORINFO_CONFIG;
-            case AMBIENT_LIGHTING -> ModuleConfigType.AMBIENTLIGHTING_CONFIG;
-            case DETECTION_SENSOR -> ModuleConfigType.DETECTIONSENSOR_CONFIG;
-            case PAXCOUNTER -> ModuleConfigType.PAXCOUNTER_CONFIG;
-            case STATUSMESSAGE -> ModuleConfigType.STATUSMESSAGE_CONFIG;
-            case PAYLOADVARIANT_NOT_SET -> null;
-        };
-    }
-
-    /**
-     * Maps a config payload oneof variant to its admin config type key.
-     *
-     * @param cfg config payload.
-     * @return list containing the affected config type, or empty when payload has no variant.
-     */
-    private List<ConfigType> extractConfigTypes(Config cfg) {
-        if (cfg == null) {
-            return List.of();
-        }
-
-        ConfigType type = switch (cfg.getPayloadVariantCase()) {
-            case DEVICE -> ConfigType.DEVICE_CONFIG;
-            case POSITION -> ConfigType.POSITION_CONFIG;
-            case POWER -> ConfigType.POWER_CONFIG;
-            case NETWORK -> ConfigType.NETWORK_CONFIG;
-            case DISPLAY -> ConfigType.DISPLAY_CONFIG;
-            case LORA -> ConfigType.LORA_CONFIG;
-            case BLUETOOTH -> ConfigType.BLUETOOTH_CONFIG;
-            case SECURITY -> ConfigType.SECURITY_CONFIG;
-            case SESSIONKEY -> ConfigType.SESSIONKEY_CONFIG;
-            case DEVICE_UI -> ConfigType.DEVICEUI_CONFIG;
-            case PAYLOADVARIANT_NOT_SET -> null;
-        };
-        return type == null ? List.of() : List.of(type);
-    }
-
-    /**
-     * Verifies whether requested config section payloads match read-back payloads.
-     *
-     * @param requested requested config payload.
-     * @param observedByType refreshed config payloads keyed by type.
-     * @return {@code true} when all affected sections match.
-     */
-    private boolean isConfigApplied(Config requested, Map<ConfigType, Config> observedByType) {
-        List<ConfigType> impactedTypes = extractConfigTypes(requested);
-        if (impactedTypes.isEmpty()) {
-            return false;
-        }
-
-        for (ConfigType type : impactedTypes) {
-            Config observed = observedByType.get(type);
-            if (observed == null) {
-                return false;
-            }
-            boolean sectionMatches = switch (type) {
-                case DEVICE_CONFIG -> requested.hasDevice() && observed.hasDevice()
-                        && requested.getDevice().equals(observed.getDevice());
-                case POSITION_CONFIG -> requested.hasPosition() && observed.hasPosition()
-                        && requested.getPosition().equals(observed.getPosition());
-                case POWER_CONFIG -> requested.hasPower() && observed.hasPower()
-                        && requested.getPower().equals(observed.getPower());
-                case NETWORK_CONFIG -> requested.hasNetwork() && observed.hasNetwork()
-                        && requested.getNetwork().equals(observed.getNetwork());
-                case DISPLAY_CONFIG -> requested.hasDisplay() && observed.hasDisplay()
-                        && requested.getDisplay().equals(observed.getDisplay());
-                case LORA_CONFIG -> requested.hasLora() && observed.hasLora()
-                        && requested.getLora().equals(observed.getLora());
-                case BLUETOOTH_CONFIG -> requested.hasBluetooth() && observed.hasBluetooth()
-                        && requested.getBluetooth().equals(observed.getBluetooth());
-                case SECURITY_CONFIG -> requested.hasSecurity() && observed.hasSecurity()
-                        && requested.getSecurity().equals(observed.getSecurity());
-                case SESSIONKEY_CONFIG -> requested.hasSessionkey() && observed.hasSessionkey()
-                        && requested.getSessionkey().equals(observed.getSessionkey());
-                case DEVICEUI_CONFIG -> requested.hasDeviceUi() && observed.hasDeviceUi()
-                        && requested.getDeviceUi().equals(observed.getDeviceUi());
-                case UNRECOGNIZED -> false;
-            };
-            if (!sectionMatches) {
-                return false;
-            }
-        }
-
-        return true;
-    }
-
-    /**
-     * Verifies whether requested module config payload matches read-back payload.
-     *
-     * @param requested requested module config payload.
-     * @param observed observed module config payload.
-     * @return {@code true} when the requested payload variant and value match.
-     */
-    private boolean isModuleConfigApplied(ModuleConfig requested, ModuleConfig observed) {
-        if (requested == null || observed == null) {
-            return false;
-        }
-
-        if (requested.getPayloadVariantCase() != observed.getPayloadVariantCase()) {
-            return false;
-        }
-
-        return switch (requested.getPayloadVariantCase()) {
-            case MQTT -> requested.getMqtt().equals(observed.getMqtt());
-            case SERIAL -> requested.getSerial().equals(observed.getSerial());
-            case EXTERNAL_NOTIFICATION -> requested.getExternalNotification().equals(observed.getExternalNotification());
-            case STORE_FORWARD -> requested.getStoreForward().equals(observed.getStoreForward());
-            case RANGE_TEST -> requested.getRangeTest().equals(observed.getRangeTest());
-            case TELEMETRY -> requested.getTelemetry().equals(observed.getTelemetry());
-            case CANNED_MESSAGE -> requested.getCannedMessage().equals(observed.getCannedMessage());
-            case AUDIO -> requested.getAudio().equals(observed.getAudio());
-            case REMOTE_HARDWARE -> requested.getRemoteHardware().equals(observed.getRemoteHardware());
-            case NEIGHBOR_INFO -> requested.getNeighborInfo().equals(observed.getNeighborInfo());
-            case AMBIENT_LIGHTING -> requested.getAmbientLighting().equals(observed.getAmbientLighting());
-            case DETECTION_SENSOR -> requested.getDetectionSensor().equals(observed.getDetectionSensor());
-            case PAXCOUNTER -> requested.getPaxcounter().equals(observed.getPaxcounter());
-            case STATUSMESSAGE -> requested.getStatusmessage().equals(observed.getStatusmessage());
-            case PAYLOADVARIANT_NOT_SET -> false;
-        };
+        snapshotApplier.ingestNodeInfo(info);
     }
 
     /**
@@ -1836,19 +1557,6 @@ public class AdminService {
     }
 
     /**
-     * Injects current session passkey into an admin message builder when available.
-     *
-     * @param builder admin message builder to enrich.
-     * @return same builder instance, optionally enriched with session passkey.
-     */
-    private AdminMessage.Builder withSessionIfPresent(AdminMessage.Builder builder) {
-        if (!lastSessionPasskey.isEmpty()) {
-            builder.setSessionPasskey(lastSessionPasskey);
-        }
-        return builder;
-    }
-
-    /**
      * Executes an admin request and maps the correlated admin response payload.
      *
      * @param request outbound admin request.
@@ -1860,7 +1568,7 @@ public class AdminService {
         return gateway.executeAdminRequest(gateway.getSelfNodeId(), request, true)
                 .thenApply(this::parseAdminMessage)
                 .thenApply(msg -> {
-                    updateSessionKey(msg);
+                    snapshotApplier.updateSessionKey(msg);
                     return extractor.apply(msg);
                 });
     }
@@ -1876,18 +1584,6 @@ public class AdminService {
             return AdminMessage.parseFrom(packet.getDecoded().getPayload());
         } catch (Exception ex) {
             throw new IllegalStateException("Failed to parse admin payload from response packet", ex);
-        }
-    }
-
-    /**
-     * Updates cached admin session passkey from inbound admin response payload.
-     *
-     * @param adminMsg parsed admin response payload.
-     */
-    private void updateSessionKey(AdminMessage adminMsg) {
-        if (!adminMsg.getSessionPasskey().isEmpty()) {
-            this.lastSessionPasskey = adminMsg.getSessionPasskey();
-            log.info("[ADMIN] Updated Session Key: {}", MeshUtils.bytesToHex(lastSessionPasskey.toByteArray()));
         }
     }
 
@@ -1908,13 +1604,12 @@ public class AdminService {
      * @return future completing with {@code true} when expected channel state is observed.
      */
     private CompletableFuture<Boolean> verifyChannelApplied(int index, Channel expected) {
-        return verifyWithPolicy("setChannel(" + index + ")", () -> refreshChannel(index).thenApply(appliedChannel -> {
+        return verificationEngine.verifyWithPolicy("setChannel(" + index + ")", () -> refreshChannel(index).thenApply(appliedChannel -> {
             if (log.isDebugEnabled()) {
                 log.debug("[ADMIN] setChannel verify expected -> {}", describeChannelForLog(expected));
                 log.debug("[ADMIN] setChannel verify observed -> {}", describeChannelForLog(appliedChannel));
             }
-            boolean applied = expected.getRole() == appliedChannel.getRole()
-                    && expected.getSettings().equals(appliedChannel.getSettings());
+            boolean applied = verificationEngine.isChannelApplied(expected, appliedChannel);
 
             if (applied) {
                 log.info("[ADMIN] Channel {} updated successfully", index);
@@ -1924,102 +1619,6 @@ public class AdminService {
             }
             return applied;
         }));
-    }
-
-    /**
-     * Executes read-back verification with the configured retry/backoff policy.
-     *
-     * @param operation operation label for diagnostics.
-     * @param verifier verification attempt supplier that returns true when applied.
-     * @return future completing with true when any attempt verifies successfully.
-     */
-    private CompletableFuture<Boolean> verifyWithPolicy(String operation,
-                                                        Supplier<CompletableFuture<Boolean>> verifier) {
-        return verifyWithPolicy(operation, verifier, 1);
-    }
-
-    private CompletableFuture<Boolean> verifyWithPolicy(String operation,
-                                                        Supplier<CompletableFuture<Boolean>> verifier,
-                                                        int attempt) {
-        long delayMs = verificationDelayMs(attempt);
-        CompletableFuture<Boolean> attemptFuture = delayMs <= 0
-                ? invokeVerifier(verifier)
-                : CompletableFuture.runAsync(
-                        () -> {
-                        },
-                        CompletableFuture.delayedExecutor(delayMs, TimeUnit.MILLISECONDS))
-                        .thenCompose(unused -> invokeVerifier(verifier));
-
-        return attemptFuture.handle((applied, error) -> new VerificationAttemptResult(Boolean.TRUE.equals(applied), error))
-                .thenCompose(result -> {
-                    if (result.applied()) {
-                        return CompletableFuture.completedFuture(true);
-                    }
-
-                    int maxAttempts = verificationPolicy.getMaxAttempts();
-                    if (attempt >= maxAttempts) {
-                        if (result.error() != null) {
-                            log.debug("[ADMIN] {} verification exhausted after {} attempt(s). Last error: {}",
-                                    operation, attempt, unwrap(result.error()).getMessage());
-                        }
-                        return CompletableFuture.completedFuture(false);
-                    }
-
-                    if (result.error() != null) {
-                        log.debug("[ADMIN] {} verification attempt {}/{} failed with error: {}",
-                                operation, attempt, maxAttempts, unwrap(result.error()).getMessage());
-                    } else {
-                        log.debug("[ADMIN] {} verification attempt {}/{} did not match; retrying...",
-                                operation, attempt, maxAttempts);
-                    }
-
-                    return verifyWithPolicy(operation, verifier, attempt + 1);
-                });
-    }
-
-    /**
-     * Computes retry delay for a verification attempt.
-     * <p>
-     * Attempt #1 is immediate. Attempt #2 uses {@code initialRetryDelay}. Subsequent attempts apply backoff and
-     * are clamped by {@code maxRetryDelay}.
-     * </p>
-     *
-     * @param attempt 1-based attempt number.
-     * @return delay in milliseconds.
-     */
-    private long verificationDelayMs(int attempt) {
-        if (attempt <= 1) {
-            return 0L;
-        }
-        AdminVerificationPolicy policy = verificationPolicy;
-        double base = policy.getInitialRetryDelay().toMillis();
-        double multiplier = Math.pow(policy.getRetryBackoffMultiplier(), Math.max(0, attempt - 2));
-        long computed = Math.round(base * multiplier);
-        return Math.min(computed, policy.getMaxRetryDelay().toMillis());
-    }
-
-    /**
-     * Safely invokes a verification supplier.
-     *
-     * @param verifier verification supplier.
-     * @return attempt future (never null).
-     */
-    private static CompletableFuture<Boolean> invokeVerifier(Supplier<CompletableFuture<Boolean>> verifier) {
-        try {
-            CompletableFuture<Boolean> attempt = verifier.get();
-            return attempt == null ? CompletableFuture.completedFuture(false) : attempt;
-        } catch (Exception ex) {
-            return CompletableFuture.failedFuture(ex);
-        }
-    }
-
-    /**
-     * Internal verification attempt envelope.
-     *
-     * @param applied whether this attempt verified applied state.
-     * @param error optional attempt error.
-     */
-    private record VerificationAttemptResult(boolean applied, Throwable error) {
     }
 
     /**

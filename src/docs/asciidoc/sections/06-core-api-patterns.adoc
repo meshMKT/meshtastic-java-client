@@ -1,0 +1,324 @@
+== Core API Patterns
+
+=== Transport and Request Timing Controls
+
+The client intentionally serializes in-flight requests for radio safety. Timing controls let you tune throughput
+without changing that safety model.
+
+==== Transport Pacing
+
+`SerialConfig` and `TcpConfig` expose:
+
+- `outboundPacingDelayMs` (default `200`)
+
+Usage:
+
+[source,java]
+----
+SerialConfig serialCfg = SerialConfig.builder()
+        .portName("/dev/cu.usbmodem80B54ED11F101")
+        .outboundPacingDelayMs(120) // lower for faster radios, 0 disables pacing
+        .build();
+
+TcpConfig tcpCfg = TcpConfig.builder()
+        .host("192.168.1.50")
+        .port(4403)
+        .outboundPacingDelayMs(120)
+        .build();
+----
+
+These are startup-time transport settings. They are read from the transport config during transport construction/connect.
+If you want to change them later, create a new transport/config and reconnect.
+
+==== Request Correlation Controls
+
+`MeshtasticClient` exposes:
+
+- `setRequestLockReleaseCooldownMs(long)` (default `200ms`)
+- `setRequestCorrelationTimeout(Duration)` (default `30s`)
+
+Usage:
+
+[source,java]
+----
+client.setRequestLockReleaseCooldownMs(120);
+client.setRequestCorrelationTimeout(Duration.ofSeconds(20));
+----
+
+These settings are runtime-tunable. You can change them before or after `connect(...)`, and future requests will use
+the updated values.
+
+==== Admin Verification Policy
+
+`AdminService` exposes:
+
+- `setVerificationPolicy(AdminVerificationPolicy)`
+
+Usage:
+
+[source,java]
+----
+client.getAdminService().setVerificationPolicy(
+        AdminVerificationPolicy.builder()
+                .maxAttempts(3)
+                .initialRetryDelay(Duration.ofMillis(400))
+                .retryBackoffMultiplier(1.8)
+                .maxRetryDelay(Duration.ofSeconds(2))
+                .build()
+);
+----
+
+This setting is also runtime-tunable and affects future `verifyApplied=true` admin writes.
+
+Example TRACE output when timing diagnostics are enabled:
+
+[source,text]
+----
+[TX] Request queue delay=0ms lock_wait=0ms port=ADMIN_APP dst=!53ad0f1e
+[TX] Request 1856599835 completed in 6450ms (port=ADMIN_APP dst=!53ad0f1e success=true)
+[UTIL] Await TELEMETRY_APP for !699c5400 completed in 312ms (success=true)
+----
+
+=== Fire-and-forget Request Correlation
+
+Use request methods when you need transport/routing acceptance only:
+
+[source,java]
+----
+client.requestNodeInfo(nodeId);
+client.requestPosition(nodeId);
+client.requestTelemetry(nodeId);
+----
+
+=== Payload-Await Requests
+
+Use payload-await methods when the caller must wait for live payload-driven node updates:
+
+[source,java]
+----
+client.requestNodeInfoAwaitPayload(nodeId);
+client.requestPositionAwaitPayload(nodeId);
+client.requestTelemetryAwaitPayload(nodeId);
+----
+
+=== Payload-Await with Snapshot Fallback
+
+When firmware/device timing is inconsistent, use `...AwaitPayloadOrSnapshot(...)` helpers.
+These complete with latest node snapshot when a live payload is not observed before timeout.
+
+[source,java]
+----
+client.requestNodeInfoAwaitPayloadOrSnapshot(nodeId, Duration.ofSeconds(15));
+client.requestPositionAwaitPayloadOrSnapshot(nodeId, Duration.ofSeconds(15));
+client.requestTelemetryAwaitPayloadOrSnapshot(nodeId, Duration.ofSeconds(15));
+----
+
+=== Messaging APIs
+
+Use convenience methods on `MeshtasticClient` for common text workflows:
+
+[source,java]
+----
+// 1) Typical direct message to a single node on the primary channel.
+client.sendDirectText(targetNodeId, "hello from java");
+
+// 2) Broadcast to the public/default chat on the primary channel.
+client.sendChannelText(MeshConstants.PRIMARY_CHANNEL_INDEX, "hello mesh");
+
+// 3) Broadcast to a specific shared channel such as channel 1 ("Test").
+client.sendChannelText(1, "hello test channel");
+
+// 4) Advanced: direct message to one node while using a non-primary
+// shared channel context for encryption/key selection.
+client.sendDirectText(targetNodeId, 1, "hello on channel 1");
+----
+
+Both methods automatically apply chunking for long payloads.
+
+[NOTE]
+====
+For direct messages, the destination node controls whether the packet is one-to-one, while the channel index
+selects the shared channel/key context used for that packet. For channel messages, the destination is broadcast
+and the channel index selects which group channel receives the message.
+====
+
+==== Which Method Should I Use?
+
+[cols="1,3",options="header"]
+|===
+| Goal
+| Method
+
+| Send a private message to one device using the normal/default path
+| `client.sendDirectText(nodeId, "hello")`
+
+| Send a message to everyone on the public/default channel
+| `client.sendChannelText(MeshConstants.PRIMARY_CHANNEL_INDEX, "hello everyone")`
+
+| Send a message to everyone on a secondary channel such as "Test"
+| `client.sendChannelText(channelIndex, "hello test")`
+
+| Send a private message to one device while using a specific shared channel's key/context
+| `client.sendDirectText(nodeId, channelIndex, "hello")`
+|===
+
+==== UI Example
+
+This is a common UI pattern:
+
+- DM conversation view: call `sendDirectText(selectedNodeId, message)`
+- Public chat view: call `sendChannelText(MeshConstants.PRIMARY_CHANNEL_INDEX, message)`
+- Secondary channel chat view (for example "Test"): call `sendChannelText(selectedChannel.index(), message)`
+
+[source,java]
+----
+if (conversation.isDirect()) {
+    client.sendDirectText(conversation.targetNodeId(), messageText);
+} else {
+    client.sendChannelText(conversation.channelIndex(), messageText);
+}
+----
+
+==== Bot Or Integration Example
+
+Bots often need both broadcast and direct-reply behavior.
+
+[source,java]
+----
+client.addEventListener(new MeshtasticEventListener() {
+    @Override
+    public void onChatMessage(ChatMessageEvent event) {
+        String text = event.getText();
+        int fromNode = event.getFromNodeId();
+
+        if ("ping".equalsIgnoreCase(text)) {
+            client.sendDirectText(fromNode, "pong");
+        }
+
+        if ("announce".equalsIgnoreCase(text)) {
+            client.sendChannelText(MeshConstants.PRIMARY_CHANNEL_INDEX, "bot online");
+        }
+    }
+});
+----
+
+==== Advanced Channel Context Example
+
+If two nodes share a private secondary channel, a direct message can still use that channel's
+shared key/context rather than the primary channel.
+
+[source,java]
+----
+int opsNodeId = 0x00ba0dd0;
+int opsChannelIndex = 2;
+
+client.sendDirectText(opsNodeId, opsChannelIndex, "check-in complete");
+----
+
+[plantuml,request-correlation-lifecycle,svg]
+----
+@startuml
+title Request Correlation Lifecycle
+
+actor Caller
+participant "MeshtasticClient" as Client
+participant "Transport" as Transport
+participant "Correlator" as Corr
+participant "Handlers" as Handlers
+
+Caller -> Client: requestXxx(...)
+Client -> Corr: register pending request(id, mode)
+Client -> Transport: send packet(id)
+
+Transport --> Client: ROUTING_APP ack (request_id=id)
+alt routing-level request (fire-and-forget)
+  Client -> Corr: complete pending request on routing ack
+  Client --> Caller: future complete
+else payload-await request
+  Client -> Corr: keep pending request open
+  Transport --> Handlers: correlated payload (ADMIN_APP / NODEINFO / TELEMETRY / POSITION)
+  Handlers --> Client: dispatch + node/model update
+  Client -> Corr: complete pending request on payload
+  Client --> Caller: future complete
+end
+
+@enduml
+----
+
+=== Admin Service Access
+
+`AdminService` is obtained from the client:
+
+[source,java]
+----
+AdminService admin = client.getAdminService();
+----
+
+`AdminService` is the high-level settings/configuration facade for the library.
+It exists so application code does not have to manually build every admin protobuf request,
+track every response variant, merge incoming admin snapshots into a coherent radio model, or
+re-implement write verification rules.
+
+In practice, `MeshtasticClient` and `AdminService` have different jobs:
+
+- `MeshtasticClient` owns transport lifecycle, startup sync, request correlation, messaging helpers, and event fan-out.
+- `AdminService` owns radio settings/domain state: owner, metadata, channels, config sections, module configs, and
+  admin-oriented write/readback workflows.
+
+Why this layer exists:
+
+- Meshtastic admin/config data arrives across multiple message types and at multiple times.
+- Settings UIs usually need both instant cached reads and explicit refresh-on-open behavior.
+- Admin writes often need eventual-consistency handling because some radios apply writes asynchronously.
+- It is easier for app developers to work with a stable service-oriented API than with dozens of raw admin message variants.
+
+What `AdminService` gives you:
+
+- a live `RadioModel` snapshot via `getSnapshot()`
+- typed snapshot accessors for channels/config/module-config sections
+- explicit async refresh methods for page-specific data loads
+- typed write helpers for channel/config/module/owner operations
+- optional verify-applied semantics with structured `AdminWriteResult`
+
+Mental model:
+
+- use `AdminService` as your settings/read-write facade
+- use `MeshtasticEventListener.onAdminModelUpdate(...)` to keep UI state in sync while connected
+- use snapshots for instant rendering
+- use refresh methods when a page opens or when a user explicitly asks to reload
+
+This split keeps the lower-level client API clean while still giving UI and headless applications
+a practical, higher-level surface for Meshtastic settings workflows.
+
+==== Snapshot Model And Refresh Model
+
+`AdminService` is intentionally snapshot-first.
+
+- Snapshot reads are immediate and are ideal for first paint in a UI.
+- Refresh methods are explicit and async so callers control when radio traffic is generated.
+- Incoming admin/local-state packets continuously update the in-memory `RadioModel`.
+
+Typical pattern:
+
+1. render immediately from snapshot
+2. trigger a focused refresh for the active page
+3. listen for `onAdminModelUpdate(...)` to keep the view/store current
+
+This avoids both extremes:
+
+- blocking UI on a full radio sweep every time
+- forcing application code to manually merge incoming admin packets
+
+==== Who Should Use It?
+
+Use `AdminService` when your application needs:
+
+- settings screens
+- channel editors
+- owner/metadata display
+- config/module configuration
+- lifecycle admin actions such as reboot/factory reset/OTA-mode request
+
+If you are building a simple bot or telemetry consumer and do not need radio settings,
+you may spend most of your time in `MeshtasticClient` plus event listeners and rarely touch `AdminService`.
+

@@ -1,0 +1,36 @@
+== Architecture Diagram
+
+[plantuml,client-startup-flow,svg]
+----
+@startuml
+title Client Startup and Settings Refresh
+
+actor UI
+participant "MeshtasticClient" as Client
+participant "Transport" as Transport
+participant "AdminService" as Admin
+participant "RadioModel" as Model
+
+UI -> Client: connect(transport)
+Client -> Transport: start()
+Transport --> Client: connected event
+Client -> Client: startup state = SYNC_LOCAL_CONFIG
+Client -> Transport: want_config_id = 69420
+Transport --> Client: my_info/config/channel snapshots
+Client -> Client: startup state = SYNC_MESH_CONFIG
+Client -> Transport: want_config_id = 69421
+Transport --> Client: node + mesh snapshots
+Client -> Client: startup state = READY
+Client --> UI: onStartupStateChanged(..., READY)
+
+UI -> Admin: refreshChannelsAndSecurity()
+Admin -> Client: executeAdminRequest(GET_CHANNEL likely-active slots)
+Admin -> Client: executeAdminRequest(GET_CONFIG SECURITY)
+Admin -> Client: executeAdminRequest(GET_MODULE_CONFIG MQTT)
+Admin -> Model: apply snapshots
+Admin --> UI: completed future
+UI -> Admin: getChannelSnapshots()/getConfigSnapshot()/getModuleConfigSnapshot()
+
+@enduml
+----
+

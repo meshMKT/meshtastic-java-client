@@ -1,0 +1,111 @@
+== Admin Write Semantics
+
+Canonical write entry points:
+
+- `setChannelResult(index, channel, verifyApplied)`
+- `setConfigResult(config, verifyApplied)`
+- `setModuleConfigResult(moduleConfig, verifyApplied)`
+- `setOwnerResult(targetNodeId, longName, shortName, verifyApplied)`
+
+Boolean-oriented variants are also available when structured status is not needed:
+
+- `setChannel(index, channel, verifyApplied)`
+- `setConfig(config, verifyApplied)`
+- `setModuleConfig(moduleConfig, verifyApplied)`
+- `setOwner(targetNodeId, longName, shortName, verifyApplied)`
+
+Accepted-only and verified semantics are expressed through the explicit `verifyApplied` boolean
+or structured `AdminWriteResult` status.
+
+=== Eventual-Consistency Verification Policy
+
+Some firmware/radio combinations apply writes asynchronously. To reduce false negatives,
+`AdminService` supports configurable read-back retries when `verifyApplied=true`.
+
+Defaults:
+
+- `maxAttempts = 1` (immediate single verification attempt; legacy behavior)
+- `initialRetryDelay = 300ms`
+- `retryBackoffMultiplier = 2.0`
+- `maxRetryDelay = 2s`
+
+Configuration example:
+
+[source,java]
+----
+admin.setVerificationPolicy(
+        AdminVerificationPolicy.builder()
+                .maxAttempts(3)
+                .initialRetryDelay(Duration.ofMillis(400))
+                .retryBackoffMultiplier(1.8)
+                .maxRetryDelay(Duration.ofSeconds(2))
+                .build()
+);
+----
+
+Operational guidance:
+
+- keep `maxAttempts=1` for fastest fail-fast behavior
+- use `2-3` attempts for unstable radios/firmware where writes may appear late
+- avoid high retry counts to prevent blocking settings workflows
+
+=== Structured Write Results (Recommended for UI)
+
+For consistent error/status handling, use result-returning write methods:
+
+[source,java]
+----
+CompletableFuture<AdminWriteResult> resultFuture =
+        admin.setConfigResult(configPayload, true);
+
+resultFuture.thenAccept(result -> {
+    switch (result.status()) {
+        case VERIFIED_APPLIED -> showSuccess("Applied and verified.");
+        case ACCEPTED -> showSuccess("Accepted by radio.");
+        case REJECTED -> showError("Rejected: " + result.message());
+        case TIMEOUT -> showError("Timed out: " + result.message());
+        case VERIFICATION_FAILED -> showWarning("Accepted but read-back mismatch.");
+        case FAILED -> showError("Write failed: " + result.message());
+    }
+});
+----
+
+Available result statuses:
+
+- `ACCEPTED`
+- `VERIFIED_APPLIED`
+- `REJECTED`
+- `TIMEOUT`
+- `VERIFICATION_FAILED`
+- `FAILED`
+
+[plantuml,admin-write-verification-flow,svg]
+----
+@startuml
+title Admin Write: Accepted-Only vs Verify-Applied
+
+actor UI
+participant "AdminService" as Admin
+participant "MeshtasticClient" as Client
+participant "Radio" as Radio
+
+UI -> Admin: setConfig(payload, verifyApplied)
+Admin -> Client: executeAdminRequest(SET_CONFIG, expectAdminResponse=false)
+Client -> Radio: ADMIN_APP set_config
+Radio --> Client: ROUTING_APP status (NONE/error)
+Client --> Admin: request accepted/failure
+
+alt verifyApplied = false
+  Admin --> UI: complete success on acceptance
+else verifyApplied = true
+  Admin -> Client: executeAdminRequest(GET_CONFIG(type), expectAdminResponse=true)
+  Client -> Radio: ADMIN_APP get_config
+  Radio --> Client: ADMIN_APP get_config_response
+  Client --> Admin: parsed payload
+  Admin -> Admin: compare requested vs observed section
+  Admin --> UI: true/false
+end
+
+@enduml
+----
+

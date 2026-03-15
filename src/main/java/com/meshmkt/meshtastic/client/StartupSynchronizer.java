@@ -1,0 +1,226 @@
+package com.meshmkt.meshtastic.client;
+
+import com.meshmkt.meshtastic.client.event.StartupState;
+import lombok.extern.slf4j.Slf4j;
+import org.meshtastic.proto.MeshProtos.FromRadio;
+
+import java.util.concurrent.CancellationException;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
+import java.util.function.Consumer;
+import java.util.function.IntConsumer;
+import java.util.function.IntPredicate;
+import java.util.function.IntSupplier;
+
+/**
+ * Manages startup synchronization phase state, barrier handling, and want-config sequencing.
+ * <p>
+ * This helper keeps the startup state machine separate from {@link MeshtasticClient}'s public API surface.
+ * </p>
+ * <p>
+ * It operates above the transport layer. Transports are responsible for reconnecting and re-emitting
+ * connection events; once connected, this synchronizer replays the Meshtastic-specific startup phases.
+ * </p>
+ */
+@Slf4j
+final class StartupSynchronizer {
+    private static final int NODELESS_WANT_CONFIG_ID = 69420;
+    private static final int FULL_WANT_CONFIG_ID = 69421;
+
+    private final ScheduledExecutorService scheduler;
+    private final long startupSyncTimeoutSeconds;
+    private final Consumer<StartupState> startupStateConsumer;
+    private final IntConsumer wantConfigSender;
+    private final IntConsumer selfNodeObserver;
+    private final Runnable readyAction;
+
+    private volatile int startupSyncPhase = 0;
+    private volatile int currentSyncId = 0;
+    private volatile boolean sawMyInfoInCurrentPhase = false;
+    private volatile CompletableFuture<Void> startupSyncBarrier = CompletableFuture.completedFuture(null);
+
+    /**
+     * Creates a startup synchronizer.
+     *
+     * @param scheduler scheduler used for sync timeout guards.
+     * @param startupSyncTimeoutSeconds startup timeout for each phase.
+     * @param startupStateConsumer callback used to publish startup-state transitions.
+     * @param wantConfigSender callback used to send want-config ids.
+     * @param selfNodeObserver callback invoked when valid my-info identity is observed.
+     * @param readyAction callback invoked once startup reaches READY.
+     */
+    StartupSynchronizer(
+            ScheduledExecutorService scheduler,
+            long startupSyncTimeoutSeconds,
+            Consumer<StartupState> startupStateConsumer,
+            IntConsumer wantConfigSender,
+            IntConsumer selfNodeObserver,
+            Runnable readyAction
+    ) {
+        this.scheduler = scheduler;
+        this.startupSyncTimeoutSeconds = startupSyncTimeoutSeconds;
+        this.startupStateConsumer = startupStateConsumer;
+        this.wantConfigSender = wantConfigSender;
+        this.selfNodeObserver = selfNodeObserver;
+        this.readyAction = readyAction;
+    }
+
+    /**
+     * Initializes startup state for a new connection cycle.
+     */
+    synchronized void prime() {
+        startupSyncPhase = 1;
+        sawMyInfoInCurrentPhase = false;
+        startupSyncBarrier = new CompletableFuture<>();
+    }
+
+    /**
+     * Starts startup sync using the current phase state.
+     */
+    synchronized void start() {
+        if (startupSyncPhase == 0) {
+            prime();
+        }
+        sendWantConfigForCurrentPhase();
+    }
+
+    /**
+     * Waits for the current startup barrier to complete.
+     *
+     * @param timeout amount of time to wait.
+     * @throws Exception when barrier waiting fails.
+     */
+    void awaitBarrier(long timeout, TimeUnit unit) throws Exception {
+        CompletableFuture<Void> barrier = startupSyncBarrier;
+        if (barrier != null && !barrier.isDone()) {
+            barrier.get(timeout, unit);
+        }
+    }
+
+    /**
+     * Processes startup sync markers from an inbound local-radio envelope.
+     *
+     * @param fromRadio inbound local radio envelope.
+     * @param knownSelfNodeIdPredicate predicate that validates self node ids.
+     * @param currentSelfNodeIdSupplier supplier for the current known self node id.
+     */
+    synchronized void processSignals(
+            FromRadio fromRadio,
+            IntPredicate knownSelfNodeIdPredicate,
+            IntSupplier currentSelfNodeIdSupplier
+    ) {
+        if (startupSyncPhase == 0 || fromRadio == null) {
+            return;
+        }
+
+        if (fromRadio.hasMyInfo()) {
+            int selfId = fromRadio.getMyInfo().getMyNodeNum();
+            if (knownSelfNodeIdPredicate.test(selfId)) {
+                sawMyInfoInCurrentPhase = true;
+            } else {
+                log.warn("[SYNC] Ignoring invalid my_info self id={} during startup sync", selfId);
+            }
+            if (knownSelfNodeIdPredicate.test(selfId) && selfId != currentSelfNodeIdSupplier.getAsInt()) {
+                selfNodeObserver.accept(selfId);
+            }
+        }
+
+        if (!fromRadio.hasConfigCompleteId()) {
+            return;
+        }
+
+        int completedId = fromRadio.getConfigCompleteId();
+        if (completedId != currentSyncId) {
+            log.debug("[SYNC] Ignoring stale config_complete_id={} while waiting for {}",
+                    completedId, currentSyncId);
+            return;
+        }
+
+        if (startupSyncPhase == 1) {
+            log.info("[SYNC] Phase 1 complete (local identity pass). my_info_seen={}", sawMyInfoInCurrentPhase);
+            if (!sawMyInfoInCurrentPhase) {
+                log.warn("[SYNC] Phase 1 completed without valid my_info. Retrying local identity phase.");
+                sendWantConfigForCurrentPhase();
+                return;
+            }
+            CompletableFuture<Void> barrier = startupSyncBarrier;
+            if (barrier != null && !barrier.isDone()) {
+                barrier.complete(null);
+            }
+            startupSyncPhase = 2;
+            sawMyInfoInCurrentPhase = false;
+            sendWantConfigForCurrentPhase();
+            return;
+        }
+
+        if (startupSyncPhase == 2) {
+            log.info("[SYNC] Phase 2 complete (full config/node sync).");
+            startupSyncPhase = 0;
+            startupStateConsumer.accept(StartupState.READY);
+            readyAction.run();
+            CompletableFuture<Void> barrier = startupSyncBarrier;
+            if (barrier != null && !barrier.isDone()) {
+                barrier.complete(null);
+            }
+        }
+    }
+
+    /**
+     * Resets startup state and fails any active barrier.
+     */
+    synchronized void reset() {
+        startupSyncPhase = 0;
+        sawMyInfoInCurrentPhase = false;
+        currentSyncId = 0;
+        CompletableFuture<Void> barrier = startupSyncBarrier;
+        startupSyncBarrier = CompletableFuture.completedFuture(null);
+        if (barrier != null && !barrier.isDone()) {
+            barrier.completeExceptionally(new CancellationException("Disconnected before startup sync completed"));
+        }
+    }
+
+    /**
+     * Returns whether startup sync is currently active.
+     *
+     * @return {@code true} when a phase is active.
+     */
+    synchronized boolean isActive() {
+        return startupSyncPhase != 0;
+    }
+
+    /**
+     * Returns the current startup phase for diagnostics.
+     *
+     * @return current startup phase number or {@code 0} when idle.
+     */
+    synchronized int getPhase() {
+        return startupSyncPhase;
+    }
+
+    /**
+     * Sends the current-phase want-config request and arms its timeout guard.
+     */
+    private synchronized void sendWantConfigForCurrentPhase() {
+        currentSyncId = (startupSyncPhase == 1) ? NODELESS_WANT_CONFIG_ID : FULL_WANT_CONFIG_ID;
+        final int expectedNonce = currentSyncId;
+        final int expectedPhase = startupSyncPhase;
+        startupStateConsumer.accept(startupSyncPhase == 1
+                ? StartupState.SYNC_LOCAL_CONFIG
+                : StartupState.SYNC_MESH_CONFIG);
+
+        log.info("[SYNC] Starting phase {} with want_config_id={}", expectedPhase, expectedNonce);
+        wantConfigSender.accept(expectedNonce);
+
+        scheduler.schedule(() -> {
+            CompletableFuture<Void> barrier = startupSyncBarrier;
+            if (barrier != null && !barrier.isDone()
+                    && startupSyncPhase == expectedPhase
+                    && currentSyncId == expectedNonce) {
+                barrier.completeExceptionally(new TimeoutException(
+                        "Startup sync timeout (phase " + expectedPhase + ", nonce " + expectedNonce + ")"));
+            }
+        }, startupSyncTimeoutSeconds, TimeUnit.SECONDS);
+    }
+}

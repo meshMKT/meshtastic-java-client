@@ -2,10 +2,9 @@ package com.meshmkt.meshtastic.client.handlers;
 
 import com.meshmkt.meshtastic.client.storage.NodeDatabase;
 import com.meshmkt.meshtastic.client.storage.PacketContext;
+import lombok.extern.slf4j.Slf4j;
 import org.meshtastic.proto.MeshProtos;
 import org.meshtastic.proto.Portnums.PortNum;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.time.ZoneId;
@@ -15,9 +14,9 @@ import java.time.format.DateTimeFormatter;
  * Diagnostic logger that provides a deep-dive into mesh traffic. Standardized
  * to show radio metrics and decoded application payloads.
  */
+@Slf4j(topic = "MeshEvents")
 public class MeshEventLogger extends BaseMeshHandler {
 
-    private static final Logger eventLog = LoggerFactory.getLogger("MeshEvents");
     private static final DateTimeFormatter TIME_FORMAT = DateTimeFormatter.ofPattern("HH:mm:ss.SSS")
             .withZone(ZoneId.systemDefault());
 
@@ -51,13 +50,13 @@ public class MeshEventLogger extends BaseMeshHandler {
 
         if (message.hasMyInfo()) {
             // Local radio identifying itself
-            eventLog.debug("[{}] [LOCAL] my_info self_id={}",
+            log.debug("[{}] [LOCAL] my_info self_id={}",
                     pcTime,
                     Integer.toHexString(message.getMyInfo().getMyNodeNum()));
         } else if (message.hasNodeInfo()) {
             // Part of the initial node-list download
             MeshProtos.NodeInfo info = message.getNodeInfo();
-            eventLog.debug("[{}] [LOCAL] node_info from={} ({})",
+            log.debug("[{}] [LOCAL] node_info from={} ({})",
                     pcTime, Integer.toHexString(info.getNum()), resolveName(info.getNum()));
         }
         return false;
@@ -78,18 +77,18 @@ public class MeshEventLogger extends BaseMeshHandler {
         PortNum port = packet.getDecoded().getPortnum();
 
         // Line 1: Basic Routing Info
-        eventLog.debug("[{}] [PACKET] from={} to={} port={} packet_id={}",
+        log.debug("[{}] [PACKET] from={} to={} port={} packet_id={}",
                 pcTime, senderName, destName, port, packet.getId());
 
         // Line 2: Signal Metadata
-        eventLog.trace("[{}] [SIGNAL] snr={}dB rssi={}dBm hops={} via_mqtt={}",
+        log.trace("[{}] [SIGNAL] snr={}dB rssi={}dBm hops={} via_mqtt={}",
                 pcTime,
                 ctx.getSnr(), ctx.getRssi(), ctx.getHopsAway(), ctx.isViaMqtt());
 
         // Line 3: Payload Decoding (Attempting to show what's inside)
         String payloadSummary = decodePayload(packet);
         if (!payloadSummary.isEmpty()) {
-            eventLog.trace("[{}] [PAYLOAD] {}", pcTime, payloadSummary);
+            log.trace("[{}] [PAYLOAD] {}", pcTime, payloadSummary);
         }
 
         return false;

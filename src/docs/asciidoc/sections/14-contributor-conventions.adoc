@@ -1,0 +1,47 @@
+== Build Outputs
+
+When running `mvn package`, artifacts include:
+
+- `target/{project-name}-{project-version}.jar`
+- `target/{project-name}-{project-version}-sources.jar`
+- `target/{project-name}-{project-version}-javadoc.jar`
+- HTML docs under `target/docs`
+- PDF docs under `target/docs`
+
+== Contributor Conventions
+
+This project intentionally uses a few simple conventions to keep the codebase cohesive as it grows.
+
+=== Records vs Lombok
+
+Use records for:
+
+- small immutable value carriers
+- internal tuple-like coordination types
+- fixed-shape data where builders add little value
+
+Use Lombok builders for:
+
+- config objects
+- policy/request objects with optional fields
+- places where named construction materially improves readability
+
+Use regular classes for:
+
+- services
+- engines
+- stateful coordinators
+
+This means the project may use both records and Lombok, but not interchangeably. The distinction is intentional.
+
+=== Logging Levels
+
+The recommended logging split is:
+
+- `TRACE` for transport/framing noise, payload dumps, and detailed timing diagnostics
+- `DEBUG` for protocol decode details, request correlation, admin model churn, and verification attempts
+- `INFO` for meaningful lifecycle transitions such as startup sync progress and reconnect-ready events
+- `WARN` for rejected requests, recoverable firmware inconsistency, and degraded-but-continuing behavior
+- `ERROR` for parse failures or unrecoverable operation failures
+
+If a message is expected to fire frequently during healthy operation, prefer `DEBUG` or `TRACE`.
