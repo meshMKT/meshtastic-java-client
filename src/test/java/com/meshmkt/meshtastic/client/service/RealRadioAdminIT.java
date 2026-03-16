@@ -264,8 +264,8 @@ class RealRadioAdminIT {
     void reversibleOwnerWriteReadbackWhenEnabled() throws Exception {
         requireAssumption(enableOwnerWriteTest, "Set MESHTASTIC_TEST_ENABLE_OWNER_WRITE=true to enable owner write IT.");
 
-        int selfNodeId = client.getSelfNodeId();
-        requireAssumption(isKnownSelfNodeId(selfNodeId), "Self node ID is unavailable.");
+        int originalSelfNodeId = client.getSelfNodeId();
+        requireAssumption(isKnownSelfNodeId(originalSelfNodeId), "Self node ID is unavailable.");
 
         User original = awaitWithRetry(adminService::refreshOwner, 2);
         String originalLong = original.getLongName();
@@ -276,7 +276,7 @@ class RealRadioAdminIT {
 
         try {
             AdminWriteResult write = awaitWithRetry(
-                    () -> adminService.setOwnerResult(selfNodeId, proposedLong, proposedShort, false),
+                    () -> adminService.setOwnerResult(originalSelfNodeId, proposedLong, proposedShort, false),
                     2
             );
             assertTrue(write.isSuccess(), "Owner write request did not succeed: " + write.message());
@@ -290,7 +290,9 @@ class RealRadioAdminIT {
                         + timeoutLike.getMessage());
             }
         } finally {
-            restoreOwnerWithRetry(selfNodeId, originalLong, originalShort);
+            restoreOwnerWithRetry(originalSelfNodeId, originalLong, originalShort);
+            assertEquals(originalSelfNodeId, client.getSelfNodeId(),
+                    "Owner write/restore should not change the local node ID.");
         }
     }
 
