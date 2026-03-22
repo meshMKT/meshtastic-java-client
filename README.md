@@ -2,6 +2,8 @@
 
 Async Java client library for Meshtastic radios.
 
+Licensed under the Apache License, Version 2.0. See `LICENSE`.
+
 ## Why This Project Exists
 
 This project started because there was no clean, low-level Meshtastic Java client library available for regular Java
@@ -83,6 +85,151 @@ Treat the generated docs as the user manual for the library, especially for:
 
 Contributor-facing project conventions such as logging levels and `record` vs Lombok usage are documented in
 `CONTRIBUTING.md`.
+
+## Node Database Extension Point
+
+The client is designed so applications are not locked into the default in-memory node store.
+
+At a glance:
+
+| Topic | Meaning |
+| --- | --- |
+| `NodeDatabase` | Public extension point for node storage, freshness tracking, and snapshot reads |
+| `InMemoryNodeDatabase` | Default implementation used by the examples and quick starts |
+| Custom implementations | Supported when an app needs persistence, custom retention, or integration with another data layer |
+
+Reasons to supply a custom implementation might include:
+
+- persistence across application restarts
+- integration with an existing cache, database, or repository layer
+- custom eviction/retention behavior
+- application-specific indexing or query patterns
+
+For most applications, `InMemoryNodeDatabase` is the simplest starting point. If you need something more durable or
+more specialized, implement `NodeDatabase` and pass it into `MeshtasticClient`.
+
+Quick API reference:
+
+| Area | Main methods | Purpose |
+| --- | --- | --- |
+| Self identity | `setSelfNodeId(int)`, `getSelfNodeId()`, `isSelfNode(int)` | Tracks which node is the current local/self node |
+| Inbound updates | `updateUser(...)`, `updatePosition(...)`, `updateMetrics(...)`, `updateEnvMetrics(...)`, `updateSignal(...)` | Applies radio/user/telemetry/signal updates into the snapshot model |
+| Snapshot reads | `getNode(int)`, `getSelfNode()`, `getAllNodes()` | Lets apps render or query the current node view |
+| Observers and lifecycle | `addObserver(...)`, `removeObserver(...)`, `clear()`, `shutdown()` | Lets apps react to updates and manage database lifecycle |
+| Optional cleanup | `startCleanupTask(NodeCleanupPolicy)`, `stopCleanupTask()`, `purgeStaleNodes(Duration)`, `isCleanupTaskRunning()` | Supports manual or scheduled purging of very old node records |
+
+Cleanup behavior is intentionally implementation-defined:
+
+- `InMemoryNodeDatabase` supports both scheduled cleanup and manual one-shot purging
+- automatic cleanup is opt-in and does not start unless the application enables it
+- custom `NodeDatabase` implementations may support automatic cleanup, manual cleanup, both, or neither
+- cleanup is purge-oriented; status calculation (`LIVE`, `IDLE`, `CACHED`, `OFFLINE`) is a separate concern
+
+Example cleanup policy:
+
+```java
+db.startCleanupTask(NodeCleanupPolicy.builder()
+        .staleAfter(Duration.ofDays(7))
+        .initialDelay(Duration.ofMinutes(5))
+        .interval(Duration.ofMinutes(1))
+        .build());
+```
+
+Manual one-shot purge:
+
+```java
+db.purgeStaleNodes(Duration.ofDays(7));
+```
+
+## Node Status Semantics
+
+`MeshNode.getCalculatedStatus()` is a client-side freshness heuristic, not a radio-native truth value.
+
+Why the client calculates status itself:
+
+- Meshtastic gives us timestamps, signal metadata, and snapshot data, but not a single app-ready status label that works well for every UI
+- applications usually want to distinguish:
+  - a node heard live during this app session
+  - a node only known from startup snapshot/history
+  - a node that used to be current but has gone quiet
+- the client calculates these labels so applications can use the library as-is without inventing their own status model first
+
+Default status reference:
+
+| Status | Default Threshold | Meaning |
+| --- | --- | --- |
+| `SELF` | n/a | This is the local node the client is connected to. |
+| `LIVE` | `MeshConstants.LIVE_THRESHOLD` (`15 minutes`) | The app has heard a real packet from this node recently in the current session. |
+| `IDLE` | until `MeshConstants.NON_LIVE_NODE_THRESHOLD` (`24 hours`) | The app has heard this node before in the current session, but not recently enough to still call it `LIVE`. |
+| `CACHED` | until `MeshConstants.NON_LIVE_NODE_THRESHOLD` (`24 hours`) | The node came from startup snapshot/history, but this app session has not yet heard it speak live. |
+| `OFFLINE` | older than non-live threshold | The node is too old to keep showing as current. |
+
+Real examples:
+
+| Status | Example |
+| --- | --- |
+| `LIVE` | You started the client, and that node sent a text, telemetry, or position packet 2 minutes ago. |
+| `IDLE` | That node spoke 40 minutes ago during this app session, but nothing newer has arrived since then. |
+| `CACHED` | The node appeared in the startup dump when the client connected, but it has not sent any live traffic since your app started. |
+| `OFFLINE` | The node has not been heard live or via recent radio snapshot data within the non-live threshold window. |
+
+Why these rules exist:
+
+- they distinguish “heard live by this app” from “present in radio snapshot/history”
+- they let UIs show a more useful middle state than just online/offline
+- they avoid treating cached startup data as if the node had spoken during the current app session
+
+Example custom policy:
+
+```java
+NodeStatusPolicy customPolicy = NodeStatusPolicy.builder()
+        .liveThreshold(Duration.ofMinutes(2))
+        .nonLiveThreshold(Duration.ofHours(6))
+        .build();
+
+MeshNode.NodeStatus status = node.getCalculatedStatus(customPolicy);
+```
+
+How `NodeStatusPolicy` works:
+
+- `NodeStatusPolicy` is the default threshold-based calculator used by `node.getCalculatedStatus()`
+- it controls the two time windows that drive the status transitions
+- it does not define all five statuses separately because not all statuses are threshold-based
+
+Why it only has two settings:
+
+- `SELF` does not need a threshold; it is determined by identity
+- `LIVE` needs one threshold: how long a recent live packet keeps a node in the `LIVE` bucket
+- `IDLE` and `CACHED` share the same outer freshness boundary
+- `OFFLINE` is simply the fallback once a node is older than that outer boundary
+
+So the two settings are:
+
+| Setting | Meaning |
+| --- | --- |
+| `liveThreshold` | How long a locally heard node stays `LIVE`. |
+| `nonLiveThreshold` | How long an `IDLE` or `CACHED` node can remain non-offline before becoming `OFFLINE`. |
+
+What that example policy does:
+
+| Setting | Example Value | Effect |
+| --- | --- | --- |
+| `liveThreshold` | `2 minutes` | A node will stop being `LIVE` much sooner than the default. |
+| `nonLiveThreshold` | `6 hours` | An `IDLE` or `CACHED` node will become `OFFLINE` after 6 hours instead of 24 hours. |
+
+So compared with the defaults, that example makes the UI more aggressive about aging nodes out of the “current” view.
+
+How to customize if these semantics do not fit your app:
+
+- use your own `NodeStatusCalculator` if threshold-based logic is not enough
+- interpret `MeshNode.getCalculatedStatus()` differently in your UI/application layer
+- provide your own `NodeDatabase` implementation if you want different snapshot/freshness semantics
+- if needed, keep the library as-is and apply your own status semantics at the app layer without changing the client itself
+
+The exact thresholds currently come from:
+
+- `MeshConstants.LIVE_THRESHOLD`
+- `MeshConstants.NON_LIVE_NODE_THRESHOLD`
 
 ## Building
 

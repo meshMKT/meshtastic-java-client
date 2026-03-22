@@ -1,5 +1,7 @@
 package com.meshmkt.meshtastic.client;
 
+import java.time.Duration;
+
 /**
  *
  * @author tmulle
@@ -48,12 +50,12 @@ public final class MeshConstants {
      * LIVE_THRESHOLD: How long a node stays "LIVE" after we hear an actual OTA packet.
      * Default: 15 minutes.
      */
-    public static final long LIVE_THRESHOLD_SECONDS = 900;
+    public static final Duration LIVE_THRESHOLD = Duration.ofMinutes(15);
 
     /**
-     * STALE/OFFLINE boundary for node freshness.
+     * Non-LIVE freshness boundary for node status calculation.
      * <p>
-     * Nodes newer than this threshold are considered non-offline:
+     * Nodes newer than this threshold remain in a non-offline state:
      * </p>
      * <ul>
      * <li>IDLE when the app has heard them this session.</li>
@@ -63,11 +65,11 @@ public final class MeshConstants {
      * Older nodes are treated as OFFLINE. Default: 24 hours.
      * </p>
      */
-    public static final long STALE_NODE_THRESHOLD_SECONDS = 86400;
+    public static final Duration NON_LIVE_NODE_THRESHOLD = Duration.ofHours(24);
 
     /**
      * PURGE_THRESHOLD: Absolute limit for keeping a node in memory. 
      * If not seen in 7 days, it's gone.
      */
-    public static final long PURGE_THRESHOLD_SECONDS = 604800; 
+    public static final Duration PURGE_THRESHOLD = Duration.ofDays(7);
 }

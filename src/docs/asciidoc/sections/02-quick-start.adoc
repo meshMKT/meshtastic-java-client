@@ -25,6 +25,20 @@ Keep defaults unless you have measured evidence your radio/firmware tolerates ti
 
 [TIP]
 ====
+The quick start uses `InMemoryNodeDatabase` because it is the simplest default. If your application needs persistence,
+custom caching, or integration with an existing data layer, you can provide your own `NodeDatabase` implementation
+instead.
+====
+
+[TIP]
+====
+`InMemoryNodeDatabase` also supports optional stale-node cleanup. Applications can choose either scheduled cleanup via
+`startCleanupTask(...)` or manual one-shot purging via `purgeStaleNodes(...)`. Cleanup is opt-in and does not start
+automatically. The scheduled API uses `NodeCleanupPolicy`; the manual API uses `Duration`.
+====
+
+[TIP]
+====
 Order matters for some settings:
 
 - Transport config such as `SerialConfig.outboundPacingDelayMs`, `TcpConfig.outboundPacingDelayMs`,
@@ -34,4 +48,3 @@ Order matters for some settings:
   `setRequestCorrelationTimeout(...)` are runtime-tunable and can be changed before or after `connect(...)`.
 - `AdminService.setVerificationPolicy(...)` is also runtime-tunable and affects future verify-applied admin writes.
 ====
-

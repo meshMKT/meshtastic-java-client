@@ -2,10 +2,12 @@ package com.meshmkt.meshtastic.client.storage;
 
 import com.meshmkt.meshtastic.client.MeshConstants;
 import com.meshmkt.meshtastic.client.MeshUtils;
+import java.time.Duration;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import org.meshtastic.proto.MeshProtos;
@@ -21,6 +23,8 @@ public abstract class AbstractNodeDatabase implements NodeDatabase {
      */
     protected int localNodeId;
     private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor();
+    private final Object cleanupTaskLock = new Object();
+    private ScheduledFuture<?> cleanupTask;
 
     /**
      *
@@ -100,14 +104,45 @@ public abstract class AbstractNodeDatabase implements NodeDatabase {
 
     /**
      *
-     * @param timeoutMins
+     * @param policy
      */
     @Override
-    public void startCleanupTask(int timeoutMins) {
-        scheduler.scheduleAtFixedRate(() -> {
-            long cutoff = System.currentTimeMillis() - (timeoutMins * 60 * 1000L);
-            performPurge(cutoff);
-        }, 5, 1, TimeUnit.MINUTES);
+    public void startCleanupTask(NodeCleanupPolicy policy) {
+        if (policy == null) {
+            throw new IllegalArgumentException("policy must not be null");
+        }
+        synchronized (cleanupTaskLock) {
+            cancelCleanupTaskLocked();
+            cleanupTask = scheduler.scheduleAtFixedRate(
+                    () -> purgeStaleNodes(policy.getStaleAfter()),
+                    policy.getInitialDelay().toMillis(),
+                    policy.getInterval().toMillis(),
+                    TimeUnit.MILLISECONDS
+            );
+        }
+    }
+
+    @Override
+    public void stopCleanupTask() {
+        synchronized (cleanupTaskLock) {
+            cancelCleanupTaskLocked();
+        }
+    }
+
+    @Override
+    public void purgeStaleNodes(Duration staleAfter) {
+        if (staleAfter == null || staleAfter.isZero() || staleAfter.isNegative()) {
+            throw new IllegalArgumentException("staleAfter must be greater than zero");
+        }
+        long cutoff = System.currentTimeMillis() - staleAfter.toMillis();
+        performPurge(cutoff);
+    }
+
+    @Override
+    public boolean isCleanupTaskRunning() {
+        synchronized (cleanupTaskLock) {
+            return cleanupTask != null && !cleanupTask.isCancelled() && !cleanupTask.isDone();
+        }
     }
 
     /**
@@ -115,7 +150,15 @@ public abstract class AbstractNodeDatabase implements NodeDatabase {
      */
     @Override
     public void shutdown() {
+        stopCleanupTask();
         scheduler.shutdownNow();
+    }
+
+    private void cancelCleanupTaskLocked() {
+        if (cleanupTask != null) {
+            cleanupTask.cancel(false);
+            cleanupTask = null;
+        }
     }
 
     /**

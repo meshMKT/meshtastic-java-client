@@ -4,12 +4,14 @@ import com.meshmkt.meshtastic.client.MeshConstants;
 import org.junit.jupiter.api.Test;
 import org.meshtastic.proto.MeshProtos;
 
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -131,6 +133,38 @@ class NodeDatabaseObserverTest {
                 db.getNode(remoteId).orElseThrow().getDistanceKm(),
                 "MQTT nodes should keep sentinel distance after global refresh"
         );
+    }
+
+    @Test
+    void cleanupTaskCanBeStartedStoppedAndPurgedManually() {
+        InMemoryNodeDatabase db = new InMemoryNodeDatabase();
+
+        assertFalse(db.isCleanupTaskRunning());
+
+        db.startCleanupTask(NodeCleanupPolicy.builder()
+                .staleAfter(Duration.ofMinutes(5))
+                .initialDelay(Duration.ofMinutes(1))
+                .interval(Duration.ofMinutes(1))
+                .build());
+        assertTrue(db.isCleanupTaskRunning(), "cleanup task should report running after start");
+
+        db.startCleanupTask(NodeCleanupPolicy.builder()
+                .staleAfter(Duration.ofMinutes(10))
+                .initialDelay(Duration.ofMinutes(1))
+                .interval(Duration.ofMinutes(1))
+                .build());
+        assertTrue(db.isCleanupTaskRunning(), "restarting cleanup should keep exactly one active scheduler");
+
+        db.stopCleanupTask();
+        assertFalse(db.isCleanupTaskRunning(), "cleanup task should report stopped after stop");
+
+        db.purgeStaleNodes(Duration.ofMinutes(5));
+        assertFalse(db.isCleanupTaskRunning(), "manual purge should not implicitly start the scheduler");
+
+        assertThrows(IllegalArgumentException.class, () -> db.startCleanupTask(NodeCleanupPolicy.builder()
+                .staleAfter(Duration.ZERO)
+                .build()));
+        assertThrows(IllegalArgumentException.class, () -> db.purgeStaleNodes(Duration.ZERO));
     }
 
     /**

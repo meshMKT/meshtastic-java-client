@@ -15,6 +15,7 @@ Keep the public surface simple and push complexity inward.
 
 - `MeshtasticClient` is the primary public facade for transport lifecycle, messaging helpers, startup sync, and utility requests.
 - `AdminService` is the primary public facade for owner/config/channel/module refresh and write workflows.
+- `NodeDatabase` is a public storage extension point; `InMemoryNodeDatabase` is the default, not the only intended implementation.
 - handlers decode protocol messages and update state/events
 - transports handle physical link concerns and reconnect behavior
 - platform-specific edges such as BLE backends and OTA upload strategies belong behind extension interfaces
@@ -24,6 +25,9 @@ When adding functionality:
 - prefer extending existing facades over creating new public service types unless the public API clearly benefits
 - prefer internal helper classes for coordination/state-machine logic
 - keep protocol-specific mutation/comparison logic close to the domain it belongs to
+- preserve the `NodeDatabase` abstraction so applications can swap in persistent or application-specific storage without rewriting client logic
+- treat `NodeDatabase` cleanup behavior as implementation-defined; do not assume every implementation wants a background purge scheduler
+- keep cleanup semantics focused on retention/purging; status derivation (`LIVE`, `IDLE`, `CACHED`, `OFFLINE`) should remain a separate concern
 
 ## Records vs Lombok
 

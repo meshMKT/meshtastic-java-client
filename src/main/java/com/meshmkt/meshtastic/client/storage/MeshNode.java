@@ -1,8 +1,7 @@
 package com.meshmkt.meshtastic.client.storage;
 
-import com.meshmkt.meshtastic.client.MeshConstants;
-import java.time.Duration;
 import java.time.Instant;
+import java.util.Objects;
 import lombok.Builder;
 import lombok.Value;
 import org.meshtastic.proto.ConfigProtos;
@@ -180,41 +179,30 @@ public class MeshNode {
      * @return computed node status for the current time.
      */
     public NodeStatus getCalculatedStatus() {
-        if (this.self) {
-            return NodeStatus.SELF;
-        }
+        return getCalculatedStatus(NodeStatusPolicy.DEFAULT);
+    }
 
-        Instant now = Instant.now();
-        Duration ageLocal = null;
-        Duration ageRadio = null;
+    /**
+     * Calculates the effective UI status for this node using a caller-supplied status calculator.
+     *
+     * @param calculator status calculator to use.
+     * @return computed node status for the current time.
+     */
+    public NodeStatus getCalculatedStatus(NodeStatusCalculator calculator) {
+        return getCalculatedStatus(calculator, Instant.now());
+    }
 
-        // Local app observation age (session-local timeline, milliseconds).
-        if (this.lastSeenLocal > 0) {
-            ageLocal = Duration.between(Instant.ofEpochMilli(this.lastSeenLocal), now);
-            if (ageLocal.getSeconds() < MeshConstants.LIVE_THRESHOLD_SECONDS) {
-                return NodeStatus.LIVE;
-            }
-        }
-
-        // Radio observation age (radio-reported timeline, seconds).
-        if (this.lastSeen > 0) {
-            ageRadio = Duration.between(Instant.ofEpochSecond(this.lastSeen), now);
-        }
-
-        // If the app has heard this node in-session and it is no longer LIVE, it is IDLE
-        // until it crosses the stale/offline boundary.
-        if (ageLocal != null && ageLocal.getSeconds() < MeshConstants.STALE_NODE_THRESHOLD_SECONDS) {
-            return NodeStatus.IDLE;
-        }
-
-        // CACHED is reserved for snapshot-only nodes (never heard in this app session).
-        if (ageLocal == null && ageRadio != null) {
-            if (ageRadio.getSeconds() < MeshConstants.STALE_NODE_THRESHOLD_SECONDS) {
-                return NodeStatus.CACHED;
-            }
-        }
-
-        return NodeStatus.OFFLINE;
+    /**
+     * Calculates the effective UI status for this node using a caller-supplied status calculator and clock instant.
+     *
+     * @param calculator status calculator to use.
+     * @param now current evaluation time.
+     * @return computed node status for the provided instant.
+     */
+    public NodeStatus getCalculatedStatus(NodeStatusCalculator calculator, Instant now) {
+        Objects.requireNonNull(calculator, "calculator must not be null");
+        Objects.requireNonNull(now, "now must not be null");
+        return calculator.calculate(this, now);
     }
 
 }
