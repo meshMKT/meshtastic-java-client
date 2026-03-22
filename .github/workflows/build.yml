@@ -7,6 +7,15 @@ on:
   pull_request:
   workflow_dispatch:
 
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -25,6 +34,16 @@ jobs:
       - name: Build and test
         run: mvn -B clean verify
 
+      - name: Assemble Pages site
+        run: |
+          mkdir -p _site
+          cp -R target/docs/* _site/
+          if [ -d target/site/apidocs ]; then
+            mkdir -p _site/apidocs
+            cp -R target/site/apidocs/* _site/apidocs/
+          fi
+          touch _site/.nojekyll
+
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -33,4 +52,29 @@ jobs:
             target/*.jar
             target/docs/**
             target/site/apidocs/**
+            _site/**
           if-no-files-found: warn
+
+  deploy-pages:
+    needs: build
+    if: github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      - name: Download build artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: meshtastic-java-client-build
+          path: build-artifact
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: build-artifact/_site
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
