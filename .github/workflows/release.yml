@@ -71,10 +71,7 @@ jobs:
           echo "Recent commits:"
           git log --oneline -5
           
-          # Check if we already have the release commit
-          if git log --oneline -10 | grep -q "Release version ${{ github.event.inputs.version }}"; then
-            echo "Release commit already exists, skipping version setting"
-          elif [ "$CURRENT_VERSION" != "${{ github.event.inputs.version }}" ]; then
+          if [ "$CURRENT_VERSION" != "${{ github.event.inputs.version }}" ]; then
             echo "Setting version to ${{ github.event.inputs.version }}"
             mvn versions:set -DgenerateBackupPoms=false -DnewVersion=${{ github.event.inputs.version }}
             git add pom.xml
@@ -121,10 +118,7 @@ jobs:
           echo "Current version: $CURRENT_VERSION"
           echo "Next version: ${{ github.event.inputs.next_version }}"
           
-          # Check if we already have the next version commit
-          if git log --oneline -10 | grep -q "Prepare for next development version"; then
-            echo "Next version commit already exists, skipping"
-          elif [ "$CURRENT_VERSION" != "${{ github.event.inputs.next_version }}" ]; then
+          if [ "$CURRENT_VERSION" != "${{ github.event.inputs.next_version }}" ]; then
             echo "Setting next version to ${{ github.event.inputs.next_version }}"
             mvn versions:set -DgenerateBackupPoms=false -DnewVersion=${{ github.event.inputs.next_version }}
             git add pom.xml
