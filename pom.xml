@@ -9,6 +9,8 @@
     <artifactId>meshtastic-java-client</artifactId>
     <version>1.0.0-SNAPSHOT</version>
     <name>meshtastic-java-client</name>
+    <description>Meshtastic Java client library.</description>
+    <url>https://github.com/meshMKT/meshtastic-java-client</url>
     <licenses>
         <license>
             <name>Apache License, Version 2.0</name>
@@ -16,6 +18,28 @@
             <distribution>repo</distribution>
         </license>
     </licenses>
+    <issueManagement>
+        <system>GitHub</system>
+        <url>https://github.com/meshMKT/meshtastic-java-client/issues</url>
+    </issueManagement>
+    <scm>
+        <connection>scm:git:https://github.com/meshMKT/meshtastic-java-client.git</connection>
+        <developerConnection>scm:git:https://github.com/meshMKT/meshtastic-java-client.git</developerConnection>
+        <url>https://github.com/meshMKT/meshtastic-java-client</url>
+        <tag>HEAD</tag>
+    </scm>
+    <developers>
+        <developer>
+            <id>tmulle</id>
+            <name>Tim Mullé</name>
+            <email>tim@meshmkt.com</email>
+            <roles>
+                <role>Developer</role>
+                <role>Maintainer</role>
+            </roles>
+            <timezone>America/New_York</timezone>
+        </developer>
+    </developers>
 
     <properties>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
@@ -35,12 +59,13 @@
         <maven.failsafe.plugin.version>3.2.5</maven.failsafe.plugin.version>
         <maven.source.plugin.version>3.3.1</maven.source.plugin.version>
         <maven.javadoc.plugin.version>3.8.0</maven.javadoc.plugin.version>
+        <maven.deploy.plugin.version>3.1.4</maven.deploy.plugin.version>
         <asciidoctor.maven.plugin.version>3.1.1</asciidoctor.maven.plugin.version>
         <asciidoctorj.pdf.version>2.3.19</asciidoctorj.pdf.version>
         <asciidoctorj.diagram.version>3.0.1</asciidoctorj.diagram.version>
         <asciidoctorj.diagram.plantuml.version>1.2025.3</asciidoctorj.diagram.plantuml.version>
+        <jreleaser.maven.plugin.version>1.23.0</jreleaser.maven.plugin.version>
     </properties>
-
 
     <dependencies>
         
@@ -197,6 +222,13 @@
                 </executions>
             </plugin>
 
+            <!-- Version-pinned deploy plugin for release staging/publishing -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-deploy-plugin</artifactId>
+                <version>${maven.deploy.plugin.version}</version>
+            </plugin>
+
             <!-- Build AsciiDoc API guides as HTML and PDF -->
             <plugin>
                 <groupId>org.asciidoctor</groupId>
@@ -262,10 +294,66 @@
                 </executions>
             </plugin>
 
+            <!-- GitHub release creation + Maven Central publication -->
+            <plugin>
+                <groupId>org.jreleaser</groupId>
+                <artifactId>jreleaser-maven-plugin</artifactId>
+                <version>${jreleaser.maven.plugin.version}</version>
+                <inherited>false</inherited>
+                <configuration>
+                    <jreleaser>
+                        <release>
+                            <github>
+                                <releaseName>{{projectVersion}}</releaseName>
+                                <overwrite>true</overwrite>
+                                <releaseNotes>
+                                    <enabled>true</enabled>
+                                </releaseNotes>
+                            </github>
+                        </release>
+                        <signing>
+                            <active>ALWAYS</active>
+                            <armored>true</armored>
+                        </signing>
+                        <deploy>
+                            <maven>
+                                <pomchecker>
+                                    <failOnWarning>false</failOnWarning>
+                                    <strict>false</strict>
+                                </pomchecker>
+                                <mavenCentral>
+                                    <sonatype>
+                                        <active>ALWAYS</active>
+                                        <url>https://central.sonatype.com/api/v1/publisher</url>
+                                        <stagingRepositories>target/staging-deploy</stagingRepositories>
+                                    </sonatype>
+                                </mavenCentral>
+                            </maven>
+                        </deploy>
+                    </jreleaser>
+                </configuration>
+            </plugin>
+
         </plugins>
     </build>
 
     <profiles>
+        <profile>
+            <id>release</id>
+            <activation>
+                <property>
+                    <name>performRelease</name>
+                    <value>true</value>
+                </property>
+            </activation>
+            <properties>
+                <asciidoctor.skip>true</asciidoctor.skip>
+                <altDeploymentRepository>local::file:./target/staging-deploy</altDeploymentRepository>
+            </properties>
+            <build>
+                <defaultGoal>clean deploy</defaultGoal>
+            </build>
+        </profile>
         <profile>
             <id>hardware-it</id>
             <properties>
