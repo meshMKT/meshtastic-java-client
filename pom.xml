@@ -51,7 +51,7 @@
         <lombok.version>1.18.42</lombok.version>
         <jserialcomm.version>2.11.4</jserialcomm.version>
         <slf4j.version>2.0.17</slf4j.version>
-        <junit.jupiter.version>5.10.2</junit.jupiter.version>
+        <junit.jupiter.version>6.0.3</junit.jupiter.version>
         <os.maven.plugin.version>1.7.1</os.maven.plugin.version>
         <maven.compiler.plugin.version>3.14.1</maven.compiler.plugin.version>
         <protobuf.maven.plugin.version>0.6.1</protobuf.maven.plugin.version>
