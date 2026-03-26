@@ -1,6 +1,6 @@
 # meshtastic-java-client
 
-[![Maven](https://img.shields.io/maven-central/v/com.meshmkt.meshtastic/mehtastic-java-client.svg?style=for-the-badge)](https://repo1.maven.org/maven2/com/meshmkt/meshtastic/meshtastic-java-client/)
+[![Maven](https://img.shields.io/maven-central/v/com.meshmkt.meshtastic/meshtastic-java-client.svg?style=for-the-badge)](https://repo1.maven.org/maven2/com/meshmkt/meshtastic/meshtastic-java-client/)
 [![License](https://img.shields.io/github/license/meshmkt/meshtastic-java-client?style=for-the-badge&logo=apache)](https://opensource.org/license/Apache-2.0)
 [![Java CI with Maven](https://img.shields.io/github/actions/workflow/status/meshmkt/meshtastic-java-client/build.yml?branch=main&logo=GitHub&style=for-the-badge)](https://github.com/meshmkt/meshtastic-java-client/actions/workflows/build.yml)
 
