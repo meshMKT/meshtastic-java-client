@@ -135,6 +135,26 @@
                 <configuration>
                     <encoding>${project.build.sourceEncoding}</encoding>
                 </configuration>
+                <executions>
+                    <execution>
+                        <id>copy-doc-theme</id>
+                        <phase>prepare-package</phase>
+                        <goals>
+                            <goal>copy-resources</goal>
+                        </goals>
+                        <configuration>
+                            <outputDirectory>${project.build.directory}/docs</outputDirectory>
+                            <resources>
+                                <resource>
+                                    <directory>${project.basedir}/src/docs/asciidoc/theme/html</directory>
+                                    <includes>
+                                        <include>meshmkt-docs.css</include>
+                                    </includes>
+                                </resource>
+                            </resources>
+                        </configuration>
+                    </execution>
+                </executions>
             </plugin>
 
             <!-- Compiler plugin -->
@@ -259,9 +279,7 @@
                         <sectanchors>true</sectanchors>
                         <toc>left</toc>
                         <icons>font</icons>
-                        <stylesheet>meshmkt-docs.css</stylesheet>
-                        <stylesdir>${project.basedir}/src/docs/asciidoc/theme/html</stylesdir>
-                        <linkcss>false</linkcss>
+                        <docinfo>shared</docinfo>
                         <data-uri>true</data-uri>
                         <imagesoutdir>${project.build.directory}/docs/images</imagesoutdir>
                         <diagram-cachedir>${project.build.directory}/docs/.diagram-cache</diagram-cachedir>
