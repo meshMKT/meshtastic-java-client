@@ -154,7 +154,7 @@ Common reasons to implement your own `NodeDatabase` include:
 - supporting application-specific indexing or query patterns
 
 For most applications, `InMemoryNodeDatabase` is the simplest place to start. If you need different storage behavior,
-construct `MeshtasticClient` with your own `NodeDatabase` implementation.
+construct `MeshtasticClient` with your own implementation.
 
 Quick API reference:
 
@@ -189,7 +189,7 @@ Cleanup behavior is intentionally implementation-defined:
 
 - `InMemoryNodeDatabase` supports both scheduled cleanup and manual one-shot purging
 - automatic cleanup is opt-in and does not start unless the application enables it
-- custom `NodeDatabase` implementations may support automatic cleanup, manual cleanup, both, or neither
+- custom implementations may support automatic cleanup, manual cleanup, both, or neither
 - cleanup is purge-oriented; status calculation (`LIVE`, `IDLE`, `CACHED`, `OFFLINE`) is a separate concern
 
 Example cleanup policy:
@@ -236,15 +236,15 @@ Default status reference:
 | This is the local node the client is connected to.
 
 | `LIVE`
-| `MeshConstants.LIVE_THRESHOLD` (`15 minutes`)
+| `MeshConstants.LIVE_THRESHOLD` (15 minutes)
 | The app has heard a real packet from this node recently in the current session.
 
 | `IDLE`
-| until `MeshConstants.NON_LIVE_NODE_THRESHOLD` (`24 hours`)
+| until `MeshConstants.NON_LIVE_NODE_THRESHOLD` (24 hours)
 | The app has heard this node before in the current session, but not recently enough to still call it `LIVE`.
 
 | `CACHED`
-| until `MeshConstants.NON_LIVE_NODE_THRESHOLD` (`24 hours`)
+| until `MeshConstants.NON_LIVE_NODE_THRESHOLD` (24 hours)
 | The node came from startup snapshot/history, but this app session has not yet heard it speak live.
 
 | `OFFLINE`
