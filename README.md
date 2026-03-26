@@ -9,6 +9,31 @@ Async Java client library for Meshtastic radios.
 
 Licensed under the Apache License, Version 2.0. See `LICENSE`.
 
+# Requirements
+
+To use this library you will need the following:
+
+- JDK 21+
+- Meshtastic radio (ie. HELTEC V3, TDECK, etc)
+
+# Usage
+
+The library is available on Maven Central for use in Maven/Gradle/Ivy etc.
+
+**Apache Maven:**
+```xml
+<dependency>
+    <groupId>com.meshmkt.meshtastic</groupId>
+    <artifactId>meshtastic-java-client</artifactId>
+    <version>${version}</version>
+</dependency>
+```
+
+**Gradle:**
+```groovy
+implementation group: 'com.meshmkt.meshtastic', name: 'meshtastic-java-client', version: '${version}'
+```
+
 ## Why This Project Exists
 
 This project started because there was no clean, low-level Meshtastic Java client library available for regular Java
