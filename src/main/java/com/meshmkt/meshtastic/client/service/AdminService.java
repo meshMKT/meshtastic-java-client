@@ -8,7 +8,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.meshtastic.proto.AdminProtos.AdminMessage;
 import org.meshtastic.proto.AdminProtos.AdminMessage.ConfigType;
 import org.meshtastic.proto.AdminProtos.AdminMessage.ModuleConfigType;
-import org.meshtastic.proto.AdminProtos.OTAMode;
 import org.meshtastic.proto.ChannelProtos.Channel;
 import org.meshtastic.proto.ChannelProtos.ChannelSettings;
 import org.meshtastic.proto.ConfigProtos.Config;
@@ -90,18 +89,18 @@ public class AdminService {
             ModuleConfigType.STATUSMESSAGE_CONFIG
     );
 
-    private final AdminRequestGateway gateway;
+    private final AdminClientAccess clientAccess;
     private final RadioModel radioModel = new RadioModel();
     private final AdminSnapshotApplier snapshotApplier = new AdminSnapshotApplier(radioModel);
     private final AdminVerificationEngine verificationEngine = new AdminVerificationEngine();
 
     /**
-     * Creates an admin service bound to a request gateway.
+     * Creates an admin service bound to a client access interface.
      *
-     * @param gateway request gateway used for admin request/response operations.
+     * @param clientAccess interface used for admin request/response operations.
      */
-    public AdminService(AdminRequestGateway gateway) {
-        this.gateway = gateway;
+    public AdminService(AdminClientAccess clientAccess) {
+        this.clientAccess = clientAccess;
     }
 
     /**
@@ -698,7 +697,7 @@ public class AdminService {
                     }
                     AdminMessage request = snapshotApplier.withSessionIfPresent(AdminMessage.newBuilder().setSetChannel(channelWithIndex)).build();
                     // Channel write is a mutating operation: routing NONE is terminal success, routing errors fail fast.
-                    return gateway.executeAdminRequest(gateway.getSelfNodeId(), request, false)
+                    return clientAccess.executeAdminRequest(clientAccess.getSelfNodeId(), request, false)
                             .thenCompose(packet -> {
                                 if (!verifyApplied) {
                                     snapshotApplier.applyChannel(channelWithIndex);
@@ -760,7 +759,7 @@ public class AdminService {
         Objects.requireNonNull(config, "config must not be null");
 
         AdminMessage request = snapshotApplier.withSessionIfPresent(AdminMessage.newBuilder().setSetConfig(config)).build();
-        return gateway.executeAdminRequest(gateway.getSelfNodeId(), request, false)
+        return clientAccess.executeAdminRequest(clientAccess.getSelfNodeId(), request, false)
                 .thenCompose(packet -> {
                     snapshotApplier.applyConfig(config);
                     if (!verifyApplied) {
@@ -819,7 +818,7 @@ public class AdminService {
         }
 
         AdminMessage request = snapshotApplier.withSessionIfPresent(AdminMessage.newBuilder().setSetModuleConfig(moduleConfig)).build();
-        return gateway.executeAdminRequest(gateway.getSelfNodeId(), request, false)
+        return clientAccess.executeAdminRequest(clientAccess.getSelfNodeId(), request, false)
                 .thenCompose(packet -> {
                     snapshotApplier.applyModuleConfig(moduleConfig);
                     if (!verifyApplied) {
@@ -1350,7 +1349,7 @@ public class AdminService {
         AdminMessage request = snapshotApplier.withSessionIfPresent(AdminMessage.newBuilder().setSetOwner(updatedUser)).build();
 
         log.info("[ADMIN] Requesting rename for !{} to {}", Integer.toHexString(targetNodeId), longName);
-        return gateway.executeAdminRequest(targetNodeId, request, false)
+        return clientAccess.executeAdminRequest(targetNodeId, request, false)
                 .thenCompose(packet -> {
                     snapshotApplier.applyOwner(updatedUser);
                     log.info("[ADMIN] Rename accepted by radio for !{}", Integer.toHexString(targetNodeId));
@@ -1383,7 +1382,7 @@ public class AdminService {
                 .setFactoryResetDevice(0)
                 .build();
         log.warn("[ADMIN] Sending Full Factory Reset command!");
-        return gateway.executeAdminRequest(gateway.getSelfNodeId(), request, false).thenAccept(packet -> {
+        return clientAccess.executeAdminRequest(clientAccess.getSelfNodeId(), request, false).thenAccept(packet -> {
         });
     }
 
@@ -1398,36 +1397,7 @@ public class AdminService {
                 AdminMessage.newBuilder().setRebootSeconds(seconds == 0 ? 1 : seconds)).build();
 
         log.info("[ADMIN] Requesting radio reboot in {} seconds...", seconds);
-        return gateway.executeAdminRequest(gateway.getSelfNodeId(), request, false).thenApply(packet -> true);
-    }
-
-    /**
-     * Requests the target node to enter OTA mode with an optional firmware hash.
-     * <p>
-     * This call only requests OTA loader mode. Actual firmware upload is transport/tool specific and should be
-     * handled by an OTA uploader strategy.
-     * </p>
-     *
-     * @param targetNodeId target node id.
-     * @param mode OTA reboot mode.
-     * @param firmwareSha256 optional 32-byte SHA-256 firmware hash; pass empty to omit.
-     * @return future completing with structured write result status.
-     */
-    public CompletableFuture<AdminWriteResult> requestOtaModeResult(int targetNodeId,
-                                                                    OTAMode mode,
-                                                                    ByteString firmwareSha256) {
-        Objects.requireNonNull(mode, "mode must not be null");
-        ByteString hash = firmwareSha256 == null ? ByteString.EMPTY : firmwareSha256;
-
-        AdminMessage.OTAEvent otaEvent = AdminMessage.OTAEvent.newBuilder()
-                .setRebootOtaMode(mode)
-                .setOtaHash(hash)
-                .build();
-        AdminMessage request = snapshotApplier.withSessionIfPresent(AdminMessage.newBuilder().setOtaRequest(otaEvent)).build();
-        String operation = "requestOtaMode(" + MeshUtils.formatId(targetNodeId) + ")";
-
-        return gateway.executeAdminRequest(targetNodeId, request, false)
-                .handle((packet, ex) -> toWriteResult(operation, false, ex == null, ex));
+        return clientAccess.executeAdminRequest(clientAccess.getSelfNodeId(), request, false).thenApply(packet -> true);
     }
 
     /**
@@ -1543,13 +1513,13 @@ public class AdminService {
     private CompletableFuture<Boolean> verifyOwnerApplied(int targetNodeId,
                                                           String expectedLongName,
                                                           String expectedShortName) {
-        if (targetNodeId == gateway.getSelfNodeId()) {
+        if (targetNodeId == clientAccess.getSelfNodeId()) {
             return refreshOwner().thenApply(owner -> owner != null
                     && Objects.equals(expectedLongName, owner.getLongName())
                     && Objects.equals(expectedShortName, owner.getShortName()));
         }
 
-        return gateway.requestNodeInfoAwaitPayloadOrSnapshot(targetNodeId, OWNER_VERIFY_TIMEOUT)
+        return clientAccess.requestNodeInfoAwaitPayloadOrSnapshot(targetNodeId, OWNER_VERIFY_TIMEOUT)
                 .thenApply(node -> node != null
                         && Objects.equals(expectedLongName, node.getLongName())
                         && Objects.equals(expectedShortName, node.getShortName()))
@@ -1565,7 +1535,7 @@ public class AdminService {
      */
     private <T> CompletableFuture<T> executeAndParse(AdminMessage request, Function<AdminMessage, T> extractor) {
         // Read operations must wait for correlated ADMIN_APP payloads, not just ROUTING NONE status.
-        return gateway.executeAdminRequest(gateway.getSelfNodeId(), request, true)
+        return clientAccess.executeAdminRequest(clientAccess.getSelfNodeId(), request, true)
                 .thenApply(this::parseAdminMessage)
                 .thenApply(msg -> {
                     snapshotApplier.updateSessionKey(msg);

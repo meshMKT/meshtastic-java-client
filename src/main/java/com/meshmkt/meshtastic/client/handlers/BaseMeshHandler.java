@@ -109,7 +109,7 @@ public abstract class BaseMeshHandler implements MeshtasticMessageHandler {
             return handleNonPacketMessage(message);
         }
 
-        // SCENARIO B: OVER-THE-AIR (OTA) PACKET
+        // SCENARIO B: LIVE MESH PACKET
         // If it has a packet, it was heard on the mesh. It has signal 
         // quality metadata (RSSI/SNR) which we extract into the PacketContext.
         MeshProtos.MeshPacket packet = message.getPacket();

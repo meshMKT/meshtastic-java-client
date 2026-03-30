@@ -47,7 +47,7 @@ public final class MeshConstants {
     // --- Timing & Freshness ---
     
     /**
-     * LIVE_THRESHOLD: How long a node stays "LIVE" after we hear an actual OTA packet.
+     * LIVE_THRESHOLD: How long a node stays "LIVE" after we hear an actual mesh packet from it.
      * Default: 15 minutes.
      */
     public static final Duration LIVE_THRESHOLD = Duration.ofMinutes(15);

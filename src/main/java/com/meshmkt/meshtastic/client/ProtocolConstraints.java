@@ -1,6 +1,7 @@
 package com.meshmkt.meshtastic.client;
 
 import com.google.protobuf.ByteString;
+import lombok.Value;
 import org.meshtastic.proto.ChannelProtos.Channel;
 import org.meshtastic.proto.ChannelProtos.ChannelSettings;
 
@@ -109,11 +110,12 @@ public final class ProtocolConstraints {
 
     /**
      * Validation issue model for non-throwing pre-check flows.
-     *
-     * @param field logical field path (for example {@code channel.settings.name}).
-     * @param message human-readable validation error.
+     * Each issue captures a logical field path and a human-readable validation message.
      */
-    public record ValidationIssue(String field, String message) {
+    @Value
+    public static class ValidationIssue {
+        String field;
+        String message;
     }
 
     /**

@@ -279,7 +279,7 @@ class RealRadioAdminIT {
                     () -> adminService.setOwnerResult(originalSelfNodeId, proposedLong, proposedShort, false),
                     2
             );
-            assertTrue(write.isSuccess(), "Owner write request did not succeed: " + write.message());
+            assertTrue(write.isSuccess(), "Owner write request did not succeed: " + write.getMessage());
 
             try {
                 User observed = awaitOwnerName(proposedLong, proposedShort, READBACK_POLL_WINDOW);
@@ -363,7 +363,7 @@ class RealRadioAdminIT {
 
         try {
             AdminWriteResult write = awaitWithRetry(() -> adminService.setConfigResult(writePayload, false), 2);
-            assertTrue(write.isSuccess(), "Security config write request did not succeed: " + write.message());
+            assertTrue(write.isSuccess(), "Security config write request did not succeed: " + write.getMessage());
 
             awaitBooleanCondition(
                     () -> awaitWithRetry(adminService::refreshSecurityConfig, 2).getSecurity().getDebugLogApiEnabled() == proposed,
@@ -406,7 +406,7 @@ class RealRadioAdminIT {
 
         try {
             AdminWriteResult write = awaitWithRetry(() -> adminService.setModuleConfigResult(writePayload, false), 2);
-            assertTrue(write.isSuccess(), "MQTT config write request did not succeed: " + write.message());
+            assertTrue(write.isSuccess(), "MQTT config write request did not succeed: " + write.getMessage());
 
             awaitBooleanCondition(
                     () -> awaitWithRetry(adminService::refreshMqttConfig, 2).getMqtt().getJsonEnabled() == proposed,
@@ -832,7 +832,7 @@ class RealRadioAdminIT {
                         2
                 );
                 if (!result.isSuccess()) {
-                    throw new IllegalStateException("Owner restore write not accepted: " + result.message());
+                    throw new IllegalStateException("Owner restore write not accepted: " + result.getMessage());
                 }
 
                 awaitOwnerName(originalLong, originalShort, RESTORE_READBACK_WINDOW);

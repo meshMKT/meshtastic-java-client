@@ -170,8 +170,15 @@ class NodeDatabaseObserverTest {
     /**
      * Lightweight observer implementation for assertion-oriented tests.
      */
-    private record RecordingObserver(List<MeshNode> updates, AtomicInteger purgeCount)
-            implements NodeDatabaseObserver {
+    private static final class RecordingObserver implements NodeDatabaseObserver {
+        private final List<MeshNode> updates;
+        private final AtomicInteger purgeCount;
+
+        private RecordingObserver(List<MeshNode> updates, AtomicInteger purgeCount) {
+            this.updates = updates;
+            this.purgeCount = purgeCount;
+        }
+
         @Override
         public void onNodeUpdated(MeshNode node) {
             updates.add(node);

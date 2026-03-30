@@ -1,5 +1,6 @@
 package com.meshmkt.meshtastic.client.model;
 
+import lombok.Data;
 import org.meshtastic.proto.AdminProtos.AdminMessage.ConfigType;
 import org.meshtastic.proto.AdminProtos.AdminMessage.ModuleConfigType;
 import org.meshtastic.proto.ChannelProtos.Channel;
@@ -23,6 +24,7 @@ import java.util.concurrent.ConcurrentHashMap;
  * All state mutation is expected to happen through {@code AdminService}.
  * </p>
  */
+@Data
 public class RadioModel {
 
     /**
@@ -74,132 +76,6 @@ public class RadioModel {
      * Module config snapshots keyed by requested {@link ModuleConfigType}.
      */
     private final Map<ModuleConfigType, ModuleConfig> moduleConfigs = new ConcurrentHashMap<>();
-
-    /**
-     * Returns the latest owner snapshot.
-     *
-     * @return latest owner payload, or {@code null} when unavailable.
-     */
-    public User getOwner() {
-        return owner;
-    }
-
-    /**
-     * Replaces the latest owner snapshot.
-     *
-     * @param owner owner payload to cache.
-     */
-    public void setOwner(User owner) {
-        this.owner = owner;
-    }
-
-    /**
-     * Returns the local node number.
-     *
-     * @return local node id, or {@code 0} when unknown.
-     */
-    public int getNodeId() {
-        return nodeId;
-    }
-
-    /**
-     * Updates the local node number.
-     *
-     * @param nodeId local node id.
-     */
-    public void setNodeId(int nodeId) {
-        this.nodeId = nodeId;
-    }
-
-    /**
-     * Returns the cached LoRa config section.
-     *
-     * @return LoRa config payload, or {@code null} when unavailable.
-     */
-    public Config.LoRaConfig getLoraConfig() {
-        return loraConfig;
-    }
-
-    /**
-     * Updates the cached LoRa config section.
-     *
-     * @param loraConfig LoRa config payload.
-     */
-    public void setLoraConfig(Config.LoRaConfig loraConfig) {
-        this.loraConfig = loraConfig;
-    }
-
-    /**
-     * Returns the cached Device config section.
-     *
-     * @return Device config payload, or {@code null} when unavailable.
-     */
-    public Config.DeviceConfig getDeviceConfig() {
-        return deviceConfig;
-    }
-
-    /**
-     * Updates the cached Device config section.
-     *
-     * @param deviceConfig device config payload.
-     */
-    public void setDeviceConfig(Config.DeviceConfig deviceConfig) {
-        this.deviceConfig = deviceConfig;
-    }
-
-    /**
-     * Returns the cached Display config section.
-     *
-     * @return Display config payload, or {@code null} when unavailable.
-     */
-    public Config.DisplayConfig getDisplayConfig() {
-        return displayConfig;
-    }
-
-    /**
-     * Updates the cached Display config section.
-     *
-     * @param displayConfig display config payload.
-     */
-    public void setDisplayConfig(Config.DisplayConfig displayConfig) {
-        this.displayConfig = displayConfig;
-    }
-
-    /**
-     * Returns the cached Network config section.
-     *
-     * @return Network config payload, or {@code null} when unavailable.
-     */
-    public Config.NetworkConfig getNetworkConfig() {
-        return networkConfig;
-    }
-
-    /**
-     * Updates the cached Network config section.
-     *
-     * @param networkConfig network config payload.
-     */
-    public void setNetworkConfig(Config.NetworkConfig networkConfig) {
-        this.networkConfig = networkConfig;
-    }
-
-    /**
-     * Returns the cached device metadata snapshot.
-     *
-     * @return device metadata payload, or {@code null} when unavailable.
-     */
-    public DeviceMetadata getDeviceMetadata() {
-        return deviceMetadata;
-    }
-
-    /**
-     * Updates the cached device metadata snapshot.
-     *
-     * @param deviceMetadata metadata payload.
-     */
-    public void setDeviceMetadata(DeviceMetadata deviceMetadata) {
-        this.deviceMetadata = deviceMetadata;
-    }
 
     /**
      * Inserts or replaces one cached channel slot.

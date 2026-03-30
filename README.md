@@ -4,7 +4,7 @@
 [![License](https://img.shields.io/github/license/meshmkt/meshtastic-java-client?style=for-the-badge&logo=apache)](https://opensource.org/license/Apache-2.0)
 [![Java CI with Maven](https://img.shields.io/github/actions/workflow/status/meshmkt/meshtastic-java-client/build.yml?branch=main&logo=GitHub&style=for-the-badge)](https://github.com/meshmkt/meshtastic-java-client/actions/workflows/build.yml)
 
-**Meshtastic Java Client** is an open-source Java library for building applications that connect to Meshtastic radios over serial and TCP. It provides a clean, practical API for working with messages, telemetry, node and channel data, and radio administration, making it easier to build desktop tools, services, bots, and other Java-based integrations. BLE transport SPI hooks and OTA framework support are present, but this repository does not yet bundle a production BLE backend or a fully integrated end-to-end OTA flashing implementation, so those paths still require platform- or application-specific work.
+**Meshtastic Java Client** is an open-source Java library for building applications that connect to Meshtastic radios over serial and TCP. It provides a clean, practical API for working with messages, telemetry, node and channel data, and radio administration, making it easier to build desktop tools, services, bots, and other Java-based integrations. Firmware upgrades are intentionally out of scope for this library; for that work, we recommend the official Meshtastic tools such as the web flasher.
 
 Licensed under the Apache License, Version 2.0. See `LICENSE`.
 
@@ -29,11 +29,12 @@ This library was built to fill that gap with a Java-first client that is practic
 - Admin/config/channel refresh and write operations through `AdminService`
 - Request lifecycle events for accepted, rejected, and timed-out flows
 - Snapshot-first node model for responsive UI and service integrations
-- OTA framework/orchestration hooks
 - BLE transport SPI contract for pluggable backends
 
 Note:
-- BLE and OTA support at this stage are extension-oriented rather than turnkey. The library includes the core contracts and orchestration points, but it does not yet ship with a production BLE backend or a full end-to-end OTA uploader implementation because those pieces are platform- and transport-specific.
+- this project does not handle firmware flashing or upgrades
+- for firmware updates, use the official Meshtastic web flasher or other official firmware tools
+- if an application needs a custom upgrade flow, that logic should live in app-specific code rather than in this core client library
 
 ## Requirements
 
@@ -75,7 +76,7 @@ The user guide covers topics such as:
 - admin/config usage
 - settings-page refresh and write patterns
 - transport behavior and reconnect expectations
-- extension points such as BLE, OTA, and custom node database implementations
+- extension points such as BLE and custom node database implementations
 - hardware integration testing
 
 ## Project Status
@@ -85,9 +86,8 @@ This library is currently strongest as a serial/TCP-first Meshtastic client for 
 Current limitations:
 
 - no production BLE backend is bundled yet
-- OTA has framework support, but no fully integrated production-ready end-to-end flashing path is included yet
 
-In other words, the core client API is in place, but BLE and OTA still require platform- or application-specific implementations.
+In other words, the core client API is in place, and BLE is the main platform-specific area still left open for custom implementations.
 
 ## Testing
 

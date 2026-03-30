@@ -1,20 +1,21 @@
 package com.meshmkt.meshtastic.client.service;
 
 import lombok.Builder;
+import lombok.AccessLevel;
+import lombok.AllArgsConstructor;
+import lombok.Value;
 
 /**
  * Structured completion result for admin write calls.
- *
- * @param status canonical write status.
- * @param operation operation identifier for diagnostics.
- * @param message human-readable detail describing the outcome.
+ * Holds the canonical status, operation name, and human-readable outcome message.
  */
+@Value
 @Builder
-public record AdminWriteResult(
-        AdminWriteStatus status,
-        String operation,
-        String message
-) {
+@AllArgsConstructor(access = AccessLevel.PUBLIC)
+public class AdminWriteResult {
+    AdminWriteStatus status;
+    String operation;
+    String message;
 
     /**
      * Returns whether the write completed successfully for caller intent.

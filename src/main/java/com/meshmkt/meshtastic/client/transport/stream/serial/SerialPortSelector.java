@@ -1,5 +1,7 @@
 package com.meshmkt.meshtastic.client.transport.stream.serial;
 
+import lombok.Value;
+
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
@@ -29,12 +31,12 @@ final class SerialPortSelector {
      * @param payload original object associated with the candidate.
      * @param <T> payload type.
      */
-    record Candidate<T>(
-            String descriptor,
-            String portDescription,
-            String descriptiveName,
-            T payload
-    ) {
+    @Value
+    static class Candidate<T> {
+        String descriptor;
+        String portDescription;
+        String descriptiveName;
+        T payload;
     }
 
     /**
@@ -66,7 +68,7 @@ final class SerialPortSelector {
         String canonicalPreferred = canonicalDescriptor(preferredDescriptor);
 
         Optional<Candidate<T>> exact = candidates.stream()
-                .filter(c -> canonicalDescriptor(c.descriptor()).equals(canonicalPreferred))
+                .filter(c -> canonicalDescriptor(c.getDescriptor()).equals(canonicalPreferred))
                 .findFirst();
         if (exact.isPresent()) {
             return exact;
@@ -75,8 +77,8 @@ final class SerialPortSelector {
         String wantedDesc = normalize(lastPortDescription);
         String wantedName = normalize(lastDescriptiveName);
         Optional<Candidate<T>> metadata = candidates.stream()
-                .filter(c -> (!wantedDesc.isEmpty() && normalize(c.portDescription()).equals(wantedDesc))
-                || (!wantedName.isEmpty() && normalize(c.descriptiveName()).equals(wantedName)))
+                .filter(c -> (!wantedDesc.isEmpty() && normalize(c.getPortDescription()).equals(wantedDesc))
+                || (!wantedName.isEmpty() && normalize(c.getDescriptiveName()).equals(wantedName)))
                 .findFirst();
         if (metadata.isPresent()) {
             return metadata;
@@ -85,7 +87,7 @@ final class SerialPortSelector {
         String family = descriptorFamily(canonicalPreferred);
         if (!family.isEmpty()) {
             return candidates.stream()
-                    .filter(c -> canonicalDescriptor(c.descriptor()).startsWith(family))
+                    .filter(c -> canonicalDescriptor(c.getDescriptor()).startsWith(family))
                     .findFirst();
         }
 

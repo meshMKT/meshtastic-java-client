@@ -20,18 +20,16 @@ import com.meshmkt.meshtastic.client.handlers.PositionHandler;
 import com.meshmkt.meshtastic.client.handlers.RoutingHandler;
 import com.meshmkt.meshtastic.client.handlers.TelemetryHandler;
 import com.meshmkt.meshtastic.client.handlers.TextMessageHandler;
-import com.meshmkt.meshtastic.client.service.AdminRequestGateway;
+import com.meshmkt.meshtastic.client.service.AdminClientAccess;
 import com.meshmkt.meshtastic.client.service.AdminService;
-import com.meshmkt.meshtastic.client.service.ota.MeshtasticXmodemDuplex;
-import com.meshmkt.meshtastic.client.service.ota.OtaService;
 import com.meshmkt.meshtastic.client.storage.MeshNode;
 import com.meshmkt.meshtastic.client.storage.NodeDatabase;
 import com.meshmkt.meshtastic.client.transport.MeshtasticTransport;
 import com.meshmkt.meshtastic.client.transport.TransportConnectionListener;
+import lombok.Value;
 import lombok.extern.slf4j.Slf4j;
 import org.meshtastic.proto.MeshProtos.*;
 import org.meshtastic.proto.Portnums.PortNum;
-import org.meshtastic.proto.XmodemProtos.XModem;
 
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
@@ -57,7 +55,7 @@ import org.meshtastic.proto.AdminProtos.AdminMessage;
  * </ul>
  */
 @Slf4j
-public class MeshtasticClient implements AdminRequestGateway {
+public class MeshtasticClient implements AdminClientAccess {
 
     private volatile MeshtasticTransport transport;
     private final MeshtasticDispatcher dispatcher;
@@ -77,7 +75,6 @@ public class MeshtasticClient implements AdminRequestGateway {
     private final StartupSynchronizer startupSynchronizer;
     
     private AdminService adminService;
-    private OtaService otaService;
     private final MeshEventDispatcher internalDispatcher = new InternalDispatcher();
 
     private static final long STARTUP_SYNC_TIMEOUT_SECONDS = 45;
@@ -98,15 +95,6 @@ public class MeshtasticClient implements AdminRequestGateway {
      * Failsafe timeout for correlated request futures waiting on routing/admin response.
      */
     private volatile Duration requestCorrelationTimeout = DEFAULT_REQUEST_CORRELATION_TIMEOUT;
-    /**
-     * Bounded queue of inbound XMODEM control events observed from {@link FromRadio#hasXmodemPacket()}.
-     * <p>
-     * This queue supports experimental in-process OTA upload flows without coupling transport code
-     * to OTA strategy implementation.
-     * </p>
-     */
-    private final BlockingQueue<XModem.Control> xmodemControlQueue = new LinkedBlockingQueue<>(256);
-
     /**
      * Creates a new Meshtastic client using the provided node database.
      *
@@ -135,7 +123,6 @@ public class MeshtasticClient implements AdminRequestGateway {
         });
 
         adminService = new AdminService(this);
-        otaService = new OtaService(adminService);
         requestCoordinator = new RequestCoordinator(
                 scheduler,
                 this::getRequestLockReleaseCooldownMs,
@@ -165,15 +152,6 @@ public class MeshtasticClient implements AdminRequestGateway {
      */
     public AdminService getAdminService() {
         return adminService;
-    }
-
-    /**
-     * Returns OTA orchestration service.
-     *
-     * @return OTA service instance.
-     */
-    public OtaService getOtaService() {
-        return otaService;
     }
 
     /**
@@ -219,19 +197,6 @@ public class MeshtasticClient implements AdminRequestGateway {
      */
     public Duration getRequestCorrelationTimeout() {
         return requestCorrelationTimeout;
-    }
-
-    /**
-     * Creates a duplex adapter that bridges OTA XMODEM strategy traffic through this client.
-     * <p>
-     * The returned adapter sends {@code ToRadio.xmodemPacket} frames and waits for
-     * inbound {@code FromRadio.xmodemPacket.control} values captured by this client pipeline.
-     * </p>
-     *
-     * @return duplex adapter bound to this client instance.
-     */
-    public MeshtasticXmodemDuplex createXmodemDuplex() {
-        return new MeshtasticXmodemDuplex(this);
     }
 
     /**
@@ -287,16 +252,15 @@ public class MeshtasticClient implements AdminRequestGateway {
     /**
      * Internal request envelope used by the client execution pipeline.
      */
-    private record MeshRequest(
-            int destinationId,
-            PortNum port,
-            Message payload,
-            byte[] rawData,
-            int channelIndex,
-            boolean wantAck,
-            boolean expectAdminAppResponse
-            ) {
-
+    @Value
+    private static class MeshRequest {
+        int destinationId;
+        PortNum port;
+        Message payload;
+        byte[] rawData;
+        int channelIndex;
+        boolean wantAck;
+        boolean expectAdminAppResponse;
     }
 
     /**
@@ -448,7 +412,7 @@ public class MeshtasticClient implements AdminRequestGateway {
             final long executorStartNanos = System.nanoTime();
             boolean lockAcquired = false;
             try {
-                ProtocolConstraints.validateChannelIndex(request.channelIndex());
+                ProtocolConstraints.validateChannelIndex(request.getChannelIndex());
                 awaitStartupSyncBarrier();
                 long lockEpoch = requestCoordinator.acquireRadioLock();
                 lockAcquired = true;
@@ -456,7 +420,7 @@ public class MeshtasticClient implements AdminRequestGateway {
                     long queueDelayMs = TimeUnit.NANOSECONDS.toMillis(executorStartNanos - submittedAtNanos);
                     long lockWaitMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - executorStartNanos);
                     log.trace("[TX] Request queue delay={}ms lock_wait={}ms port={} dst={}",
-                            queueDelayMs, lockWaitMs, request.port(), MeshUtils.formatId(request.destinationId()));
+                            queueDelayMs, lockWaitMs, request.getPort(), MeshUtils.formatId(request.getDestinationId()));
                 }
 
                 if (!isConnected()) {
@@ -466,7 +430,7 @@ public class MeshtasticClient implements AdminRequestGateway {
                     return;
                 }
 
-                if (request.port() == PortNum.ADMIN_APP && !isKnownSelfNodeId(request.destinationId())) {
+                if (request.getPort() == PortNum.ADMIN_APP && !isKnownSelfNodeId(request.getDestinationId())) {
                     requestCoordinator.releaseRadioLock();
                     lockAcquired = false;
                     future.completeExceptionally(new IllegalStateException(
@@ -476,10 +440,10 @@ public class MeshtasticClient implements AdminRequestGateway {
 
                 // 1. Prepare Payload (Handling ByteString vs Raw)
                 ByteString payload = ByteString.EMPTY;
-                if (request.payload() != null) {
-                    payload = request.payload().toByteString();
-                } else if (request.rawData() != null) {
-                    payload = ByteString.copyFrom(request.rawData());
+                if (request.getPayload() != null) {
+                    payload = request.getPayload().toByteString();
+                } else if (request.getRawData() != null) {
+                    payload = ByteString.copyFrom(request.getRawData());
                 }
 
                 // 2. Generate Unique ID for this specific transaction
@@ -487,15 +451,15 @@ public class MeshtasticClient implements AdminRequestGateway {
 
                 MeshPacket packet = MeshPacket.newBuilder()
                         .setFrom(getSelfNodeId())
-                        .setTo(request.destinationId())
+                        .setTo(request.getDestinationId())
                         .setDecoded(Data.newBuilder()
-                                .setPortnum(request.port())
+                                .setPortnum(request.getPort())
                                 .setPayload(payload)
                                 // 2. THIS IS THE TRIGGER: Tells the Admin Module a reply is expected
                                 .setWantResponse(true)
                                 .build())
-                        .setWantAck(request.wantAck())
-                        .setChannel(request.channelIndex())
+                        .setWantAck(request.isWantAck())
+                        .setChannel(request.getChannelIndex())
                         .setPriority(MeshPacket.Priority.RELIABLE)
                         .setHopLimit(3)
                         .setHopStart(3)
@@ -505,29 +469,29 @@ public class MeshtasticClient implements AdminRequestGateway {
                 // 3. Register for correlation.
                 // Admin requests wait for ADMIN_APP response correlation via decoded.request_id
                 // even when routing ACK is disabled.
-                boolean awaitCorrelation = request.wantAck() || request.port() == PortNum.ADMIN_APP;
+                boolean awaitCorrelation = request.isWantAck() || request.getPort() == PortNum.ADMIN_APP;
                 if (awaitCorrelation) {
                     requestCoordinator.registerPendingRequest(
                             myPacketId,
                             future,
-                            request.port() == PortNum.ADMIN_APP && request.expectAdminAppResponse(),
-                            request.port() == PortNum.TEXT_MESSAGE_APP
+                            request.getPort() == PortNum.ADMIN_APP && request.isExpectAdminAppResponse(),
+                            request.getPort() == PortNum.TEXT_MESSAGE_APP
                     );
                 }
 
-                log.debug("[TX] Lock Acquired. Sending ID: {} | Port: {}", myPacketId, request.port());
+                log.debug("[TX] Lock Acquired. Sending ID: {} | Port: {}", myPacketId, request.getPort());
                 sendToRadio(ToRadio.newBuilder().setPacket(packet).build());
                 emitRequestLifecycle(myPacketId,
-                        request.destinationId(),
-                        request.port(),
+                        request.getDestinationId(),
+                        request.getPort(),
                         RequestLifecycleEvent.Stage.SENT,
                         "Request sent to transport",
                         null);
 
                 future.whenComplete((result, error) -> emitRequestTerminalLifecycle(
                         myPacketId,
-                        request.destinationId(),
-                        request.port(),
+                        request.getDestinationId(),
+                        request.getPort(),
                         error
                 ));
                 future.whenComplete((result, error) -> {
@@ -536,8 +500,8 @@ public class MeshtasticClient implements AdminRequestGateway {
                         log.trace("[TX] Request {} completed in {}ms (port={} dst={} success={})",
                                 myPacketId,
                                 totalMs,
-                                request.port(),
-                                MeshUtils.formatId(request.destinationId()),
+                                request.getPort(),
+                                MeshUtils.formatId(request.getDestinationId()),
                                 error == null);
                     }
                 });
@@ -600,7 +564,6 @@ public class MeshtasticClient implements AdminRequestGateway {
         t.addParsedPacketConsumer(data -> {
             try {
                 FromRadio fromRadio = FromRadio.parseFrom(data);
-                captureXmodemControl(fromRadio);
                 handleRebootSignal(fromRadio);
                 processStartupSyncSignals(fromRadio);
                 correlateResponse(fromRadio);
@@ -689,7 +652,6 @@ public class MeshtasticClient implements AdminRequestGateway {
     private void cancelAllPending() {
         requestCoordinator.cancelAllPending();
         resetStartupSync();
-        clearXmodemControlBuffer();
 
         log.info("[CLEANUP] All pending requests cancelled and radio lock reset.");
     }
@@ -782,88 +744,12 @@ public class MeshtasticClient implements AdminRequestGateway {
     }
 
     /**
-     * Sends one top-level XMODEM frame through the active transport.
-     * <p>
-     * This is an advanced OTA primitive and is expected to be used by OTA upload strategies.
-     * </p>
-     *
-     * @param frame XMODEM frame to send.
-     * @return completion future that fails when no transport is connected.
-     */
-    public CompletableFuture<Void> sendXmodemPacket(XModem frame) {
-        if (frame == null) {
-            return CompletableFuture.failedFuture(new IllegalArgumentException("frame must not be null"));
-        }
-        if (!isConnected()) {
-            return CompletableFuture.failedFuture(new IllegalStateException("Transport disconnected before XMODEM send"));
-        }
-        sendToRadio(ToRadio.newBuilder().setXmodemPacket(frame).build());
-        return CompletableFuture.completedFuture(null);
-    }
-
-    /**
-     * Waits for the next captured inbound XMODEM control value from the radio.
-     *
-     * @param timeout maximum wait timeout.
-     * @return future that resolves with the next control value.
-     */
-    public CompletableFuture<XModem.Control> awaitXmodemControl(Duration timeout) {
-        if (timeout == null || timeout.isNegative() || timeout.isZero()) {
-            return CompletableFuture.failedFuture(new IllegalArgumentException("timeout must be > 0"));
-        }
-        return CompletableFuture.supplyAsync(() -> {
-            try {
-                XModem.Control control = xmodemControlQueue.poll(timeout.toMillis(), TimeUnit.MILLISECONDS);
-                if (control == null) {
-                    throw new CompletionException(new TimeoutException("Timed out waiting for XMODEM control"));
-                }
-                return control;
-            } catch (InterruptedException ex) {
-                Thread.currentThread().interrupt();
-                throw new CompletionException(new IllegalStateException("Interrupted waiting for XMODEM control", ex));
-            }
-        });
-    }
-
-    /**
-     * Clears buffered XMODEM controls captured from prior OTA sessions.
-     * <p>
-     * Callers should clear this buffer before initiating a new OTA transfer to avoid stale control events.
-     * </p>
-     */
-    public void clearXmodemControlBuffer() {
-        xmodemControlQueue.clear();
-    }
-
-    /**
      * Returns current link availability.
      *
      * @return {@code true} when client state and underlying transport both report connected.
      */
     public boolean isConnected() {
         return connected && transport != null && transport.isConnected();
-    }
-
-    /**
-     * Captures inbound XMODEM control events from top-level local radio messages.
-     * <p>
-     * A bounded queue is used; if saturated, the oldest control is dropped to keep progress moving.
-     * </p>
-     *
-     * @param fromRadio parsed message.
-     */
-    private void captureXmodemControl(FromRadio fromRadio) {
-        if (fromRadio == null || !fromRadio.hasXmodemPacket()) {
-            return;
-        }
-        XModem.Control control = fromRadio.getXmodemPacket().getControl();
-        if (control == XModem.Control.NUL || control == XModem.Control.UNRECOGNIZED) {
-            return;
-        }
-        if (!xmodemControlQueue.offer(control)) {
-            xmodemControlQueue.poll();
-            xmodemControlQueue.offer(control);
-        }
     }
 
     /**

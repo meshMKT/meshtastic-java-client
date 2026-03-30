@@ -249,7 +249,7 @@ public class SerialTransport extends StreamTransport {
                 candidates
         );
         if (selected.isPresent()) {
-            SerialPort chosen = selected.get().payload();
+            SerialPort chosen = selected.get().getPayload();
             String chosenDescriptor = descriptorFor(chosen);
             if (!SerialPortSelector.canonicalDescriptor(chosenDescriptor)
                     .equals(SerialPortSelector.canonicalDescriptor(activePortDescriptor))) {

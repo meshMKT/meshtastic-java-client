@@ -93,7 +93,7 @@ public class BleTransport extends StreamTransport {
         }
 
         notifyError(e);
-        if (running && config.autoReconnect()) {
+        if (running && config.isAutoReconnect()) {
             startRetryLoop();
         }
     }
@@ -121,13 +121,13 @@ public class BleTransport extends StreamTransport {
 
         Thread retryThread = new Thread(() -> {
             try {
-                log.debug("BLE link lost. Retrying device {}...", config.deviceId());
+                log.debug("BLE link lost. Retrying device {}...", config.getDeviceId());
                 while (running && !isConnected()) {
                     try {
-                        Thread.sleep(config.reconnectBackoff().toMillis());
+                        Thread.sleep(config.getReconnectBackoff().toMillis());
                         connect();
                         if (isConnected()) {
-                            log.debug("BLE link restored for device {}.", config.deviceId());
+                            log.debug("BLE link restored for device {}.", config.getDeviceId());
                             notifyConnected();
                             break;
                         }

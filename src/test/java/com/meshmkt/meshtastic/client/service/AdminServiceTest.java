@@ -4,7 +4,6 @@ import com.google.protobuf.ByteString;
 import com.meshmkt.meshtastic.client.storage.MeshNode;
 import org.junit.jupiter.api.Test;
 import org.meshtastic.proto.AdminProtos.AdminMessage;
-import org.meshtastic.proto.AdminProtos.OTAMode;
 import org.meshtastic.proto.ChannelProtos.Channel;
 import org.meshtastic.proto.ChannelProtos.ChannelSettings;
 import org.meshtastic.proto.ConfigProtos;
@@ -940,7 +939,7 @@ class AdminServiceTest {
         gateway.enqueueAdminResponse(AdminMessage.newBuilder().setGetConfigResponse(observed).build());
 
         AdminWriteResult result = service.setConfigResult(requested, true).join();
-        assertEquals(AdminWriteStatus.VERIFICATION_FAILED, result.status());
+        assertEquals(AdminWriteStatus.VERIFICATION_FAILED, result.getStatus());
     }
 
     /**
@@ -959,7 +958,7 @@ class AdminServiceTest {
                 .build();
 
         AdminWriteResult result = service.setConfigResult(requested, false).join();
-        assertEquals(AdminWriteStatus.REJECTED, result.status());
+        assertEquals(AdminWriteStatus.REJECTED, result.getStatus());
     }
 
     /**
@@ -977,41 +976,13 @@ class AdminServiceTest {
                 .build();
 
         AdminWriteResult result = service.setConfigResult(requested, false).join();
-        assertEquals(AdminWriteStatus.TIMEOUT, result.status());
+        assertEquals(AdminWriteStatus.TIMEOUT, result.getStatus());
     }
 
     /**
-     * Verifies OTA mode admin request is encoded and returns ACCEPTED on successful correlation.
+     * Minimal stub that records admin requests and replays queued packet responses.
      */
-    @Test
-    void requestOtaModeResultBuildsOtaRequestAndReturnsAccepted() {
-        StubGateway gateway = new StubGateway(1234);
-        AdminService service = new AdminService(gateway);
-
-        gateway.enqueueAdminResponse(AdminMessage.newBuilder().build());
-
-        byte[] hash = new byte[32];
-        for (int i = 0; i < hash.length; i++) {
-            hash[i] = (byte) i;
-        }
-
-        AdminWriteResult result = service.requestOtaModeResult(
-                1234,
-                OTAMode.OTA_BLE,
-                ByteString.copyFrom(hash)
-        ).join();
-
-        assertEquals(AdminWriteStatus.ACCEPTED, result.status());
-        assertEquals(1, gateway.requests.size());
-        assertTrue(gateway.requests.get(0).hasOtaRequest());
-        assertEquals(OTAMode.OTA_BLE, gateway.requests.get(0).getOtaRequest().getRebootOtaMode());
-        assertEquals(ByteString.copyFrom(hash), gateway.requests.get(0).getOtaRequest().getOtaHash());
-    }
-
-    /**
-     * Minimal gateway stub that records admin requests and replays queued packet responses.
-     */
-    private static final class StubGateway implements AdminRequestGateway {
+    private static final class StubGateway implements AdminClientAccess {
         private final int selfNodeId;
         private final Deque<Object> outcomes = new ArrayDeque<>();
         private final Deque<MeshNode> nodeInfoQueue = new ArrayDeque<>();

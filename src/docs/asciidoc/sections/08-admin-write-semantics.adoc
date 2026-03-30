@@ -1,26 +1,27 @@
 == Admin Write Semantics
 
-Canonical write entry points:
+These are the main write entry points:
 
 - `setChannelResult(index, channel, verifyApplied)`
 - `setConfigResult(config, verifyApplied)`
 - `setModuleConfigResult(moduleConfig, verifyApplied)`
 - `setOwnerResult(targetNodeId, longName, shortName, verifyApplied)`
 
-Boolean-oriented variants are also available when structured status is not needed:
+Boolean-returning variants are also available when you do not need structured result details:
 
 - `setChannel(index, channel, verifyApplied)`
 - `setConfig(config, verifyApplied)`
 - `setModuleConfig(moduleConfig, verifyApplied)`
 - `setOwner(targetNodeId, longName, shortName, verifyApplied)`
 
-Accepted-only and verified semantics are expressed through the explicit `verifyApplied` boolean
-or structured `AdminWriteResult` status.
+The key choice is whether you only care that the radio accepted the request, or whether you want the library to read
+the value back and confirm that it really showed up. That is what `verifyApplied` controls, and the result-returning
+methods expose the outcome through `AdminWriteResult`.
 
 === Eventual-Consistency Verification Policy
 
-Some firmware/radio combinations apply writes asynchronously. To reduce false negatives,
-`AdminService` supports configurable read-back retries when `verifyApplied=true`.
+Some firmware and radio combinations apply writes a little later than you would expect. To avoid reporting a false
+failure too early, `AdminService` supports configurable read-back retries when `verifyApplied=true`.
 
 Defaults:
 
@@ -43,15 +44,15 @@ admin.setVerificationPolicy(
 );
 ----
 
-Operational guidance:
+Practical guidance:
 
-- keep `maxAttempts=1` for fastest fail-fast behavior
-- use `2-3` attempts for unstable radios/firmware where writes may appear late
-- avoid high retry counts to prevent blocking settings workflows
+- keep `maxAttempts=1` if you want the fastest possible answer
+- use `2-3` attempts for radios or firmware builds that are slow to reflect changes
+- avoid high retry counts unless you have measured a real need for them, because they can slow down settings flows
 
 === Structured Write Results (Recommended for UI)
 
-For consistent error/status handling, use result-returning write methods:
+For UI code and anything user-facing, the result-returning write methods are usually the better choice:
 
 [source,java]
 ----
@@ -70,7 +71,7 @@ resultFuture.thenAccept(result -> {
 });
 ----
 
-Available result statuses:
+The result statuses are:
 
 - `ACCEPTED`
 - `VERIFIED_APPLIED`
@@ -108,4 +109,3 @@ end
 
 @enduml
 ----
-

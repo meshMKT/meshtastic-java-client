@@ -99,7 +99,7 @@ public final class MeshUtils {
     }
 
     /**
-     * Resolves the best possible display name from a MeshNode record.
+     * Resolves the best possible display name from a MeshNode value object.
      *
      * @param node
      * @return

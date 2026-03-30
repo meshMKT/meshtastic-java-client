@@ -1,5 +1,6 @@
 package com.meshmkt.meshtastic.client.service;
 
+import lombok.Value;
 import lombok.extern.slf4j.Slf4j;
 import org.meshtastic.proto.AdminProtos.AdminMessage.ConfigType;
 import org.meshtastic.proto.ConfigProtos.Config;
@@ -28,7 +29,10 @@ final class AdminVerificationEngine {
      * @param applied whether this attempt verified applied state.
      * @param error optional attempt error.
      */
-    private record VerificationAttemptResult(boolean applied, Throwable error) {
+    @Value
+    private static class VerificationAttemptResult {
+        boolean applied;
+        Throwable error;
     }
 
     private volatile AdminVerificationPolicy verificationPolicy = AdminVerificationPolicy.builder().build().validated();
@@ -175,22 +179,22 @@ final class AdminVerificationEngine {
 
         return attemptFuture.handle((applied, error) -> new VerificationAttemptResult(Boolean.TRUE.equals(applied), error))
                 .thenCompose(result -> {
-                    if (result.applied()) {
+                    if (result.isApplied()) {
                         return CompletableFuture.completedFuture(true);
                     }
 
                     int maxAttempts = verificationPolicy.getMaxAttempts();
                     if (attempt >= maxAttempts) {
-                        if (result.error() != null) {
+                        if (result.getError() != null) {
                             log.debug("[ADMIN] {} verification exhausted after {} attempt(s). Last error: {}",
-                                    operation, attempt, unwrap(result.error()).getMessage());
+                                    operation, attempt, unwrap(result.getError()).getMessage());
                         }
                         return CompletableFuture.completedFuture(false);
                     }
 
-                    if (result.error() != null) {
+                    if (result.getError() != null) {
                         log.debug("[ADMIN] {} verification attempt {}/{} failed with error: {}",
-                                operation, attempt, maxAttempts, unwrap(result.error()).getMessage());
+                                operation, attempt, maxAttempts, unwrap(result.getError()).getMessage());
                     } else {
                         log.debug("[ADMIN] {} verification attempt {}/{} did not match; retrying...",
                                 operation, attempt, maxAttempts);

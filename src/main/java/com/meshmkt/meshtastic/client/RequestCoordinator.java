@@ -1,5 +1,6 @@
 package com.meshmkt.meshtastic.client;
 
+import lombok.Value;
 import lombok.extern.slf4j.Slf4j;
 import org.meshtastic.proto.MeshProtos.Data;
 import org.meshtastic.proto.MeshProtos.FromRadio;
@@ -33,16 +34,13 @@ final class RequestCoordinator {
 
     /**
      * Correlation metadata for one in-flight outbound request.
-     *
-     * @param future waiting completion target.
-     * @param expectAdminAppResponse when true, a ROUTING ACK with NONE is not terminal; wait for ADMIN_APP reply.
-     * @param allowRoutingNoResponseAsAccept when true, ROUTING NO_RESPONSE is treated as soft-accept.
+     * Tracks the completion future plus the routing/admin correlation rules for one outbound request.
      */
-    private record PendingRequest(
-            CompletableFuture<MeshPacket> future,
-            boolean expectAdminAppResponse,
-            boolean allowRoutingNoResponseAsAccept
-    ) {
+    @Value
+    private static class PendingRequest {
+        CompletableFuture<MeshPacket> future;
+        boolean expectAdminAppResponse;
+        boolean allowRoutingNoResponseAsAccept;
     }
 
     private final ScheduledExecutorService scheduler;
@@ -199,14 +197,14 @@ final class RequestCoordinator {
             return;
         }
 
-        if (pending.expectAdminAppResponse() && decoded.getPortnum() != PortNum.ADMIN_APP) {
+        if (pending.isExpectAdminAppResponse() && decoded.getPortnum() != PortNum.ADMIN_APP) {
             return;
         }
 
         if (pendingRequests.remove(confirmedId, pending)) {
             log.debug("[CORRELATOR] Match found for Packet ID: {} via port {}. Releasing queue.",
                     confirmedId, decoded.getPortnum());
-            pending.future().complete(incoming);
+            pending.getFuture().complete(incoming);
         }
     }
 
@@ -214,7 +212,7 @@ final class RequestCoordinator {
      * Cancels all pending correlated requests and resets the radio lock to a clean single-permit state.
      */
     void cancelAllPending() {
-        pendingRequests.forEach((id, pending) -> pending.future().cancel(true));
+        pendingRequests.forEach((id, pending) -> pending.getFuture().cancel(true));
         pendingRequests.clear();
 
         requestLockEpoch.incrementAndGet();
@@ -236,29 +234,29 @@ final class RequestCoordinator {
 
             if (routing.getErrorReason() != org.meshtastic.proto.MeshProtos.Routing.Error.NONE) {
                 if (routing.getErrorReason() == org.meshtastic.proto.MeshProtos.Routing.Error.NO_RESPONSE
-                        && pending.allowRoutingNoResponseAsAccept()) {
+                        && pending.isAllowRoutingNoResponseAsAccept()) {
                     if (pendingRequests.remove(confirmedId, pending)) {
                         log.debug("[CORRELATOR] Treating ROUTING NO_RESPONSE as soft-accept for text request {}",
                                 confirmedId);
-                        pending.future().complete(incoming);
+                        pending.getFuture().complete(incoming);
                     }
                     return;
                 }
 
                 if (pendingRequests.remove(confirmedId, pending)) {
-                    pending.future().completeExceptionally(new IllegalStateException(
+                    pending.getFuture().completeExceptionally(new IllegalStateException(
                             "Routing rejected request " + confirmedId + " with status " + routing.getErrorReason()));
                 }
                 return;
             }
 
-            if (!pending.expectAdminAppResponse() && pendingRequests.remove(confirmedId, pending)) {
+            if (!pending.isExpectAdminAppResponse() && pendingRequests.remove(confirmedId, pending)) {
                 log.debug("[CORRELATOR] Match found for Packet ID: {} via ROUTING_APP. Releasing queue.", confirmedId);
-                pending.future().complete(incoming);
+                pending.getFuture().complete(incoming);
             }
         } catch (Exception ex) {
             if (pendingRequests.remove(confirmedId, pending)) {
-                pending.future().completeExceptionally(new IllegalStateException(
+                pending.getFuture().completeExceptionally(new IllegalStateException(
                         "Failed to parse ROUTING_APP correlation for request " + confirmedId, ex));
             }
         }

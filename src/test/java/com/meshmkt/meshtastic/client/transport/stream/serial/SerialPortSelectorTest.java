@@ -30,7 +30,7 @@ class SerialPortSelectorTest {
                 "/dev/cu.usbmodemXYZ", "", "", candidates);
 
         assertTrue(selected.isPresent());
-        assertEquals("B", selected.get().payload());
+        assertEquals("B", selected.get().getPayload());
     }
 
     /**
@@ -50,7 +50,7 @@ class SerialPortSelectorTest {
                 candidates);
 
         assertTrue(selected.isPresent());
-        assertEquals("NEW", selected.get().payload());
+        assertEquals("NEW", selected.get().getPayload());
     }
 
     /**
@@ -70,7 +70,7 @@ class SerialPortSelectorTest {
                 candidates);
 
         assertTrue(selected.isPresent());
-        assertEquals("FAMILY", selected.get().payload());
+        assertEquals("FAMILY", selected.get().getPayload());
     }
 
     /**

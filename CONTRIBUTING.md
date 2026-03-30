@@ -18,7 +18,7 @@ Keep the public surface simple and push complexity inward.
 - `NodeDatabase` is a public storage extension point; `InMemoryNodeDatabase` is the default, not the only intended implementation.
 - handlers decode protocol messages and update state/events
 - transports handle physical link concerns and reconnect behavior
-- platform-specific edges such as BLE backends and OTA upload strategies belong behind extension interfaces
+- platform-specific edges such as BLE backends belong behind extension interfaces
 
 When adding functionality:
 
@@ -29,31 +29,69 @@ When adding functionality:
 - treat `NodeDatabase` cleanup behavior as implementation-defined; do not assume every implementation wants a background purge scheduler
 - keep cleanup semantics focused on retention/purging; status derivation (`LIVE`, `IDLE`, `CACHED`, `OFFLINE`) should remain a separate concern
 
-## Records vs Lombok
+## Object Modeling Conventions
 
-The project intentionally uses both Java records and Lombok, but for different jobs.
+The project standardizes on Lombok-based classes instead of mixing Lombok and Java records.
 
-Use **records** for:
+Use **`@Value`** for:
 
-- small immutable value carriers
-- internal tuple-like coordination/state types
-- simple fixed-shape data where builders add little value
+- immutable request, result, and event-style objects
+- small value objects that are passed around but not mutated
+- helper types where the state should stay fixed after construction
 
-Use **Lombok builders** for:
+Use **`@Builder`** when:
 
-- configuration objects
-- request/policy objects with optional fields
-- places where named construction materially improves readability
+- a type has several fields
+- defaults or optional fields improve readability
+- named construction makes call sites easier to understand
+
+Use **`@Data`** sparingly for:
+
+- mutable in-memory state holders
+- internal storage objects whose job is to be updated over time
 
 Use **regular classes** for:
 
 - services
 - engines
 - stateful coordinators
-- anything with meaningful internal behavior or mutation
+- anything where behavior matters more than the shape of the data
 
-Avoid using Lombok bean-style annotations just to replace a small immutable record.
-Avoid using records for large configurable objects where a builder is clearly easier to use.
+Default to immutability unless mutation is part of the design. In practice, that usually means
+`@Value` is the normal choice, `@Builder` is added where it helps, and `@Data` is reserved for
+true mutable state.
+
+## Commit Message Style
+
+Use a short, readable subject line in this format:
+
+`type: summary`
+
+Examples:
+
+- `feat: add TCP reconnect handling`
+- `fix: handle admin request timeout correctly`
+- `docs: clarify startup sync behavior`
+- `refactor: rename AdminRequestGateway to AdminClientAccess`
+- `build: add GitHub release workflow`
+- `chore: remove experimental OTA support`
+
+Guidelines:
+
+- keep the first line short and easy to scan
+- describe the change, not the implementation process
+- use the body only when extra context is actually helpful
+- prefer one logical change per commit when practical
+
+Common types:
+
+- `feat` for new functionality
+- `fix` for bug fixes
+- `docs` for README or guide changes
+- `refactor` for code structure changes without behavior changes
+- `test` for test-only changes
+- `build` for Maven, CI, or release workflow changes
+- `chore` for maintenance and cleanup
 
 ## Logging Conventions
 

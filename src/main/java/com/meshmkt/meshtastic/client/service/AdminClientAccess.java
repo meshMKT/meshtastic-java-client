@@ -8,13 +8,14 @@ import java.time.Duration;
 import java.util.concurrent.CompletableFuture;
 
 /**
- * Narrow gateway contract used by {@link AdminService} to perform protocol operations.
+ * Interface used by {@link AdminService} for the few client operations it needs.
  * <p>
- * This keeps admin orchestration decoupled from the concrete {@code MeshtasticClient} type while still allowing
- * {@code MeshtasticClient} to remain the default runtime implementation.
+ * This is an interface so {@link AdminService} does not have to depend directly on
+ * {@code MeshtasticClient}. That keeps the service easier to test and gives us room
+ * to swap in a different implementation later if we ever need to.
  * </p>
  */
-public interface AdminRequestGateway {
+public interface AdminClientAccess {
 
     /**
      * Returns the local node id for the connected radio.
@@ -44,4 +45,3 @@ public interface AdminRequestGateway {
      */
     CompletableFuture<MeshNode> requestNodeInfoAwaitPayloadOrSnapshot(int nodeId, Duration timeout);
 }
-

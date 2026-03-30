@@ -20,7 +20,7 @@ import java.util.stream.Collectors;
 public class InMemoryNodeDatabase extends AbstractNodeDatabase {
 
     /**
-     * Internal storage record. We've removed the 'online' boolean and
+     * Internal storage entry. We've removed the 'online' boolean and
      * 'PacketContext' object in favor of raw fields to ensure "Sticky" signal
      * data.
      */
@@ -66,7 +66,7 @@ public class InMemoryNodeDatabase extends AbstractNodeDatabase {
                 r.setLastSeenRemote(ctx.getTimestamp() / 1000);
             }
 
-            // 2. Promotion Logic: Only update signal vitals if it's a real OTA packet.
+            // 2. Promotion Logic: Only update signal vitals if it's a real mesh packet.
             // This prevents a "Node Dump" from zeroing out your SNR/RSSI.
             if (ctx.isLive()) {
                 r.setLastSeenLocal(System.currentTimeMillis());
@@ -108,7 +108,7 @@ public class InMemoryNodeDatabase extends AbstractNodeDatabase {
     }
 
     /**
-     * Applies user identity fields from an inbound packet context into the node record.
+     * Applies user identity fields from an inbound packet context into the node entry.
      *
      * @param u user payload from node info.
      * @param ctx packet context metadata.
@@ -119,7 +119,7 @@ public class InMemoryNodeDatabase extends AbstractNodeDatabase {
     }
 
     /**
-     * Applies node position fields from an inbound packet context into the node record.
+     * Applies node position fields from an inbound packet context into the node entry.
      *
      * @param pos position payload.
      * @param ctx packet context metadata.
@@ -144,7 +144,7 @@ public class InMemoryNodeDatabase extends AbstractNodeDatabase {
     }
 
     /**
-     * Applies RF signal metrics from packet context into the node record.
+     * Applies RF signal metrics from packet context into the node entry.
      *
      * @param ctx packet context metadata.
      */
@@ -155,7 +155,7 @@ public class InMemoryNodeDatabase extends AbstractNodeDatabase {
     }
 
     /**
-     * Applies device telemetry metrics into the node record.
+     * Applies device telemetry metrics into the node entry.
      *
      * @param m device metrics payload.
      * @param ctx packet context metadata.
@@ -166,7 +166,7 @@ public class InMemoryNodeDatabase extends AbstractNodeDatabase {
     }
 
     /**
-     * Applies environment telemetry metrics into the node record.
+     * Applies environment telemetry metrics into the node entry.
      *
      * @param e error or event payload, depending on callback context.
      * @param ctx packet context metadata.
@@ -225,7 +225,7 @@ public class InMemoryNodeDatabase extends AbstractNodeDatabase {
     }
 
     /**
-     * Maps the internal Historian record to a clean, immutable DTO. The DTO's
+     * Maps the internal Historian entry to a clean, immutable DTO. The DTO's
      * getCalculatedStatus() will handle the "Online/Offline" logic.
      */
     private MeshNode mapToDto(int id, NodeRecord r) {

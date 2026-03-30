@@ -27,8 +27,8 @@ TcpConfig tcpCfg = TcpConfig.builder()
         .build();
 ----
 
-These are startup-time transport settings. They are read from the transport config during transport construction/connect.
-If you want to change them later, create a new transport/config and reconnect.
+These are transport setup settings. The transport reads them when it is created and connected. If you want to change
+them later, build a new transport config and reconnect with it.
 
 ==== Request Correlation Controls
 
@@ -45,7 +45,7 @@ client.setRequestLockReleaseCooldownMs(120);
 client.setRequestCorrelationTimeout(Duration.ofSeconds(20));
 ----
 
-These settings are runtime-tunable. You can change them before or after `connect(...)`, and future requests will use
+These settings can be changed at runtime. You can set them before or after `connect(...)`, and new requests will use
 the updated values.
 
 ==== Admin Verification Policy
@@ -68,7 +68,7 @@ client.getAdminService().setVerificationPolicy(
 );
 ----
 
-This setting is also runtime-tunable and affects future `verifyApplied=true` admin writes.
+This setting can also be changed at runtime and affects future `verifyApplied=true` admin writes.
 
 Example TRACE output when timing diagnostics are enabled:
 
@@ -81,7 +81,7 @@ Example TRACE output when timing diagnostics are enabled:
 
 === Fire-and-forget Request Correlation
 
-Use request methods when you need transport/routing acceptance only:
+Use these request methods when you only need to know that the request was sent and accepted at the routing level:
 
 [source,java]
 ----
@@ -92,7 +92,8 @@ client.requestTelemetry(nodeId);
 
 === Payload-Await Requests
 
-Use payload-await methods when the caller must wait for live payload-driven node updates:
+Use payload-await methods when the caller needs to wait for the live data to come back, not just for the request to be
+accepted:
 
 [source,java]
 ----
@@ -103,8 +104,11 @@ client.requestTelemetryAwaitPayload(nodeId);
 
 === Payload-Await with Snapshot Fallback
 
-When firmware/device timing is inconsistent, use `...AwaitPayloadOrSnapshot(...)` helpers.
-These complete with latest node snapshot when a live payload is not observed before timeout.
+Some radios and firmware versions are not perfectly consistent about when the live payload shows up. In those cases,
+the `...AwaitPayloadOrSnapshot(...)` helpers are often the better choice.
+
+They wait for the live payload first, but if it does not arrive in time they fall back to the latest node snapshot.
+That gives the caller something useful to work with instead of failing a request that may actually have succeeded.
 
 [source,java]
 ----
@@ -133,13 +137,13 @@ client.sendChannelText(1, "hello test channel");
 client.sendDirectText(targetNodeId, 1, "hello on channel 1");
 ----
 
-Both methods automatically apply chunking for long payloads.
+The text helpers automatically chunk long messages for you.
 
 [NOTE]
 ====
-For direct messages, the destination node controls whether the packet is one-to-one, while the channel index
-selects the shared channel/key context used for that packet. For channel messages, the destination is broadcast
-and the channel index selects which group channel receives the message.
+For direct messages, the destination node decides who the packet is going to, while the channel index decides which
+shared channel key/context is used to send it. For channel messages, the destination is broadcast and the channel
+index decides which shared channel receives it.
 ====
 
 ==== Which Method Should I Use?
@@ -181,7 +185,7 @@ if (conversation.isDirect()) {
 
 ==== Bot Or Integration Example
 
-Bots often need both broadcast and direct-reply behavior.
+Bots often need both broadcast behavior and direct replies.
 
 [source,java]
 ----
@@ -254,12 +258,11 @@ end
 AdminService admin = client.getAdminService();
 ----
 
-`AdminService` is the high-level settings/configuration facade for the library.
-It exists so application code does not have to manually build every admin protobuf request,
-track every response variant, merge incoming admin snapshots into a coherent radio model, or
-re-implement write verification rules.
+`AdminService` is the library's settings and configuration layer.
+It is there so application code does not have to hand-build every admin protobuf request, keep track of every response
+shape, merge snapshots into a working radio model, or reimplement write verification logic.
 
-In practice, `MeshtasticClient` and `AdminService` have different jobs:
+In practice, `MeshtasticClient` and `AdminService` do different jobs:
 
 - `MeshtasticClient` owns transport lifecycle, startup sync, request correlation, messaging helpers, and event fan-out.
 - `AdminService` owns radio settings/domain state: owner, metadata, channels, config sections, module configs, and
@@ -269,7 +272,7 @@ Why this layer exists:
 
 - Meshtastic admin/config data arrives across multiple message types and at multiple times.
 - Settings UIs usually need both instant cached reads and explicit refresh-on-open behavior.
-- Admin writes often need eventual-consistency handling because some radios apply writes asynchronously.
+- Some admin writes are not visible immediately, so the service needs to handle delayed read-back verification.
 - It is easier for app developers to work with a stable service-oriented API than with dozens of raw admin message variants.
 
 What `AdminService` gives you:
@@ -280,21 +283,21 @@ What `AdminService` gives you:
 - typed write helpers for channel/config/module/owner operations
 - optional verify-applied semantics with structured `AdminWriteResult`
 
-Mental model:
+The simplest mental model is:
 
 - use `AdminService` as your settings/read-write facade
 - use `MeshtasticEventListener.onAdminModelUpdate(...)` to keep UI state in sync while connected
 - use snapshots for instant rendering
 - use refresh methods when a page opens or when a user explicitly asks to reload
 
-This split keeps the lower-level client API clean while still giving UI and headless applications
-a practical, higher-level surface for Meshtastic settings workflows.
+This split keeps the lower-level client API focused while still giving UI and headless applications a practical
+settings API to build on.
 
 ==== Snapshot Model And Refresh Model
 
-`AdminService` is intentionally snapshot-first.
+`AdminService` is designed around snapshots first, then refreshes.
 
-- Snapshot reads are immediate and are ideal for first paint in a UI.
+- Snapshot reads are immediate, which makes them a good fit for first paint in a UI.
 - Refresh methods are explicit and async so callers control when radio traffic is generated.
 - Incoming admin/local-state packets continuously update the in-memory `RadioModel`.
 
@@ -304,7 +307,7 @@ Typical pattern:
 2. trigger a focused refresh for the active page
 3. listen for `onAdminModelUpdate(...)` to keep the view/store current
 
-This avoids both extremes:
+That avoids both extremes:
 
 - blocking UI on a full radio sweep every time
 - forcing application code to manually merge incoming admin packets
@@ -317,8 +320,7 @@ Use `AdminService` when your application needs:
 - channel editors
 - owner/metadata display
 - config/module configuration
-- lifecycle admin actions such as reboot/factory reset/OTA-mode request
+- lifecycle admin actions such as reboot and factory reset
 
-If you are building a simple bot or telemetry consumer and do not need radio settings,
-you may spend most of your time in `MeshtasticClient` plus event listeners and rarely touch `AdminService`.
-
+If you are building a simple bot or telemetry consumer and do not need radio settings, you may spend most of your
+time in `MeshtasticClient` plus event listeners and hardly touch `AdminService`.

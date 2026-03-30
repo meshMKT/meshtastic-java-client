@@ -1,6 +1,6 @@
 == Snapshot-Driven UI
 
-Use snapshot getters for render and refresh methods for on-demand reads:
+Use snapshot getters for immediate rendering, and refresh methods when you want to go back to the radio for current data:
 
 [source,java]
 ----
@@ -11,7 +11,7 @@ Map<ConfigType, Config> configs = admin.getConfigSnapshots();
 
 == Reconnect and Resync Lifecycle
 
-On serial link loss, transport reconnection and startup sync are re-run automatically:
+When a serial link drops, the transport reconnect logic and startup sync sequence run again automatically:
 
 [plantuml,reconnect-resync-lifecycle,svg]
 ----
@@ -72,20 +72,21 @@ The transport layer owns:
 - reconnecting when that transport supports it
 - feeding framed Meshtastic bytes into the client
 
-This distinction matters when adding new transports. A new transport does not need to know how admin verification
-works, how request correlation is tracked, or how startup sync phases are sequenced. It only needs to expose a stable
-transport boundary and lifecycle callbacks so the existing client machinery can do its job.
+This matters when you add a new transport. A transport does not need to know how admin verification works, how request
+correlation is tracked, or how startup sync phases are sequenced. It only needs to provide a clean transport boundary
+and accurate lifecycle callbacks so the existing client code can do the rest.
 
 [NOTE]
 ====
-Request verification retries are transport-agnostic. They apply equally to serial, TCP, BLE, or any future transport
-as long as the link is available for subsequent requests.
+Read-back verification retries are not tied to a specific transport. They work the same way for serial, TCP, BLE, or
+any future transport as long as the link is still available for the follow-up requests.
 ====
 
 [IMPORTANT]
 ====
-Automatic reconnect is transport-specific. Serial and TCP implement their own reconnect behavior. BLE will get the
-same core retry/correlation benefits, but reconnect quality depends on the BLE transport/backend implementation.
+Automatic reconnect is transport-specific. Serial and TCP each provide their own reconnect behavior. BLE will benefit
+from the same core request handling once connected, but reconnect quality still depends on the BLE transport/backend
+implementation.
 ====
 
 For a transport author, the practical rule is:
@@ -126,11 +127,12 @@ client.addEventListener(new MeshtasticEventListener() {
 });
 ----
 
-This gives one consistent contract for request outcomes across admin reads/writes and utility request methods.
+This gives application code one consistent way to observe request outcomes across admin reads, admin writes, and
+utility request methods.
 
 == Admin Model Update Events
 
-For settings UIs, `MeshtasticEventListener` now exposes `onAdminModelUpdate(...)` for live model changes.
+For settings UIs, `MeshtasticEventListener` exposes `onAdminModelUpdate(...)` for live model changes.
 
 When this event fires:
 
@@ -163,10 +165,10 @@ client.addEventListener(new MeshtasticEventListener() {
 
 [TIP]
 ====
-Firmware does not always push channel/config changes made directly on-device. For deterministic settings pages:
+Firmware does not always push channel or config changes made directly on the radio. If you want settings pages to stay
+predictable:
 
 1. refresh on page-open,
 2. optionally poll while page is visible,
 3. stop polling when page closes.
 ====
-

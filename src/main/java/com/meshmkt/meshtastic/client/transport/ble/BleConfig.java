@@ -1,6 +1,7 @@
 package com.meshmkt.meshtastic.client.transport.ble;
 
 import lombok.Builder;
+import lombok.Value;
 
 import java.time.Duration;
 
@@ -9,30 +10,28 @@ import java.time.Duration;
  * <p>
  * UUID values are backend-specific strings to avoid imposing one UUID type on all BLE stacks.
  * </p>
- *
- * @param deviceId device address/identifier used by the backend to connect.
- * @param serviceUuid Meshtastic BLE service UUID.
- * @param toRadioCharacteristicUuid characteristic UUID used for writes to radio.
- * @param fromRadioCharacteristicUuid characteristic UUID used for notifications from radio.
- * @param connectTimeout timeout for initial connect attempts.
- * @param reconnectBackoff delay between reconnect attempts after link loss.
- * @param autoReconnect whether reconnect loop should run automatically after unexpected disconnect.
  */
+@Value
 @Builder
-public record BleConfig(
-        String deviceId,
-        String serviceUuid,
-        String toRadioCharacteristicUuid,
-        String fromRadioCharacteristicUuid,
-        Duration connectTimeout,
-        Duration reconnectBackoff,
-        boolean autoReconnect
-) {
+public class BleConfig {
+    String deviceId;
+    String serviceUuid;
+    String toRadioCharacteristicUuid;
+    String fromRadioCharacteristicUuid;
+    Duration connectTimeout;
+    Duration reconnectBackoff;
+    boolean autoReconnect;
 
     /**
-     * Creates a validated BLE config record.
+     * Creates a validated BLE config.
      */
-    public BleConfig {
+    public BleConfig(String deviceId,
+                     String serviceUuid,
+                     String toRadioCharacteristicUuid,
+                     String fromRadioCharacteristicUuid,
+                     Duration connectTimeout,
+                     Duration reconnectBackoff,
+                     boolean autoReconnect) {
         if (deviceId == null || deviceId.isBlank()) {
             throw new IllegalArgumentException("deviceId must not be blank");
         }
@@ -51,5 +50,12 @@ public record BleConfig(
         if (reconnectBackoff == null || reconnectBackoff.isNegative() || reconnectBackoff.isZero()) {
             throw new IllegalArgumentException("reconnectBackoff must be > 0");
         }
+        this.deviceId = deviceId;
+        this.serviceUuid = serviceUuid;
+        this.toRadioCharacteristicUuid = toRadioCharacteristicUuid;
+        this.fromRadioCharacteristicUuid = fromRadioCharacteristicUuid;
+        this.connectTimeout = connectTimeout;
+        this.reconnectBackoff = reconnectBackoff;
+        this.autoReconnect = autoReconnect;
     }
 }

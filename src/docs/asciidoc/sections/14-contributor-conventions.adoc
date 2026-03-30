@@ -6,25 +6,31 @@ When running `mvn package`, artifacts include:
 - `target/{project-name}-{project-version}-sources.jar`
 - `target/{project-name}-{project-version}-javadoc.jar`
 - HTML docs under `target/docs`
-- PDF docs under `target/docs`
 
 == Contributor Conventions
 
 This project intentionally uses a few simple conventions to keep the codebase cohesive as it grows.
 
-=== Records vs Lombok
+=== Object Modeling
 
-Use records for:
+This project uses Lombok-based classes instead of mixing Lombok and Java records.
 
-- small immutable value carriers
-- internal tuple-like coordination types
-- fixed-shape data where builders add little value
+Use `@Value` for:
 
-Use Lombok builders for:
+- immutable request, result, and event-style objects
+- small value objects that should stay fixed after construction
+- helper objects that mainly carry data
 
-- config objects
-- policy/request objects with optional fields
-- places where named construction materially improves readability
+Use `@Builder` when:
+
+- a type has several fields
+- optional fields or defaults make object creation clearer
+- named construction improves readability at the call site
+
+Use `@Data` sparingly for:
+
+- mutable in-memory state holders
+- internal storage objects that are updated over time
 
 Use regular classes for:
 
@@ -32,7 +38,7 @@ Use regular classes for:
 - engines
 - stateful coordinators
 
-This means the project may use both records and Lombok, but not interchangeably. The distinction is intentional.
+Default to immutability unless mutation is part of the design.
 
 === Logging Levels
 

@@ -11,7 +11,6 @@ import org.junit.jupiter.api.Test;
 import org.meshtastic.proto.AdminProtos.AdminMessage;
 import org.meshtastic.proto.MeshProtos;
 import org.meshtastic.proto.Portnums;
-import org.meshtastic.proto.XmodemProtos;
 
 import java.time.Duration;
 import java.util.concurrent.CountDownLatch;
@@ -920,70 +919,6 @@ class MeshtasticClientFlowTest {
         assertEquals(targetNodeId, future.get(2, TimeUnit.SECONDS).getNodeId());
         assertTrue(payloadLatch.await(2, TimeUnit.SECONDS), "Expected PAYLOAD_RECEIVED lifecycle stage");
         assertTrue(stages.contains(RequestLifecycleEvent.Stage.PAYLOAD_RECEIVED));
-    }
-
-    /**
-     * Verifies outbound XMODEM control frames are wrapped in top-level {@code ToRadio.xmodemPacket}.
-     */
-    @Test
-    void sendXmodemPacketWritesTopLevelXmodemEnvelope() throws Exception {
-        FakeTransport transport = new FakeTransport();
-        client = new MeshtasticClient(new InMemoryNodeDatabase());
-        client.connect(transport);
-        completeStartupSync(transport, 4040);
-
-        XmodemProtos.XModem frame = XmodemProtos.XModem.newBuilder()
-                .setControl(XmodemProtos.XModem.Control.SOH)
-                .setSeq(7)
-                .setCrc16(0xABCD)
-                .build();
-
-        client.sendXmodemPacket(frame).get(2, TimeUnit.SECONDS);
-
-        MeshProtos.ToRadio outbound = awaitToRadio(transport,
-                tr -> tr.hasXmodemPacket() && tr.getXmodemPacket().getControl() == XmodemProtos.XModem.Control.SOH,
-                Duration.ofSeconds(2));
-
-        assertEquals(7, outbound.getXmodemPacket().getSeq());
-        assertEquals(0xABCD, outbound.getXmodemPacket().getCrc16());
-    }
-
-    /**
-     * Verifies inbound top-level {@code FromRadio.xmodemPacket.control} can be awaited by OTA callers.
-     */
-    @Test
-    void awaitXmodemControlCompletesWhenControlArrives() throws Exception {
-        FakeTransport transport = new FakeTransport();
-        client = new MeshtasticClient(new InMemoryNodeDatabase());
-        client.connect(transport);
-        completeStartupSync(transport, 5050);
-
-        CompletableFuture<XmodemProtos.XModem.Control> controlFuture =
-                client.awaitXmodemControl(Duration.ofSeconds(1));
-
-        transport.emitParsedPacket(MeshProtos.FromRadio.newBuilder()
-                .setXmodemPacket(XmodemProtos.XModem.newBuilder().setControl(XmodemProtos.XModem.Control.ACK).build())
-                .build()
-                .toByteArray());
-
-        assertEquals(XmodemProtos.XModem.Control.ACK, controlFuture.get(2, TimeUnit.SECONDS));
-    }
-
-    /**
-     * Verifies awaiting XMODEM control fails with timeout when no control is received.
-     */
-    @Test
-    void awaitXmodemControlTimesOutWhenNoControlArrives() throws Exception {
-        FakeTransport transport = new FakeTransport();
-        client = new MeshtasticClient(new InMemoryNodeDatabase());
-        client.connect(transport);
-        completeStartupSync(transport, 5051);
-
-        CompletableFuture<XmodemProtos.XModem.Control> controlFuture =
-                client.awaitXmodemControl(Duration.ofMillis(100));
-
-        ExecutionException ex = assertThrows(ExecutionException.class, () -> controlFuture.get(2, TimeUnit.SECONDS));
-        assertTrue(ex.getCause() instanceof TimeoutException);
     }
 
     private void completeStartupSync(FakeTransport transport, int selfNodeId) {
