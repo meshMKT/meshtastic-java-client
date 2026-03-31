@@ -1,7 +1,21 @@
 package com.meshmkt.meshtastic.client.service;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
 import com.google.protobuf.ByteString;
 import com.meshmkt.meshtastic.client.storage.MeshNode;
+import java.time.Duration;
+import java.util.ArrayDeque;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Deque;
+import java.util.List;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeoutException;
 import org.junit.jupiter.api.Test;
 import org.meshtastic.proto.AdminProtos.AdminMessage;
 import org.meshtastic.proto.ChannelProtos.Channel;
@@ -11,21 +25,6 @@ import org.meshtastic.proto.DeviceUIProtos;
 import org.meshtastic.proto.MeshProtos;
 import org.meshtastic.proto.ModuleConfigProtos;
 import org.meshtastic.proto.Portnums;
-
-import java.util.ArrayDeque;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Deque;
-import java.util.List;
-import java.util.concurrent.CompletableFuture;
-import java.time.Duration;
-import java.util.concurrent.TimeoutException;
-
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.junit.jupiter.api.Assertions.assertThrows;
 
 /**
  * Unit tests for {@link AdminService} using a stubbed gateway response queue.
@@ -41,21 +40,28 @@ class AdminServiceTest {
         AdminService service = new AdminService(gateway);
 
         gateway.enqueueAdminResponse(AdminMessage.newBuilder()
-                .setGetDeviceMetadataResponse(MeshProtos.DeviceMetadata.newBuilder().setFirmwareVersion("2.7.15").build())
+                .setGetDeviceMetadataResponse(MeshProtos.DeviceMetadata.newBuilder()
+                        .setFirmwareVersion("2.7.15")
+                        .build())
                 .build());
 
         gateway.enqueueAdminResponse(AdminMessage.newBuilder()
                 .setGetConfigResponse(ConfigProtos.Config.newBuilder()
-                        .setDevice(ConfigProtos.Config.DeviceConfig.newBuilder().setNodeInfoBroadcastSecs(60).build())
+                        .setDevice(ConfigProtos.Config.DeviceConfig.newBuilder()
+                                .setNodeInfoBroadcastSecs(60)
+                                .build())
                         .build())
                 .build());
 
-        ConfigProtos.Config cfg = service.refreshConfig(AdminMessage.ConfigType.SESSIONKEY_CONFIG).join();
+        ConfigProtos.Config cfg =
+                service.refreshConfig(AdminMessage.ConfigType.SESSIONKEY_CONFIG).join();
         assertNotNull(cfg);
 
         assertEquals(2, gateway.requests.size());
         assertTrue(gateway.requests.get(0).hasGetDeviceMetadataRequest());
-        assertEquals(AdminMessage.ConfigType.SESSIONKEY_CONFIG, gateway.requests.get(1).getGetConfigRequest());
+        assertEquals(
+                AdminMessage.ConfigType.SESSIONKEY_CONFIG,
+                gateway.requests.get(1).getGetConfigRequest());
     }
 
     /**
@@ -74,27 +80,33 @@ class AdminServiceTest {
 
         // First attempt: metadata -> set ack -> mismatched readback
         gateway.enqueueAdminResponse(AdminMessage.newBuilder()
-                .setGetDeviceMetadataResponse(MeshProtos.DeviceMetadata.newBuilder().setFirmwareVersion("v").build())
+                .setGetDeviceMetadataResponse(MeshProtos.DeviceMetadata.newBuilder()
+                        .setFirmwareVersion("v")
+                        .build())
                 .build());
         gateway.enqueueAdminResponse(AdminMessage.newBuilder().build());
         gateway.enqueueAdminResponse(AdminMessage.newBuilder()
                 .setGetChannelResponse(Channel.newBuilder()
                         .setIndex(2)
                         .setRole(Channel.Role.SECONDARY)
-                        .setSettings(ChannelSettings.newBuilder().setName("Wrong1").build())
+                        .setSettings(
+                                ChannelSettings.newBuilder().setName("Wrong1").build())
                         .build())
                 .build());
 
         // Retry attempt: metadata -> set ack -> mismatched readback
         gateway.enqueueAdminResponse(AdminMessage.newBuilder()
-                .setGetDeviceMetadataResponse(MeshProtos.DeviceMetadata.newBuilder().setFirmwareVersion("v").build())
+                .setGetDeviceMetadataResponse(MeshProtos.DeviceMetadata.newBuilder()
+                        .setFirmwareVersion("v")
+                        .build())
                 .build());
         gateway.enqueueAdminResponse(AdminMessage.newBuilder().build());
         gateway.enqueueAdminResponse(AdminMessage.newBuilder()
                 .setGetChannelResponse(Channel.newBuilder()
                         .setIndex(2)
                         .setRole(Channel.Role.SECONDARY)
-                        .setSettings(ChannelSettings.newBuilder().setName("Wrong2").build())
+                        .setSettings(
+                                ChannelSettings.newBuilder().setName("Wrong2").build())
                         .build())
                 .build());
 
@@ -125,10 +137,13 @@ class AdminServiceTest {
                 .build();
 
         gateway.enqueueAdminResponse(AdminMessage.newBuilder()
-                .setGetDeviceMetadataResponse(MeshProtos.DeviceMetadata.newBuilder().setFirmwareVersion("v").build())
+                .setGetDeviceMetadataResponse(MeshProtos.DeviceMetadata.newBuilder()
+                        .setFirmwareVersion("v")
+                        .build())
                 .build());
         gateway.enqueueAdminResponse(AdminMessage.newBuilder().build());
-        gateway.enqueueAdminResponse(AdminMessage.newBuilder().setGetChannelResponse(requested).build());
+        gateway.enqueueAdminResponse(
+                AdminMessage.newBuilder().setGetChannelResponse(requested).build());
 
         boolean applied = service.setChannel(1, requested).join();
         assertTrue(applied);
@@ -150,11 +165,14 @@ class AdminServiceTest {
                 .build();
 
         gateway.enqueueAdminResponse(AdminMessage.newBuilder()
-                .setGetDeviceMetadataResponse(MeshProtos.DeviceMetadata.newBuilder().setFirmwareVersion("v").build())
+                .setGetDeviceMetadataResponse(MeshProtos.DeviceMetadata.newBuilder()
+                        .setFirmwareVersion("v")
+                        .build())
                 .build());
-        gateway.enqueueFailure(new IllegalStateException(
-                "Routing rejected request 1684545740 with status NO_RESPONSE"));
-        gateway.enqueueAdminResponse(AdminMessage.newBuilder().setGetChannelResponse(requested).build());
+        gateway.enqueueFailure(
+                new IllegalStateException("Routing rejected request 1684545740 with status NO_RESPONSE"));
+        gateway.enqueueAdminResponse(
+                AdminMessage.newBuilder().setGetChannelResponse(requested).build());
 
         boolean applied = service.setChannel(2, requested, true).join();
         assertTrue(applied);
@@ -178,7 +196,9 @@ class AdminServiceTest {
                     .setGetChannelResponse(Channel.newBuilder()
                             .setIndex(idx)
                             .setRole(idx == 0 ? Channel.Role.PRIMARY : Channel.Role.SECONDARY)
-                            .setSettings(ChannelSettings.newBuilder().setName("ch-" + idx).build())
+                            .setSettings(ChannelSettings.newBuilder()
+                                    .setName("ch-" + idx)
+                                    .build())
                             .build())
                     .build());
         }
@@ -210,14 +230,16 @@ class AdminServiceTest {
                 .setGetChannelResponse(Channel.newBuilder()
                         .setIndex(0)
                         .setRole(Channel.Role.PRIMARY)
-                        .setSettings(ChannelSettings.newBuilder().setName("Primary").build())
+                        .setSettings(
+                                ChannelSettings.newBuilder().setName("Primary").build())
                         .build())
                 .build());
         service.ingestAdminMessage(AdminMessage.newBuilder()
                 .setGetChannelResponse(Channel.newBuilder()
                         .setIndex(2)
                         .setRole(Channel.Role.SECONDARY)
-                        .setSettings(ChannelSettings.newBuilder().setName("meshMKT").build())
+                        .setSettings(
+                                ChannelSettings.newBuilder().setName("meshMKT").build())
                         .build())
                 .build());
         service.ingestAdminMessage(AdminMessage.newBuilder()
@@ -228,10 +250,16 @@ class AdminServiceTest {
                 .build());
 
         gateway.enqueueAdminResponse(AdminMessage.newBuilder()
-                .setGetChannelResponse(Channel.newBuilder().setIndex(0).setRole(Channel.Role.PRIMARY).build())
+                .setGetChannelResponse(Channel.newBuilder()
+                        .setIndex(0)
+                        .setRole(Channel.Role.PRIMARY)
+                        .build())
                 .build());
         gateway.enqueueAdminResponse(AdminMessage.newBuilder()
-                .setGetChannelResponse(Channel.newBuilder().setIndex(2).setRole(Channel.Role.SECONDARY).build())
+                .setGetChannelResponse(Channel.newBuilder()
+                        .setIndex(2)
+                        .setRole(Channel.Role.SECONDARY)
+                        .build())
                 .build());
 
         List<Channel> refreshed = service.refreshLikelyActiveChannels().join();
@@ -253,14 +281,16 @@ class AdminServiceTest {
                 .setGetChannelResponse(Channel.newBuilder()
                         .setIndex(2)
                         .setRole(Channel.Role.SECONDARY)
-                        .setSettings(ChannelSettings.newBuilder().setName("slot-2").build())
+                        .setSettings(
+                                ChannelSettings.newBuilder().setName("slot-2").build())
                         .build())
                 .build());
         gateway.enqueueAdminResponse(AdminMessage.newBuilder()
                 .setGetChannelResponse(Channel.newBuilder()
                         .setIndex(0)
                         .setRole(Channel.Role.PRIMARY)
-                        .setSettings(ChannelSettings.newBuilder().setName("slot-0").build())
+                        .setSettings(
+                                ChannelSettings.newBuilder().setName("slot-0").build())
                         .build())
                 .build());
 
@@ -282,7 +312,8 @@ class AdminServiceTest {
         StubGateway gateway = new StubGateway(1234);
         AdminService service = new AdminService(gateway);
 
-        List<Channel> refreshed = service.refreshChannels(Arrays.asList(null, null)).join();
+        List<Channel> refreshed =
+                service.refreshChannels(Arrays.asList(null, null)).join();
         assertTrue(refreshed.isEmpty());
         assertTrue(gateway.requests.isEmpty());
     }
@@ -345,8 +376,8 @@ class AdminServiceTest {
         StubGateway gateway = new StubGateway(1234);
         AdminService service = new AdminService(gateway);
 
-        gateway.enqueueFailure(new IllegalStateException(
-                "Routing rejected request 2103086087 with status NO_RESPONSE"));
+        gateway.enqueueFailure(
+                new IllegalStateException("Routing rejected request 2103086087 with status NO_RESPONSE"));
         gateway.enqueueAdminResponse(AdminMessage.newBuilder()
                 .setGetOwnerResponse(MeshProtos.User.newBuilder()
                         .setLongName("Red Cypress")
@@ -377,7 +408,8 @@ class AdminServiceTest {
                 .shortName("ralp")
                 .build());
 
-        boolean applied = service.setOwner(0xABCDEF01, "Remote Alpha", "ralp", true).join();
+        boolean applied =
+                service.setOwner(0xABCDEF01, "Remote Alpha", "ralp", true).join();
         assertTrue(applied);
         assertEquals(1, gateway.requests.size());
         assertTrue(gateway.requests.get(0).hasSetOwner());
@@ -398,7 +430,9 @@ class AdminServiceTest {
                 .build();
 
         gateway.enqueueAdminResponse(AdminMessage.newBuilder()
-                .setGetDeviceMetadataResponse(MeshProtos.DeviceMetadata.newBuilder().setFirmwareVersion("v").build())
+                .setGetDeviceMetadataResponse(MeshProtos.DeviceMetadata.newBuilder()
+                        .setFirmwareVersion("v")
+                        .build())
                 .build());
         gateway.enqueueAdminResponse(AdminMessage.newBuilder().build());
 
@@ -420,11 +454,12 @@ class AdminServiceTest {
         Channel requested = Channel.newBuilder()
                 .setIndex(2)
                 .setRole(Channel.Role.SECONDARY)
-                .setSettings(ChannelSettings.newBuilder().setName("Timmy9922-Yahoo").build())
+                .setSettings(
+                        ChannelSettings.newBuilder().setName("Timmy9922-Yahoo").build())
                 .build();
 
-        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
-                () -> service.setChannel(2, requested, true));
+        IllegalArgumentException ex =
+                assertThrows(IllegalArgumentException.class, () -> service.setChannel(2, requested, true));
         assertTrue(ex.getMessage().contains("Channel name must be <="));
         assertTrue(gateway.requests.isEmpty());
     }
@@ -445,7 +480,8 @@ class AdminServiceTest {
                         .setPsk(ByteString.copyFromUtf8("1234567890ABCDEF"))
                         .build())
                 .build();
-        service.ingestAdminMessage(AdminMessage.newBuilder().setGetChannelResponse(cached).build());
+        service.ingestAdminMessage(
+                AdminMessage.newBuilder().setGetChannelResponse(cached).build());
 
         Channel requested = Channel.newBuilder()
                 .setIndex(2)
@@ -454,7 +490,9 @@ class AdminServiceTest {
                 .build();
 
         gateway.enqueueAdminResponse(AdminMessage.newBuilder()
-                .setGetDeviceMetadataResponse(MeshProtos.DeviceMetadata.newBuilder().setFirmwareVersion("v").build())
+                .setGetDeviceMetadataResponse(MeshProtos.DeviceMetadata.newBuilder()
+                        .setFirmwareVersion("v")
+                        .build())
                 .build());
         gateway.enqueueAdminResponse(AdminMessage.newBuilder().build());
 
@@ -462,8 +500,12 @@ class AdminServiceTest {
         assertTrue(applied);
         assertEquals(2, gateway.requests.size());
         assertTrue(gateway.requests.get(1).hasSetChannel());
-        assertEquals("new-name", gateway.requests.get(1).getSetChannel().getSettings().getName());
-        assertEquals(ByteString.copyFromUtf8("1234567890ABCDEF"), gateway.requests.get(1).getSetChannel().getSettings().getPsk());
+        assertEquals(
+                "new-name",
+                gateway.requests.get(1).getSetChannel().getSettings().getName());
+        assertEquals(
+                ByteString.copyFromUtf8("1234567890ABCDEF"),
+                gateway.requests.get(1).getSetChannel().getSettings().getPsk());
     }
 
     /**
@@ -482,15 +524,15 @@ class AdminServiceTest {
                 .build();
 
         gateway.enqueueAdminResponse(AdminMessage.newBuilder().build());
-        gateway.enqueueAdminResponse(AdminMessage.newBuilder()
-                .setGetConfigResponse(requested)
-                .build());
+        gateway.enqueueAdminResponse(
+                AdminMessage.newBuilder().setGetConfigResponse(requested).build());
 
         boolean applied = service.setConfig(requested, true).join();
         assertTrue(applied);
         assertEquals(2, gateway.requests.size());
         assertTrue(gateway.requests.get(0).hasSetConfig());
-        assertEquals(AdminMessage.ConfigType.DISPLAY_CONFIG, gateway.requests.get(1).getGetConfigRequest());
+        assertEquals(
+                AdminMessage.ConfigType.DISPLAY_CONFIG, gateway.requests.get(1).getGetConfigRequest());
     }
 
     /**
@@ -516,15 +558,15 @@ class AdminServiceTest {
                 .build();
 
         gateway.enqueueAdminResponse(AdminMessage.newBuilder().build());
-        gateway.enqueueAdminResponse(AdminMessage.newBuilder()
-                .setGetConfigResponse(observed)
-                .build());
+        gateway.enqueueAdminResponse(
+                AdminMessage.newBuilder().setGetConfigResponse(observed).build());
 
         boolean applied = service.setConfig(requested, true).join();
         assertFalse(applied);
         assertEquals(2, gateway.requests.size());
         assertTrue(gateway.requests.get(0).hasSetConfig());
-        assertEquals(AdminMessage.ConfigType.LORA_CONFIG, gateway.requests.get(1).getGetConfigRequest());
+        assertEquals(
+                AdminMessage.ConfigType.LORA_CONFIG, gateway.requests.get(1).getGetConfigRequest());
     }
 
     /**
@@ -542,15 +584,17 @@ class AdminServiceTest {
                         .build())
                 .build();
 
-        gateway.enqueueFailure(new IllegalStateException(
-                "Routing rejected request 1293257125 with status NO_RESPONSE"));
-        gateway.enqueueAdminResponse(AdminMessage.newBuilder().setGetConfigResponse(requested).build());
+        gateway.enqueueFailure(
+                new IllegalStateException("Routing rejected request 1293257125 with status NO_RESPONSE"));
+        gateway.enqueueAdminResponse(
+                AdminMessage.newBuilder().setGetConfigResponse(requested).build());
 
         boolean applied = service.setConfig(requested, true).join();
         assertTrue(applied);
         assertEquals(2, gateway.requests.size());
         assertTrue(gateway.requests.get(0).hasSetConfig());
-        assertEquals(AdminMessage.ConfigType.DISPLAY_CONFIG, gateway.requests.get(1).getGetConfigRequest());
+        assertEquals(
+                AdminMessage.ConfigType.DISPLAY_CONFIG, gateway.requests.get(1).getGetConfigRequest());
     }
 
     /**
@@ -582,15 +626,19 @@ class AdminServiceTest {
                 .build();
 
         gateway.enqueueAdminResponse(AdminMessage.newBuilder().build());
-        gateway.enqueueAdminResponse(AdminMessage.newBuilder().setGetConfigResponse(staleObserved).build());
-        gateway.enqueueAdminResponse(AdminMessage.newBuilder().setGetConfigResponse(requested).build());
+        gateway.enqueueAdminResponse(
+                AdminMessage.newBuilder().setGetConfigResponse(staleObserved).build());
+        gateway.enqueueAdminResponse(
+                AdminMessage.newBuilder().setGetConfigResponse(requested).build());
 
         boolean applied = service.setConfig(requested, true).join();
         assertTrue(applied);
         assertEquals(3, gateway.requests.size());
         assertTrue(gateway.requests.get(0).hasSetConfig());
-        assertEquals(AdminMessage.ConfigType.DISPLAY_CONFIG, gateway.requests.get(1).getGetConfigRequest());
-        assertEquals(AdminMessage.ConfigType.DISPLAY_CONFIG, gateway.requests.get(2).getGetConfigRequest());
+        assertEquals(
+                AdminMessage.ConfigType.DISPLAY_CONFIG, gateway.requests.get(1).getGetConfigRequest());
+        assertEquals(
+                AdminMessage.ConfigType.DISPLAY_CONFIG, gateway.requests.get(2).getGetConfigRequest());
     }
 
     /**
@@ -610,15 +658,16 @@ class AdminServiceTest {
                 .build();
 
         gateway.enqueueAdminResponse(AdminMessage.newBuilder().build());
-        gateway.enqueueAdminResponse(AdminMessage.newBuilder()
-                .setGetModuleConfigResponse(requested)
-                .build());
+        gateway.enqueueAdminResponse(
+                AdminMessage.newBuilder().setGetModuleConfigResponse(requested).build());
 
         boolean applied = service.setModuleConfig(requested, true).join();
         assertTrue(applied);
         assertEquals(2, gateway.requests.size());
         assertTrue(gateway.requests.get(0).hasSetModuleConfig());
-        assertEquals(AdminMessage.ModuleConfigType.MQTT_CONFIG, gateway.requests.get(1).getGetModuleConfigRequest());
+        assertEquals(
+                AdminMessage.ModuleConfigType.MQTT_CONFIG,
+                gateway.requests.get(1).getGetModuleConfigRequest());
     }
 
     /**
@@ -642,15 +691,16 @@ class AdminServiceTest {
                 .build();
 
         gateway.enqueueAdminResponse(AdminMessage.newBuilder().build());
-        gateway.enqueueAdminResponse(AdminMessage.newBuilder()
-                .setGetModuleConfigResponse(observed)
-                .build());
+        gateway.enqueueAdminResponse(
+                AdminMessage.newBuilder().setGetModuleConfigResponse(observed).build());
 
         boolean applied = service.setModuleConfig(requested, true).join();
         assertFalse(applied);
         assertEquals(2, gateway.requests.size());
         assertTrue(gateway.requests.get(0).hasSetModuleConfig());
-        assertEquals(AdminMessage.ModuleConfigType.TELEMETRY_CONFIG, gateway.requests.get(1).getGetModuleConfigRequest());
+        assertEquals(
+                AdminMessage.ModuleConfigType.TELEMETRY_CONFIG,
+                gateway.requests.get(1).getGetModuleConfigRequest());
     }
 
     /**
@@ -668,15 +718,18 @@ class AdminServiceTest {
                         .build())
                 .build();
 
-        gateway.enqueueFailure(new IllegalStateException(
-                "Routing rejected request 2047045905 with status NO_RESPONSE"));
-        gateway.enqueueAdminResponse(AdminMessage.newBuilder().setGetModuleConfigResponse(requested).build());
+        gateway.enqueueFailure(
+                new IllegalStateException("Routing rejected request 2047045905 with status NO_RESPONSE"));
+        gateway.enqueueAdminResponse(
+                AdminMessage.newBuilder().setGetModuleConfigResponse(requested).build());
 
         boolean applied = service.setModuleConfig(requested, true).join();
         assertTrue(applied);
         assertEquals(2, gateway.requests.size());
         assertTrue(gateway.requests.get(0).hasSetModuleConfig());
-        assertEquals(AdminMessage.ModuleConfigType.MQTT_CONFIG, gateway.requests.get(1).getGetModuleConfigRequest());
+        assertEquals(
+                AdminMessage.ModuleConfigType.MQTT_CONFIG,
+                gateway.requests.get(1).getGetModuleConfigRequest());
     }
 
     /**
@@ -687,10 +740,10 @@ class AdminServiceTest {
         StubGateway gateway = new StubGateway(1234);
         AdminService service = new AdminService(gateway);
 
-        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
-                () -> service.setVerificationPolicy(AdminVerificationPolicy.builder()
-                        .maxAttempts(0)
-                        .build()));
+        IllegalArgumentException ex = assertThrows(
+                IllegalArgumentException.class,
+                () -> service.setVerificationPolicy(
+                        AdminVerificationPolicy.builder().maxAttempts(0).build()));
         assertTrue(ex.getMessage().contains("maxAttempts"));
     }
 
@@ -709,14 +762,18 @@ class AdminServiceTest {
 
         gateway.enqueueAdminResponse(AdminMessage.newBuilder().build());
         gateway.enqueueAdminResponse(AdminMessage.newBuilder()
-                .setGetModuleConfigResponse(ModuleConfigProtos.ModuleConfig.newBuilder().setMqtt(mqtt).build())
+                .setGetModuleConfigResponse(ModuleConfigProtos.ModuleConfig.newBuilder()
+                        .setMqtt(mqtt)
+                        .build())
                 .build());
 
         boolean applied = service.setMqttConfig(mqtt, true).join();
         assertTrue(applied);
         assertEquals(2, gateway.requests.size());
         assertTrue(gateway.requests.get(0).hasSetModuleConfig());
-        assertEquals(AdminMessage.ModuleConfigType.MQTT_CONFIG, gateway.requests.get(1).getGetModuleConfigRequest());
+        assertEquals(
+                AdminMessage.ModuleConfigType.MQTT_CONFIG,
+                gateway.requests.get(1).getGetModuleConfigRequest());
     }
 
     /**
@@ -735,10 +792,13 @@ class AdminServiceTest {
                         .setPsk(ByteString.copyFromUtf8("1111222233334444"))
                         .build())
                 .build();
-        service.ingestAdminMessage(AdminMessage.newBuilder().setGetChannelResponse(cached).build());
+        service.ingestAdminMessage(
+                AdminMessage.newBuilder().setGetChannelResponse(cached).build());
 
         gateway.enqueueAdminResponse(AdminMessage.newBuilder()
-                .setGetDeviceMetadataResponse(MeshProtos.DeviceMetadata.newBuilder().setFirmwareVersion("v").build())
+                .setGetDeviceMetadataResponse(MeshProtos.DeviceMetadata.newBuilder()
+                        .setFirmwareVersion("v")
+                        .build())
                 .build());
         gateway.enqueueAdminResponse(AdminMessage.newBuilder().build());
         gateway.enqueueAdminResponse(AdminMessage.newBuilder()
@@ -752,12 +812,16 @@ class AdminServiceTest {
                         .build())
                 .build());
 
-        boolean applied = service.setChannelPsk(2, ByteString.copyFromUtf8("AAAABBBBCCCCDDDD"), true).join();
+        boolean applied = service.setChannelPsk(2, ByteString.copyFromUtf8("AAAABBBBCCCCDDDD"), true)
+                .join();
         assertTrue(applied);
         assertEquals(3, gateway.requests.size());
         assertTrue(gateway.requests.get(1).hasSetChannel());
-        assertEquals("meshMKT", gateway.requests.get(1).getSetChannel().getSettings().getName());
-        assertEquals(ByteString.copyFromUtf8("AAAABBBBCCCCDDDD"), gateway.requests.get(1).getSetChannel().getSettings().getPsk());
+        assertEquals(
+                "meshMKT", gateway.requests.get(1).getSetChannel().getSettings().getName());
+        assertEquals(
+                ByteString.copyFromUtf8("AAAABBBBCCCCDDDD"),
+                gateway.requests.get(1).getSetChannel().getSettings().getPsk());
     }
 
     /**
@@ -776,10 +840,13 @@ class AdminServiceTest {
                         .setPsk(ByteString.copyFromUtf8("1234567890ABCDEF"))
                         .build())
                 .build();
-        service.ingestAdminMessage(AdminMessage.newBuilder().setGetChannelResponse(cached).build());
+        service.ingestAdminMessage(
+                AdminMessage.newBuilder().setGetChannelResponse(cached).build());
 
         gateway.enqueueAdminResponse(AdminMessage.newBuilder()
-                .setGetDeviceMetadataResponse(MeshProtos.DeviceMetadata.newBuilder().setFirmwareVersion("v").build())
+                .setGetDeviceMetadataResponse(MeshProtos.DeviceMetadata.newBuilder()
+                        .setFirmwareVersion("v")
+                        .build())
                 .build());
         gateway.enqueueAdminResponse(AdminMessage.newBuilder().build());
         gateway.enqueueAdminResponse(AdminMessage.newBuilder()
@@ -797,7 +864,9 @@ class AdminServiceTest {
         assertTrue(applied);
         assertTrue(gateway.requests.get(1).hasSetChannel());
         assertEquals(0, gateway.requests.get(1).getSetChannel().getIndex());
-        assertEquals(ByteString.copyFromUtf8("FEDCBA0987654321"), gateway.requests.get(1).getSetChannel().getSettings().getPsk());
+        assertEquals(
+                ByteString.copyFromUtf8("FEDCBA0987654321"),
+                gateway.requests.get(1).getSetChannel().getSettings().getPsk());
     }
 
     /**
@@ -814,14 +883,16 @@ class AdminServiceTest {
 
         gateway.enqueueAdminResponse(AdminMessage.newBuilder().build());
         gateway.enqueueAdminResponse(AdminMessage.newBuilder()
-                .setGetConfigResponse(ConfigProtos.Config.newBuilder().setSecurity(security).build())
+                .setGetConfigResponse(
+                        ConfigProtos.Config.newBuilder().setSecurity(security).build())
                 .build());
 
         boolean applied = service.setSecurityConfig(security, true).join();
         assertTrue(applied);
         assertEquals(2, gateway.requests.size());
         assertTrue(gateway.requests.get(0).hasSetConfig());
-        assertEquals(AdminMessage.ConfigType.SECURITY_CONFIG, gateway.requests.get(1).getGetConfigRequest());
+        assertEquals(
+                AdminMessage.ConfigType.SECURITY_CONFIG, gateway.requests.get(1).getGetConfigRequest());
     }
 
     /**
@@ -836,13 +907,17 @@ class AdminServiceTest {
                 .setTheme(DeviceUIProtos.Theme.DARK)
                 .build();
         gateway.enqueueAdminResponse(AdminMessage.newBuilder()
-                .setGetConfigResponse(ConfigProtos.Config.newBuilder().setDeviceUi(deviceUiConfig).build())
+                .setGetConfigResponse(ConfigProtos.Config.newBuilder()
+                        .setDeviceUi(deviceUiConfig)
+                        .build())
                 .build());
 
-        DeviceUIProtos.DeviceUIConfig refreshed = service.refreshDeviceUiConfig().join();
+        DeviceUIProtos.DeviceUIConfig refreshed =
+                service.refreshDeviceUiConfig().join();
         assertEquals(deviceUiConfig, refreshed);
         assertEquals(1, gateway.requests.size());
-        assertEquals(AdminMessage.ConfigType.DEVICEUI_CONFIG, gateway.requests.get(0).getGetConfigRequest());
+        assertEquals(
+                AdminMessage.ConfigType.DEVICEUI_CONFIG, gateway.requests.get(0).getGetConfigRequest());
     }
 
     /**
@@ -853,17 +928,23 @@ class AdminServiceTest {
         StubGateway gateway = new StubGateway(1234);
         AdminService service = new AdminService(gateway);
 
-        ModuleConfigProtos.ModuleConfig.SerialConfig serialConfig = ModuleConfigProtos.ModuleConfig.SerialConfig.newBuilder()
-                .setBaud(ModuleConfigProtos.ModuleConfig.SerialConfig.Serial_Baud.BAUD_115200)
-                .build();
+        ModuleConfigProtos.ModuleConfig.SerialConfig serialConfig =
+                ModuleConfigProtos.ModuleConfig.SerialConfig.newBuilder()
+                        .setBaud(ModuleConfigProtos.ModuleConfig.SerialConfig.Serial_Baud.BAUD_115200)
+                        .build();
         gateway.enqueueAdminResponse(AdminMessage.newBuilder()
-                .setGetModuleConfigResponse(ModuleConfigProtos.ModuleConfig.newBuilder().setSerial(serialConfig).build())
+                .setGetModuleConfigResponse(ModuleConfigProtos.ModuleConfig.newBuilder()
+                        .setSerial(serialConfig)
+                        .build())
                 .build());
 
-        ModuleConfigProtos.ModuleConfig.SerialConfig refreshed = service.refreshSerialModuleConfig().join();
+        ModuleConfigProtos.ModuleConfig.SerialConfig refreshed =
+                service.refreshSerialModuleConfig().join();
         assertEquals(serialConfig, refreshed);
         assertEquals(1, gateway.requests.size());
-        assertEquals(AdminMessage.ModuleConfigType.SERIAL_CONFIG, gateway.requests.get(0).getGetModuleConfigRequest());
+        assertEquals(
+                AdminMessage.ModuleConfigType.SERIAL_CONFIG,
+                gateway.requests.get(0).getGetModuleConfigRequest());
     }
 
     /**
@@ -880,13 +961,16 @@ class AdminServiceTest {
 
         gateway.enqueueAdminResponse(AdminMessage.newBuilder().build());
         gateway.enqueueAdminResponse(AdminMessage.newBuilder()
-                .setGetConfigResponse(ConfigProtos.Config.newBuilder().setDeviceUi(deviceUiConfig).build())
+                .setGetConfigResponse(ConfigProtos.Config.newBuilder()
+                        .setDeviceUi(deviceUiConfig)
+                        .build())
                 .build());
 
         boolean applied = service.setDeviceUiConfig(deviceUiConfig, true).join();
         assertTrue(applied);
         assertTrue(gateway.requests.get(0).hasSetConfig());
-        assertEquals(AdminMessage.ConfigType.DEVICEUI_CONFIG, gateway.requests.get(1).getGetConfigRequest());
+        assertEquals(
+                AdminMessage.ConfigType.DEVICEUI_CONFIG, gateway.requests.get(1).getGetConfigRequest());
     }
 
     /**
@@ -897,20 +981,25 @@ class AdminServiceTest {
         StubGateway gateway = new StubGateway(1234);
         AdminService service = new AdminService(gateway);
 
-        ModuleConfigProtos.ModuleConfig.SerialConfig serialConfig = ModuleConfigProtos.ModuleConfig.SerialConfig.newBuilder()
-                .setBaud(ModuleConfigProtos.ModuleConfig.SerialConfig.Serial_Baud.BAUD_9600)
-                .setEnabled(true)
-                .build();
+        ModuleConfigProtos.ModuleConfig.SerialConfig serialConfig =
+                ModuleConfigProtos.ModuleConfig.SerialConfig.newBuilder()
+                        .setBaud(ModuleConfigProtos.ModuleConfig.SerialConfig.Serial_Baud.BAUD_9600)
+                        .setEnabled(true)
+                        .build();
 
         gateway.enqueueAdminResponse(AdminMessage.newBuilder().build());
         gateway.enqueueAdminResponse(AdminMessage.newBuilder()
-                .setGetModuleConfigResponse(ModuleConfigProtos.ModuleConfig.newBuilder().setSerial(serialConfig).build())
+                .setGetModuleConfigResponse(ModuleConfigProtos.ModuleConfig.newBuilder()
+                        .setSerial(serialConfig)
+                        .build())
                 .build());
 
         boolean applied = service.setSerialModuleConfig(serialConfig, true).join();
         assertTrue(applied);
         assertTrue(gateway.requests.get(0).hasSetModuleConfig());
-        assertEquals(AdminMessage.ModuleConfigType.SERIAL_CONFIG, gateway.requests.get(1).getGetModuleConfigRequest());
+        assertEquals(
+                AdminMessage.ModuleConfigType.SERIAL_CONFIG,
+                gateway.requests.get(1).getGetModuleConfigRequest());
     }
 
     /**
@@ -936,7 +1025,8 @@ class AdminServiceTest {
                 .build();
 
         gateway.enqueueAdminResponse(AdminMessage.newBuilder().build());
-        gateway.enqueueAdminResponse(AdminMessage.newBuilder().setGetConfigResponse(observed).build());
+        gateway.enqueueAdminResponse(
+                AdminMessage.newBuilder().setGetConfigResponse(observed).build());
 
         AdminWriteResult result = service.setConfigResult(requested, true).join();
         assertEquals(AdminWriteStatus.VERIFICATION_FAILED, result.getStatus());
@@ -950,11 +1040,13 @@ class AdminServiceTest {
         StubGateway gateway = new StubGateway(1234);
         AdminService service = new AdminService(gateway);
 
-        gateway.enqueueFailure(new IllegalStateException(
-                "Routing rejected request 42 with status ADMIN_PUBLIC_KEY_UNAUTHORIZED"));
+        gateway.enqueueFailure(
+                new IllegalStateException("Routing rejected request 42 with status ADMIN_PUBLIC_KEY_UNAUTHORIZED"));
 
         ConfigProtos.Config requested = ConfigProtos.Config.newBuilder()
-                .setSecurity(ConfigProtos.Config.SecurityConfig.newBuilder().setAdminChannelEnabled(true).build())
+                .setSecurity(ConfigProtos.Config.SecurityConfig.newBuilder()
+                        .setAdminChannelEnabled(true)
+                        .build())
                 .build();
 
         AdminWriteResult result = service.setConfigResult(requested, false).join();
@@ -972,7 +1064,9 @@ class AdminServiceTest {
         gateway.enqueueFailure(new TimeoutException("Response timeout for: 100"));
 
         ConfigProtos.Config requested = ConfigProtos.Config.newBuilder()
-                .setDisplay(ConfigProtos.Config.DisplayConfig.newBuilder().setScreenOnSecs(30).build())
+                .setDisplay(ConfigProtos.Config.DisplayConfig.newBuilder()
+                        .setScreenOnSecs(30)
+                        .build())
                 .build();
 
         AdminWriteResult result = service.setConfigResult(requested, false).join();
@@ -1018,9 +1112,8 @@ class AdminServiceTest {
         }
 
         @Override
-        public CompletableFuture<MeshProtos.MeshPacket> executeAdminRequest(int destinationId,
-                                                                            AdminMessage adminMsg,
-                                                                            boolean expectAdminAppResponse) {
+        public CompletableFuture<MeshProtos.MeshPacket> executeAdminRequest(
+                int destinationId, AdminMessage adminMsg, boolean expectAdminAppResponse) {
             requests.add(adminMsg);
             Object next = outcomes.pollFirst();
             if (next == null) {

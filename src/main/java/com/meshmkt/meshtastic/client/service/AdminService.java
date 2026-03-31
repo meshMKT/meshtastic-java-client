@@ -4,6 +4,23 @@ import com.google.protobuf.ByteString;
 import com.meshmkt.meshtastic.client.MeshUtils;
 import com.meshmkt.meshtastic.client.ProtocolConstraints;
 import com.meshmkt.meshtastic.client.model.RadioModel;
+import java.nio.charset.StandardCharsets;
+import java.time.Duration;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.EnumMap;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Optional;
+import java.util.Set;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeoutException;
+import java.util.function.Function;
+import java.util.stream.IntStream;
 import lombok.extern.slf4j.Slf4j;
 import org.meshtastic.proto.AdminProtos.AdminMessage;
 import org.meshtastic.proto.AdminProtos.AdminMessage.ConfigType;
@@ -18,24 +35,6 @@ import org.meshtastic.proto.MeshProtos.MeshPacket;
 import org.meshtastic.proto.MeshProtos.NodeInfo;
 import org.meshtastic.proto.MeshProtos.User;
 import org.meshtastic.proto.ModuleConfigProtos.ModuleConfig;
-
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.Comparator;
-import java.util.EnumMap;
-import java.util.LinkedHashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.Objects;
-import java.util.Optional;
-import java.util.Set;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.TimeoutException;
-import java.time.Duration;
-import java.nio.charset.StandardCharsets;
-import java.util.function.Function;
-import java.util.stream.IntStream;
 
 /**
  * Admin/config facade for Meshtastic settings operations.
@@ -67,11 +66,7 @@ public class AdminService {
     private static final Duration OWNER_VERIFY_TIMEOUT = Duration.ofSeconds(10);
     private static final int PRIMARY_CHANNEL_INDEX = 0;
     private static final List<ConfigType> CORE_CONFIG_TYPES = List.of(
-            ConfigType.LORA_CONFIG,
-            ConfigType.DEVICE_CONFIG,
-            ConfigType.DISPLAY_CONFIG,
-            ConfigType.NETWORK_CONFIG
-    );
+            ConfigType.LORA_CONFIG, ConfigType.DEVICE_CONFIG, ConfigType.DISPLAY_CONFIG, ConfigType.NETWORK_CONFIG);
     private static final List<ModuleConfigType> SUPPORTED_MODULE_CONFIG_TYPES = List.of(
             ModuleConfigType.MQTT_CONFIG,
             ModuleConfigType.SERIAL_CONFIG,
@@ -86,8 +81,7 @@ public class AdminService {
             ModuleConfigType.AMBIENTLIGHTING_CONFIG,
             ModuleConfigType.DETECTIONSENSOR_CONFIG,
             ModuleConfigType.PAXCOUNTER_CONFIG,
-            ModuleConfigType.STATUSMESSAGE_CONFIG
-    );
+            ModuleConfigType.STATUSMESSAGE_CONFIG);
 
     private final AdminClientAccess clientAccess;
     private final RadioModel radioModel = new RadioModel();
@@ -203,7 +197,9 @@ public class AdminService {
      * @return future completing with parsed metadata.
      */
     public CompletableFuture<DeviceMetadata> refreshMetadata() {
-        AdminMessage request = snapshotApplier.withSessionIfPresent(AdminMessage.newBuilder().setGetDeviceMetadataRequest(true)).build();
+        AdminMessage request = snapshotApplier
+                .withSessionIfPresent(AdminMessage.newBuilder().setGetDeviceMetadataRequest(true))
+                .build();
         return executeAndParse(request, msg -> {
             if (!msg.hasGetDeviceMetadataResponse()) {
                 throw new IllegalStateException("Missing get_device_metadata_response");
@@ -220,7 +216,9 @@ public class AdminService {
      * @return future completing with parsed owner response.
      */
     public CompletableFuture<User> refreshOwner() {
-        AdminMessage request = snapshotApplier.withSessionIfPresent(AdminMessage.newBuilder().setGetOwnerRequest(true)).build();
+        AdminMessage request = snapshotApplier
+                .withSessionIfPresent(AdminMessage.newBuilder().setGetOwnerRequest(true))
+                .build();
         return executeAndParse(request, msg -> {
             if (!msg.hasGetOwnerResponse()) {
                 throw new IllegalStateException("Missing get_owner_response");
@@ -246,7 +244,9 @@ public class AdminService {
                 : CompletableFuture.completedFuture(null);
 
         return preflight.thenCompose(unused -> {
-            AdminMessage request = snapshotApplier.withSessionIfPresent(AdminMessage.newBuilder().setGetConfigRequest(type)).build();
+            AdminMessage request = snapshotApplier
+                    .withSessionIfPresent(AdminMessage.newBuilder().setGetConfigRequest(type))
+                    .build();
             return executeAndParse(request, msg -> {
                 if (!msg.hasGetConfigResponse()) {
                     throw new IllegalStateException("Missing get_config_response");
@@ -359,8 +359,8 @@ public class AdminService {
      */
     public CompletableFuture<Map<ConfigType, Config>> refreshConfigs(List<ConfigType> types) {
         Set<ConfigType> uniqueTypes = normalizeDistinct(types);
-        CompletableFuture<Map<ConfigType, Config>> chain
-                = CompletableFuture.completedFuture(new EnumMap<>(ConfigType.class));
+        CompletableFuture<Map<ConfigType, Config>> chain =
+                CompletableFuture.completedFuture(new EnumMap<>(ConfigType.class));
 
         for (ConfigType type : uniqueTypes) {
             chain = chain.thenCompose(refreshed -> refreshConfig(type).thenApply(config -> {
@@ -380,7 +380,9 @@ public class AdminService {
      */
     public CompletableFuture<Channel> refreshChannel(int index) {
         validateChannelIndex(index);
-        AdminMessage request = snapshotApplier.withSessionIfPresent(AdminMessage.newBuilder().setGetChannelRequest(index + 1)).build();
+        AdminMessage request = snapshotApplier
+                .withSessionIfPresent(AdminMessage.newBuilder().setGetChannelRequest(index + 1))
+                .build();
         return executeAndParse(request, msg -> {
             if (!msg.hasGetChannelResponse()) {
                 throw new IllegalStateException("Missing get_channel_response");
@@ -415,8 +417,8 @@ public class AdminService {
      */
     public CompletableFuture<List<Channel>> refreshChannels(List<Integer> indexes) {
         List<Integer> normalizedIndexes = normalizeChannelIndexes(indexes);
-        CompletableFuture<List<Channel>> chain
-                = CompletableFuture.completedFuture(new ArrayList<>(normalizedIndexes.size()));
+        CompletableFuture<List<Channel>> chain =
+                CompletableFuture.completedFuture(new ArrayList<>(normalizedIndexes.size()));
 
         for (int index : normalizedIndexes) {
             chain = chain.thenCompose(refreshed -> refreshChannel(index).thenApply(channel -> {
@@ -470,7 +472,9 @@ public class AdminService {
      * @return future completing with parsed module config response.
      */
     public CompletableFuture<ModuleConfig> refreshModuleConfig(ModuleConfigType type) {
-        AdminMessage request = snapshotApplier.withSessionIfPresent(AdminMessage.newBuilder().setGetModuleConfigRequest(type)).build();
+        AdminMessage request = snapshotApplier
+                .withSessionIfPresent(AdminMessage.newBuilder().setGetModuleConfigRequest(type))
+                .build();
         return executeAndParse(request, msg -> {
             if (!msg.hasGetModuleConfigResponse()) {
                 throw new IllegalStateException("Missing get_module_config_response");
@@ -618,8 +622,8 @@ public class AdminService {
      */
     public CompletableFuture<Map<ModuleConfigType, ModuleConfig>> refreshModuleConfigs(List<ModuleConfigType> types) {
         Set<ModuleConfigType> uniqueTypes = normalizeDistinct(types);
-        CompletableFuture<Map<ModuleConfigType, ModuleConfig>> chain
-                = CompletableFuture.completedFuture(new EnumMap<>(ModuleConfigType.class));
+        CompletableFuture<Map<ModuleConfigType, ModuleConfig>> chain =
+                CompletableFuture.completedFuture(new EnumMap<>(ModuleConfigType.class));
 
         for (ModuleConfigType type : uniqueTypes) {
             chain = chain.thenCompose(refreshed -> refreshModuleConfig(type).thenApply(config -> {
@@ -675,29 +679,33 @@ public class AdminService {
      * @param verifyApplied when {@code true}, performs read-back verification.
      * @return future completing with structured write result status.
      */
-    public CompletableFuture<AdminWriteResult> setChannelResult(int index, Channel updatedChannel, boolean verifyApplied) {
+    public CompletableFuture<AdminWriteResult> setChannelResult(
+            int index, Channel updatedChannel, boolean verifyApplied) {
         String operation = "setChannel(" + index + ")";
         return setChannel(index, updatedChannel, verifyApplied)
                 .handle((applied, ex) -> toWriteResult(operation, verifyApplied, Boolean.TRUE.equals(applied), ex));
     }
 
-    private CompletableFuture<Boolean> setChannel(int index,
-                                                  Channel updatedChannel,
-                                                  boolean verifyApplied,
-                                                  boolean allowRetry) {
+    private CompletableFuture<Boolean> setChannel(
+            int index, Channel updatedChannel, boolean verifyApplied, boolean allowRetry) {
         validateChannelIndex(index);
         Channel requestedChannel = updatedChannel.toBuilder().setIndex(index).build();
         ProtocolConstraints.validateChannel(requestedChannel);
         CompletableFuture<Void> preflight = refreshMetadata().thenApply(metadata -> null);
 
-        return preflight.thenCompose(unused -> hydrateChannelFromCurrentSlotIfSparse(index, requestedChannel))
+        return preflight
+                .thenCompose(unused -> hydrateChannelFromCurrentSlotIfSparse(index, requestedChannel))
                 .thenCompose(channelWithIndex -> {
                     if (log.isDebugEnabled()) {
                         log.debug("[ADMIN] setChannel tx payload -> {}", describeChannelForLog(channelWithIndex));
                     }
-                    AdminMessage request = snapshotApplier.withSessionIfPresent(AdminMessage.newBuilder().setSetChannel(channelWithIndex)).build();
-                    // Channel write is a mutating operation: routing NONE is terminal success, routing errors fail fast.
-                    return clientAccess.executeAdminRequest(clientAccess.getSelfNodeId(), request, false)
+                    AdminMessage request = snapshotApplier
+                            .withSessionIfPresent(AdminMessage.newBuilder().setSetChannel(channelWithIndex))
+                            .build();
+                    // Channel write is a mutating operation: routing NONE is terminal success, routing errors fail
+                    // fast.
+                    return clientAccess
+                            .executeAdminRequest(clientAccess.getSelfNodeId(), request, false)
                             .thenCompose(packet -> {
                                 if (!verifyApplied) {
                                     snapshotApplier.applyChannel(channelWithIndex);
@@ -709,12 +717,16 @@ public class AdminService {
                             })
                             .exceptionallyCompose(ex -> {
                                 if (verifyApplied && isRoutingNoResponse(ex)) {
-                                    log.warn("[ADMIN] Channel {} set returned ROUTING NO_RESPONSE; verifying by read-back", index);
+                                    log.warn(
+                                            "[ADMIN] Channel {} set returned ROUTING NO_RESPONSE; verifying by read-back",
+                                            index);
                                     return verifyChannelApplied(index, channelWithIndex);
                                 }
                                 if (allowRetry && verifyApplied) {
-                                    log.warn("[ADMIN] Channel {} set failed/verification failed; refreshing session key and retrying once: {}",
-                                            index, ex.getMessage());
+                                    log.warn(
+                                            "[ADMIN] Channel {} set failed/verification failed; refreshing session key and retrying once: {}",
+                                            index,
+                                            ex.getMessage());
                                     return setChannel(index, updatedChannel, verifyApplied, false);
                                 }
                                 return CompletableFuture.failedFuture(ex);
@@ -724,8 +736,10 @@ public class AdminService {
                                     return CompletableFuture.completedFuture(true);
                                 }
                                 if (verifyApplied && allowRetry) {
-                                    log.warn("[ADMIN] Channel {} write accepted but verification did not match; " +
-                                            "refreshing session key and retrying write once.", index);
+                                    log.warn(
+                                            "[ADMIN] Channel {} write accepted but verification did not match; "
+                                                    + "refreshing session key and retrying write once.",
+                                            index);
                                     return setChannel(index, updatedChannel, true, false);
                                 }
                                 return CompletableFuture.completedFuture(Boolean.TRUE.equals(applied));
@@ -758,8 +772,11 @@ public class AdminService {
     public CompletableFuture<Boolean> setConfig(Config config, boolean verifyApplied) {
         Objects.requireNonNull(config, "config must not be null");
 
-        AdminMessage request = snapshotApplier.withSessionIfPresent(AdminMessage.newBuilder().setSetConfig(config)).build();
-        return clientAccess.executeAdminRequest(clientAccess.getSelfNodeId(), request, false)
+        AdminMessage request = snapshotApplier
+                .withSessionIfPresent(AdminMessage.newBuilder().setSetConfig(config))
+                .build();
+        return clientAccess
+                .executeAdminRequest(clientAccess.getSelfNodeId(), request, false)
                 .thenCompose(packet -> {
                     snapshotApplier.applyConfig(config);
                     if (!verifyApplied) {
@@ -772,7 +789,8 @@ public class AdminService {
                     }
 
                     return verificationEngine.verifyWithPolicy("setConfig", () -> refreshConfigs(impactedTypes)
-                            .thenApply(observed -> verificationEngine.isConfigApplied(config, observed, impactedTypes)));
+                            .thenApply(
+                                    observed -> verificationEngine.isConfigApplied(config, observed, impactedTypes)));
                 })
                 .exceptionallyCompose(ex -> {
                     if (!verifyApplied || !isRoutingNoResponse(ex)) {
@@ -785,7 +803,8 @@ public class AdminService {
                         return CompletableFuture.completedFuture(false);
                     }
                     return verificationEngine.verifyWithPolicy("setConfig", () -> refreshConfigs(impactedTypes)
-                            .thenApply(observed -> verificationEngine.isConfigApplied(config, observed, impactedTypes)));
+                            .thenApply(
+                                    observed -> verificationEngine.isConfigApplied(config, observed, impactedTypes)));
                 });
     }
 
@@ -798,7 +817,8 @@ public class AdminService {
      */
     public CompletableFuture<AdminWriteResult> setModuleConfigResult(ModuleConfig moduleConfig, boolean verifyApplied) {
         return setModuleConfig(moduleConfig, verifyApplied)
-                .handle((applied, ex) -> toWriteResult("setModuleConfig", verifyApplied, Boolean.TRUE.equals(applied), ex));
+                .handle((applied, ex) ->
+                        toWriteResult("setModuleConfig", verifyApplied, Boolean.TRUE.equals(applied), ex));
     }
 
     /**
@@ -817,25 +837,34 @@ public class AdminService {
                     new IllegalArgumentException("moduleConfig must include a concrete payload variant"));
         }
 
-        AdminMessage request = snapshotApplier.withSessionIfPresent(AdminMessage.newBuilder().setSetModuleConfig(moduleConfig)).build();
-        return clientAccess.executeAdminRequest(clientAccess.getSelfNodeId(), request, false)
+        AdminMessage request = snapshotApplier
+                .withSessionIfPresent(AdminMessage.newBuilder().setSetModuleConfig(moduleConfig))
+                .build();
+        return clientAccess
+                .executeAdminRequest(clientAccess.getSelfNodeId(), request, false)
                 .thenCompose(packet -> {
                     snapshotApplier.applyModuleConfig(moduleConfig);
                     if (!verifyApplied) {
                         return CompletableFuture.completedFuture(true);
                     }
 
-                    return verificationEngine.verifyWithPolicy("setModuleConfig(" + moduleType + ")", () -> refreshModuleConfig(moduleType)
-                            .thenApply(observed -> verificationEngine.isModuleConfigApplied(moduleConfig, observed)));
+                    return verificationEngine.verifyWithPolicy(
+                            "setModuleConfig(" + moduleType + ")", () -> refreshModuleConfig(moduleType)
+                                    .thenApply(observed ->
+                                            verificationEngine.isModuleConfigApplied(moduleConfig, observed)));
                 })
                 .exceptionallyCompose(ex -> {
                     if (!verifyApplied || !isRoutingNoResponse(ex)) {
                         return CompletableFuture.failedFuture(ex);
                     }
 
-                    log.warn("[ADMIN] setModuleConfig returned ROUTING NO_RESPONSE; verifying by read-back for {}", moduleType);
-                    return verificationEngine.verifyWithPolicy("setModuleConfig(" + moduleType + ")", () -> refreshModuleConfig(moduleType)
-                            .thenApply(observed -> verificationEngine.isModuleConfigApplied(moduleConfig, observed)));
+                    log.warn(
+                            "[ADMIN] setModuleConfig returned ROUTING NO_RESPONSE; verifying by read-back for {}",
+                            moduleType);
+                    return verificationEngine.verifyWithPolicy(
+                            "setModuleConfig(" + moduleType + ")", () -> refreshModuleConfig(moduleType)
+                                    .thenApply(observed ->
+                                            verificationEngine.isModuleConfigApplied(moduleConfig, observed)));
                 });
     }
 
@@ -848,7 +877,8 @@ public class AdminService {
      */
     public CompletableFuture<Boolean> setMqttConfig(ModuleConfig.MQTTConfig mqttConfig, boolean verifyApplied) {
         Objects.requireNonNull(mqttConfig, "mqttConfig must not be null");
-        ModuleConfig moduleConfig = ModuleConfig.newBuilder().setMqtt(mqttConfig).build();
+        ModuleConfig moduleConfig =
+                ModuleConfig.newBuilder().setMqtt(mqttConfig).build();
         return setModuleConfig(moduleConfig, verifyApplied);
     }
 
@@ -859,7 +889,8 @@ public class AdminService {
      * @param verifyApplied when {@code true}, verifies by read-back.
      * @return future completing with write/verification result.
      */
-    public CompletableFuture<Boolean> setSerialModuleConfig(ModuleConfig.SerialConfig serialConfig, boolean verifyApplied) {
+    public CompletableFuture<Boolean> setSerialModuleConfig(
+            ModuleConfig.SerialConfig serialConfig, boolean verifyApplied) {
         Objects.requireNonNull(serialConfig, "serialConfig must not be null");
         return setModuleConfig(ModuleConfig.newBuilder().setSerial(serialConfig).build(), verifyApplied);
     }
@@ -871,10 +902,11 @@ public class AdminService {
      * @param verifyApplied when {@code true}, verifies by read-back.
      * @return future completing with write/verification result.
      */
-    public CompletableFuture<Boolean> setExternalNotificationModuleConfig(ModuleConfig.ExternalNotificationConfig config,
-                                                                          boolean verifyApplied) {
+    public CompletableFuture<Boolean> setExternalNotificationModuleConfig(
+            ModuleConfig.ExternalNotificationConfig config, boolean verifyApplied) {
         Objects.requireNonNull(config, "externalNotificationConfig must not be null");
-        return setModuleConfig(ModuleConfig.newBuilder().setExternalNotification(config).build(), verifyApplied);
+        return setModuleConfig(
+                ModuleConfig.newBuilder().setExternalNotification(config).build(), verifyApplied);
     }
 
     /**
@@ -884,8 +916,8 @@ public class AdminService {
      * @param verifyApplied when {@code true}, verifies by read-back.
      * @return future completing with write/verification result.
      */
-    public CompletableFuture<Boolean> setStoreForwardModuleConfig(ModuleConfig.StoreForwardConfig config,
-                                                                  boolean verifyApplied) {
+    public CompletableFuture<Boolean> setStoreForwardModuleConfig(
+            ModuleConfig.StoreForwardConfig config, boolean verifyApplied) {
         Objects.requireNonNull(config, "storeForwardConfig must not be null");
         return setModuleConfig(ModuleConfig.newBuilder().setStoreForward(config).build(), verifyApplied);
     }
@@ -897,7 +929,8 @@ public class AdminService {
      * @param verifyApplied when {@code true}, verifies by read-back.
      * @return future completing with write/verification result.
      */
-    public CompletableFuture<Boolean> setRangeTestModuleConfig(ModuleConfig.RangeTestConfig config, boolean verifyApplied) {
+    public CompletableFuture<Boolean> setRangeTestModuleConfig(
+            ModuleConfig.RangeTestConfig config, boolean verifyApplied) {
         Objects.requireNonNull(config, "rangeTestConfig must not be null");
         return setModuleConfig(ModuleConfig.newBuilder().setRangeTest(config).build(), verifyApplied);
     }
@@ -909,7 +942,8 @@ public class AdminService {
      * @param verifyApplied when {@code true}, verifies by read-back.
      * @return future completing with write/verification result.
      */
-    public CompletableFuture<Boolean> setTelemetryModuleConfig(ModuleConfig.TelemetryConfig config, boolean verifyApplied) {
+    public CompletableFuture<Boolean> setTelemetryModuleConfig(
+            ModuleConfig.TelemetryConfig config, boolean verifyApplied) {
         Objects.requireNonNull(config, "telemetryConfig must not be null");
         return setModuleConfig(ModuleConfig.newBuilder().setTelemetry(config).build(), verifyApplied);
     }
@@ -921,10 +955,11 @@ public class AdminService {
      * @param verifyApplied when {@code true}, verifies by read-back.
      * @return future completing with write/verification result.
      */
-    public CompletableFuture<Boolean> setCannedMessageModuleConfig(ModuleConfig.CannedMessageConfig config,
-                                                                   boolean verifyApplied) {
+    public CompletableFuture<Boolean> setCannedMessageModuleConfig(
+            ModuleConfig.CannedMessageConfig config, boolean verifyApplied) {
         Objects.requireNonNull(config, "cannedMessageConfig must not be null");
-        return setModuleConfig(ModuleConfig.newBuilder().setCannedMessage(config).build(), verifyApplied);
+        return setModuleConfig(
+                ModuleConfig.newBuilder().setCannedMessage(config).build(), verifyApplied);
     }
 
     /**
@@ -946,10 +981,11 @@ public class AdminService {
      * @param verifyApplied when {@code true}, verifies by read-back.
      * @return future completing with write/verification result.
      */
-    public CompletableFuture<Boolean> setRemoteHardwareModuleConfig(ModuleConfig.RemoteHardwareConfig config,
-                                                                    boolean verifyApplied) {
+    public CompletableFuture<Boolean> setRemoteHardwareModuleConfig(
+            ModuleConfig.RemoteHardwareConfig config, boolean verifyApplied) {
         Objects.requireNonNull(config, "remoteHardwareConfig must not be null");
-        return setModuleConfig(ModuleConfig.newBuilder().setRemoteHardware(config).build(), verifyApplied);
+        return setModuleConfig(
+                ModuleConfig.newBuilder().setRemoteHardware(config).build(), verifyApplied);
     }
 
     /**
@@ -959,8 +995,8 @@ public class AdminService {
      * @param verifyApplied when {@code true}, verifies by read-back.
      * @return future completing with write/verification result.
      */
-    public CompletableFuture<Boolean> setNeighborInfoModuleConfig(ModuleConfig.NeighborInfoConfig config,
-                                                                  boolean verifyApplied) {
+    public CompletableFuture<Boolean> setNeighborInfoModuleConfig(
+            ModuleConfig.NeighborInfoConfig config, boolean verifyApplied) {
         Objects.requireNonNull(config, "neighborInfoConfig must not be null");
         return setModuleConfig(ModuleConfig.newBuilder().setNeighborInfo(config).build(), verifyApplied);
     }
@@ -972,10 +1008,11 @@ public class AdminService {
      * @param verifyApplied when {@code true}, verifies by read-back.
      * @return future completing with write/verification result.
      */
-    public CompletableFuture<Boolean> setAmbientLightingModuleConfig(ModuleConfig.AmbientLightingConfig config,
-                                                                     boolean verifyApplied) {
+    public CompletableFuture<Boolean> setAmbientLightingModuleConfig(
+            ModuleConfig.AmbientLightingConfig config, boolean verifyApplied) {
         Objects.requireNonNull(config, "ambientLightingConfig must not be null");
-        return setModuleConfig(ModuleConfig.newBuilder().setAmbientLighting(config).build(), verifyApplied);
+        return setModuleConfig(
+                ModuleConfig.newBuilder().setAmbientLighting(config).build(), verifyApplied);
     }
 
     /**
@@ -985,10 +1022,11 @@ public class AdminService {
      * @param verifyApplied when {@code true}, verifies by read-back.
      * @return future completing with write/verification result.
      */
-    public CompletableFuture<Boolean> setDetectionSensorModuleConfig(ModuleConfig.DetectionSensorConfig config,
-                                                                     boolean verifyApplied) {
+    public CompletableFuture<Boolean> setDetectionSensorModuleConfig(
+            ModuleConfig.DetectionSensorConfig config, boolean verifyApplied) {
         Objects.requireNonNull(config, "detectionSensorConfig must not be null");
-        return setModuleConfig(ModuleConfig.newBuilder().setDetectionSensor(config).build(), verifyApplied);
+        return setModuleConfig(
+                ModuleConfig.newBuilder().setDetectionSensor(config).build(), verifyApplied);
     }
 
     /**
@@ -998,8 +1036,8 @@ public class AdminService {
      * @param verifyApplied when {@code true}, verifies by read-back.
      * @return future completing with write/verification result.
      */
-    public CompletableFuture<Boolean> setPaxcounterModuleConfig(ModuleConfig.PaxcounterConfig config,
-                                                                boolean verifyApplied) {
+    public CompletableFuture<Boolean> setPaxcounterModuleConfig(
+            ModuleConfig.PaxcounterConfig config, boolean verifyApplied) {
         Objects.requireNonNull(config, "paxcounterConfig must not be null");
         return setModuleConfig(ModuleConfig.newBuilder().setPaxcounter(config).build(), verifyApplied);
     }
@@ -1011,10 +1049,11 @@ public class AdminService {
      * @param verifyApplied when {@code true}, verifies by read-back.
      * @return future completing with write/verification result.
      */
-    public CompletableFuture<Boolean> setStatusMessageModuleConfig(ModuleConfig.StatusMessageConfig config,
-                                                                   boolean verifyApplied) {
+    public CompletableFuture<Boolean> setStatusMessageModuleConfig(
+            ModuleConfig.StatusMessageConfig config, boolean verifyApplied) {
         Objects.requireNonNull(config, "statusMessageConfig must not be null");
-        return setModuleConfig(ModuleConfig.newBuilder().setStatusmessage(config).build(), verifyApplied);
+        return setModuleConfig(
+                ModuleConfig.newBuilder().setStatusmessage(config).build(), verifyApplied);
     }
 
     /**
@@ -1109,7 +1148,8 @@ public class AdminService {
      * @param verifyApplied when {@code true}, verifies by read-back.
      * @return future completing with write/verification result.
      */
-    public CompletableFuture<Boolean> setBluetoothConfig(Config.BluetoothConfig bluetoothConfig, boolean verifyApplied) {
+    public CompletableFuture<Boolean> setBluetoothConfig(
+            Config.BluetoothConfig bluetoothConfig, boolean verifyApplied) {
         Objects.requireNonNull(bluetoothConfig, "bluetoothConfig must not be null");
         return setConfig(Config.newBuilder().setBluetooth(bluetoothConfig).build(), verifyApplied);
     }
@@ -1121,7 +1161,8 @@ public class AdminService {
      * @param verifyApplied when {@code true}, verifies by read-back.
      * @return future completing with write/verification result.
      */
-    public CompletableFuture<Boolean> setSessionKeyConfig(Config.SessionkeyConfig sessionKeyConfig, boolean verifyApplied) {
+    public CompletableFuture<Boolean> setSessionKeyConfig(
+            Config.SessionkeyConfig sessionKeyConfig, boolean verifyApplied) {
         Objects.requireNonNull(sessionKeyConfig, "sessionKeyConfig must not be null");
         return setConfig(Config.newBuilder().setSessionkey(sessionKeyConfig).build(), verifyApplied);
     }
@@ -1152,12 +1193,12 @@ public class AdminService {
      */
     public CompletableFuture<Boolean> setChannelName(int index, String channelName, boolean verifyApplied) {
         Objects.requireNonNull(channelName, "channelName must not be null");
-        return resolveChannelForUpdate(index)
-                .thenCompose(baseChannel -> {
-                    ChannelSettings settings = baseChannel.getSettings().toBuilder().setName(channelName).build();
-                    Channel updated = baseChannel.toBuilder().setSettings(settings).build();
-                    return setChannel(index, updated, verifyApplied);
-                });
+        return resolveChannelForUpdate(index).thenCompose(baseChannel -> {
+            ChannelSettings settings =
+                    baseChannel.getSettings().toBuilder().setName(channelName).build();
+            Channel updated = baseChannel.toBuilder().setSettings(settings).build();
+            return setChannel(index, updated, verifyApplied);
+        });
     }
 
     /**
@@ -1181,12 +1222,12 @@ public class AdminService {
      */
     public CompletableFuture<Boolean> setChannelPsk(int index, ByteString psk, boolean verifyApplied) {
         ProtocolConstraints.validateChannelPsk(psk);
-        return resolveChannelForUpdate(index)
-                .thenCompose(baseChannel -> {
-                    ChannelSettings settings = baseChannel.getSettings().toBuilder().setPsk(psk).build();
-                    Channel updated = baseChannel.toBuilder().setSettings(settings).build();
-                    return setChannel(index, updated, verifyApplied);
-                });
+        return resolveChannelForUpdate(index).thenCompose(baseChannel -> {
+            ChannelSettings settings =
+                    baseChannel.getSettings().toBuilder().setPsk(psk).build();
+            Channel updated = baseChannel.toBuilder().setSettings(settings).build();
+            return setChannel(index, updated, verifyApplied);
+        });
     }
 
     /**
@@ -1312,10 +1353,8 @@ public class AdminService {
      * @param verifyApplied when {@code true}, performs read-back verification before completing.
      * @return future completing with structured write result status.
      */
-    public CompletableFuture<AdminWriteResult> setOwnerResult(int targetNodeId,
-                                                              String longName,
-                                                              String shortName,
-                                                              boolean verifyApplied) {
+    public CompletableFuture<AdminWriteResult> setOwnerResult(
+            int targetNodeId, String longName, String shortName, boolean verifyApplied) {
         String operation = "setOwner(" + MeshUtils.formatId(targetNodeId) + ")";
         return setOwner(targetNodeId, longName, shortName, verifyApplied)
                 .handle((applied, ex) -> toWriteResult(operation, verifyApplied, Boolean.TRUE.equals(applied), ex));
@@ -1337,26 +1376,26 @@ public class AdminService {
      * @param verifyApplied when {@code true}, performs read-back verification before completing.
      * @return future completing with {@code true} when accepted and verification passed (if enabled).
      */
-    public CompletableFuture<Boolean> setOwner(int targetNodeId,
-                                               String longName,
-                                               String shortName,
-                                               boolean verifyApplied) {
-        User updatedUser = User.newBuilder()
-                .setLongName(longName)
-                .setShortName(shortName)
+    public CompletableFuture<Boolean> setOwner(
+            int targetNodeId, String longName, String shortName, boolean verifyApplied) {
+        User updatedUser =
+                User.newBuilder().setLongName(longName).setShortName(shortName).build();
+
+        AdminMessage request = snapshotApplier
+                .withSessionIfPresent(AdminMessage.newBuilder().setSetOwner(updatedUser))
                 .build();
 
-        AdminMessage request = snapshotApplier.withSessionIfPresent(AdminMessage.newBuilder().setSetOwner(updatedUser)).build();
-
         log.info("[ADMIN] Requesting rename for !{} to {}", Integer.toHexString(targetNodeId), longName);
-        return clientAccess.executeAdminRequest(targetNodeId, request, false)
+        return clientAccess
+                .executeAdminRequest(targetNodeId, request, false)
                 .thenCompose(packet -> {
                     snapshotApplier.applyOwner(updatedUser);
                     log.info("[ADMIN] Rename accepted by radio for !{}", Integer.toHexString(targetNodeId));
                     if (!verifyApplied) {
                         return CompletableFuture.completedFuture(true);
                     }
-                    return verificationEngine.verifyWithPolicy("setOwner(" + MeshUtils.formatId(targetNodeId) + ")",
+                    return verificationEngine.verifyWithPolicy(
+                            "setOwner(" + MeshUtils.formatId(targetNodeId) + ")",
                             () -> verifyOwnerApplied(targetNodeId, longName, shortName));
                 })
                 .exceptionallyCompose(ex -> {
@@ -1364,9 +1403,11 @@ public class AdminService {
                         return CompletableFuture.failedFuture(ex);
                     }
 
-                    log.warn("[ADMIN] setOwner returned ROUTING NO_RESPONSE for !{}; verifying by read-back",
+                    log.warn(
+                            "[ADMIN] setOwner returned ROUTING NO_RESPONSE for !{}; verifying by read-back",
                             Integer.toHexString(targetNodeId));
-                    return verificationEngine.verifyWithPolicy("setOwner(" + MeshUtils.formatId(targetNodeId) + ")",
+                    return verificationEngine.verifyWithPolicy(
+                            "setOwner(" + MeshUtils.formatId(targetNodeId) + ")",
                             () -> verifyOwnerApplied(targetNodeId, longName, shortName));
                 });
     }
@@ -1382,8 +1423,9 @@ public class AdminService {
                 .setFactoryResetDevice(0)
                 .build();
         log.warn("[ADMIN] Sending Full Factory Reset command!");
-        return clientAccess.executeAdminRequest(clientAccess.getSelfNodeId(), request, false).thenAccept(packet -> {
-        });
+        return clientAccess
+                .executeAdminRequest(clientAccess.getSelfNodeId(), request, false)
+                .thenAccept(packet -> {});
     }
 
     /**
@@ -1393,11 +1435,14 @@ public class AdminService {
      * @return future completing with {@code true} when accepted by the radio.
      */
     public CompletableFuture<Boolean> reboot(int seconds) {
-        AdminMessage request = snapshotApplier.withSessionIfPresent(
-                AdminMessage.newBuilder().setRebootSeconds(seconds == 0 ? 1 : seconds)).build();
+        AdminMessage request = snapshotApplier
+                .withSessionIfPresent(AdminMessage.newBuilder().setRebootSeconds(seconds == 0 ? 1 : seconds))
+                .build();
 
         log.info("[ADMIN] Requesting radio reboot in {} seconds...", seconds);
-        return clientAccess.executeAdminRequest(clientAccess.getSelfNodeId(), request, false).thenApply(packet -> true);
+        return clientAccess
+                .executeAdminRequest(clientAccess.getSelfNodeId(), request, false)
+                .thenApply(packet -> true);
     }
 
     /**
@@ -1510,16 +1555,17 @@ public class AdminService {
      * @param expectedShortName expected short name.
      * @return future completing with {@code true} when read-back values match.
      */
-    private CompletableFuture<Boolean> verifyOwnerApplied(int targetNodeId,
-                                                          String expectedLongName,
-                                                          String expectedShortName) {
+    private CompletableFuture<Boolean> verifyOwnerApplied(
+            int targetNodeId, String expectedLongName, String expectedShortName) {
         if (targetNodeId == clientAccess.getSelfNodeId()) {
-            return refreshOwner().thenApply(owner -> owner != null
-                    && Objects.equals(expectedLongName, owner.getLongName())
-                    && Objects.equals(expectedShortName, owner.getShortName()));
+            return refreshOwner()
+                    .thenApply(owner -> owner != null
+                            && Objects.equals(expectedLongName, owner.getLongName())
+                            && Objects.equals(expectedShortName, owner.getShortName()));
         }
 
-        return clientAccess.requestNodeInfoAwaitPayloadOrSnapshot(targetNodeId, OWNER_VERIFY_TIMEOUT)
+        return clientAccess
+                .requestNodeInfoAwaitPayloadOrSnapshot(targetNodeId, OWNER_VERIFY_TIMEOUT)
                 .thenApply(node -> node != null
                         && Objects.equals(expectedLongName, node.getLongName())
                         && Objects.equals(expectedShortName, node.getShortName()))
@@ -1535,7 +1581,8 @@ public class AdminService {
      */
     private <T> CompletableFuture<T> executeAndParse(AdminMessage request, Function<AdminMessage, T> extractor) {
         // Read operations must wait for correlated ADMIN_APP payloads, not just ROUTING NONE status.
-        return clientAccess.executeAdminRequest(clientAccess.getSelfNodeId(), request, true)
+        return clientAccess
+                .executeAdminRequest(clientAccess.getSelfNodeId(), request, true)
                 .thenApply(this::parseAdminMessage)
                 .thenApply(msg -> {
                     snapshotApplier.updateSessionKey(msg);
@@ -1574,21 +1621,25 @@ public class AdminService {
      * @return future completing with {@code true} when expected channel state is observed.
      */
     private CompletableFuture<Boolean> verifyChannelApplied(int index, Channel expected) {
-        return verificationEngine.verifyWithPolicy("setChannel(" + index + ")", () -> refreshChannel(index).thenApply(appliedChannel -> {
-            if (log.isDebugEnabled()) {
-                log.debug("[ADMIN] setChannel verify expected -> {}", describeChannelForLog(expected));
-                log.debug("[ADMIN] setChannel verify observed -> {}", describeChannelForLog(appliedChannel));
-            }
-            boolean applied = verificationEngine.isChannelApplied(expected, appliedChannel);
+        return verificationEngine.verifyWithPolicy(
+                "setChannel(" + index + ")", () -> refreshChannel(index).thenApply(appliedChannel -> {
+                    if (log.isDebugEnabled()) {
+                        log.debug("[ADMIN] setChannel verify expected -> {}", describeChannelForLog(expected));
+                        log.debug("[ADMIN] setChannel verify observed -> {}", describeChannelForLog(appliedChannel));
+                    }
+                    boolean applied = verificationEngine.isChannelApplied(expected, appliedChannel);
 
-            if (applied) {
-                log.info("[ADMIN] Channel {} updated successfully", index);
-            } else {
-                log.debug("[ADMIN] Channel {} update not yet reflected (requested role={}, observed role={})",
-                        index, expected.getRole(), appliedChannel.getRole());
-            }
-            return applied;
-        }));
+                    if (applied) {
+                        log.info("[ADMIN] Channel {} updated successfully", index);
+                    } else {
+                        log.debug(
+                                "[ADMIN] Channel {} update not yet reflected (requested role={}, observed role={})",
+                                index,
+                                expected.getRole(),
+                                appliedChannel.getRole());
+                    }
+                    return applied;
+                }));
     }
 
     /**
@@ -1614,19 +1665,27 @@ public class AdminService {
                             .mergeFrom(requested.getSettings())
                             .build();
                     if (log.isDebugEnabled()) {
-                        log.debug("[ADMIN] setChannel sparse payload detected for slot {}. " +
-                                        "Hydrating with cached slot settings before write.", index);
+                        log.debug(
+                                "[ADMIN] setChannel sparse payload detected for slot {}. "
+                                        + "Hydrating with cached slot settings before write.",
+                                index);
                         log.debug("[ADMIN] setChannel cached base -> {}", describeChannelForLog(current));
                         log.debug("[ADMIN] setChannel requested sparse -> {}", describeChannelForLog(requested));
-                        log.debug("[ADMIN] setChannel hydrated payload -> {}",
-                                describeChannelForLog(requested.toBuilder().setSettings(merged).build()));
+                        log.debug(
+                                "[ADMIN] setChannel hydrated payload -> {}",
+                                describeChannelForLog(requested.toBuilder()
+                                        .setSettings(merged)
+                                        .build()));
                     }
-                    return CompletableFuture.completedFuture(requested.toBuilder().setSettings(merged).build());
+                    return CompletableFuture.completedFuture(
+                            requested.toBuilder().setSettings(merged).build());
                 })
                 .orElseGet(() -> {
                     if (log.isDebugEnabled()) {
-                        log.debug("[ADMIN] setChannel sparse payload detected for slot {} but no cached slot found. " +
-                                "Sending payload as-is.", index);
+                        log.debug(
+                                "[ADMIN] setChannel sparse payload detected for slot {} but no cached slot found. "
+                                        + "Sending payload as-is.",
+                                index);
                     }
                     return CompletableFuture.completedFuture(requested);
                 });
@@ -1677,9 +1736,7 @@ public class AdminService {
      */
     private CompletableFuture<Channel> resolveChannelForUpdate(int index) {
         validateChannelIndex(index);
-        return getChannelSnapshot(index)
-                .map(CompletableFuture::completedFuture)
-                .orElseGet(() -> refreshChannel(index));
+        return getChannelSnapshot(index).map(CompletableFuture::completedFuture).orElseGet(() -> refreshChannel(index));
     }
 
     /**
@@ -1708,15 +1765,15 @@ public class AdminService {
      */
     private List<Integer> normalizeChannelIndexes(List<Integer> indexes) {
         if (indexes == null || indexes.isEmpty()) {
-            return IntStream.range(0, ProtocolConstraints.MAX_CHANNEL_SLOTS).boxed().toList();
+            return IntStream.range(0, ProtocolConstraints.MAX_CHANNEL_SLOTS)
+                    .boxed()
+                    .toList();
         }
         Set<Integer> distinct = new LinkedHashSet<>();
-        indexes.stream()
-                .filter(Objects::nonNull)
-                .forEach(index -> {
-                    validateChannelIndex(index);
-                    distinct.add(index);
-                });
+        indexes.stream().filter(Objects::nonNull).forEach(index -> {
+            validateChannelIndex(index);
+            distinct.add(index);
+        });
         if (distinct.isEmpty()) {
             return List.of();
         }
@@ -1753,32 +1810,32 @@ public class AdminService {
      * @param error optional failure throwable from write path.
      * @return canonical write result payload.
      */
-    private AdminWriteResult toWriteResult(String operation,
-                                           boolean verificationRequested,
-                                           boolean applied,
-                                           Throwable error) {
+    private AdminWriteResult toWriteResult(
+            String operation, boolean verificationRequested, boolean applied, Throwable error) {
         if (error == null) {
             if (verificationRequested) {
                 if (applied) {
-                    return new AdminWriteResult(AdminWriteStatus.VERIFIED_APPLIED, operation,
-                            "Write accepted and verified by read-back.");
+                    return new AdminWriteResult(
+                            AdminWriteStatus.VERIFIED_APPLIED, operation, "Write accepted and verified by read-back.");
                 }
-                return new AdminWriteResult(AdminWriteStatus.VERIFICATION_FAILED, operation,
+                return new AdminWriteResult(
+                        AdminWriteStatus.VERIFICATION_FAILED,
+                        operation,
                         "Write accepted but verification read-back did not match requested state.");
             }
 
             if (applied) {
-                return new AdminWriteResult(AdminWriteStatus.ACCEPTED, operation,
-                        "Write accepted by radio.");
+                return new AdminWriteResult(AdminWriteStatus.ACCEPTED, operation, "Write accepted by radio.");
             }
 
-            return new AdminWriteResult(AdminWriteStatus.FAILED, operation,
-                    "Write did not report acceptance.");
+            return new AdminWriteResult(AdminWriteStatus.FAILED, operation, "Write did not report acceptance.");
         }
 
         Throwable root = unwrap(error);
         if (root instanceof TimeoutException) {
-            return new AdminWriteResult(AdminWriteStatus.TIMEOUT, operation,
+            return new AdminWriteResult(
+                    AdminWriteStatus.TIMEOUT,
+                    operation,
                     root.getMessage() == null ? "Write timed out." : root.getMessage());
         }
 

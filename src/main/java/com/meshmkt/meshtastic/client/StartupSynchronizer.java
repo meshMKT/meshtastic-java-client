@@ -1,9 +1,6 @@
 package com.meshmkt.meshtastic.client;
 
 import com.meshmkt.meshtastic.client.event.StartupState;
-import lombok.extern.slf4j.Slf4j;
-import org.meshtastic.proto.MeshProtos.FromRadio;
-
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ScheduledExecutorService;
@@ -13,6 +10,8 @@ import java.util.function.Consumer;
 import java.util.function.IntConsumer;
 import java.util.function.IntPredicate;
 import java.util.function.IntSupplier;
+import lombok.extern.slf4j.Slf4j;
+import org.meshtastic.proto.MeshProtos.FromRadio;
 
 /**
  * Manages startup synchronization phase state, barrier handling, and want-config sequencing.
@@ -60,8 +59,7 @@ final class StartupSynchronizer {
             Consumer<StartupState> startupStateConsumer,
             IntConsumer wantConfigSender,
             IntConsumer selfNodeObserver,
-            Runnable readyAction
-    ) {
+            Runnable readyAction) {
         this.scheduler = scheduler;
         this.startupSyncTimeoutSeconds = startupSyncTimeoutSeconds;
         this.startupStateConsumer = startupStateConsumer;
@@ -111,10 +109,7 @@ final class StartupSynchronizer {
      * @param currentSelfNodeIdSupplier supplier for the current known self node id.
      */
     synchronized void processSignals(
-            FromRadio fromRadio,
-            IntPredicate knownSelfNodeIdPredicate,
-            IntSupplier currentSelfNodeIdSupplier
-    ) {
+            FromRadio fromRadio, IntPredicate knownSelfNodeIdPredicate, IntSupplier currentSelfNodeIdSupplier) {
         if (startupSyncPhase == 0 || fromRadio == null) {
             return;
         }
@@ -136,11 +131,13 @@ final class StartupSynchronizer {
         }
 
         int completedId = fromRadio.getConfigCompleteId();
-        log.debug("[SYNC] Observed config_complete_id={} while phase={} waiting_for={}",
-                completedId, startupSyncPhase, currentSyncId);
+        log.debug(
+                "[SYNC] Observed config_complete_id={} while phase={} waiting_for={}",
+                completedId,
+                startupSyncPhase,
+                currentSyncId);
         if (completedId != currentSyncId) {
-            log.debug("[SYNC] Ignoring stale config_complete_id={} while waiting for {}",
-                    completedId, currentSyncId);
+            log.debug("[SYNC] Ignoring stale config_complete_id={} while waiting for {}", completedId, currentSyncId);
             return;
         }
 
@@ -216,29 +213,37 @@ final class StartupSynchronizer {
         final int expectedNonce = currentSyncId;
         final int expectedPhase = startupSyncPhase;
         final int sendCount = ++currentPhaseSendCount;
-        startupStateConsumer.accept(startupSyncPhase == 1
-                ? StartupState.SYNC_LOCAL_CONFIG
-                : StartupState.SYNC_MESH_CONFIG);
+        startupStateConsumer.accept(
+                startupSyncPhase == 1 ? StartupState.SYNC_LOCAL_CONFIG : StartupState.SYNC_MESH_CONFIG);
 
-        log.info("[SYNC] Starting phase {} with want_config_id={} (send {}/{})",
-                expectedPhase, expectedNonce, sendCount, MAX_STARTUP_REQUEST_SENDS_PER_PHASE);
+        log.info(
+                "[SYNC] Starting phase {} with want_config_id={} (send {}/{})",
+                expectedPhase,
+                expectedNonce,
+                sendCount,
+                MAX_STARTUP_REQUEST_SENDS_PER_PHASE);
         wantConfigSender.accept(expectedNonce);
 
         if (sendCount < MAX_STARTUP_REQUEST_SENDS_PER_PHASE) {
-            scheduler.schedule(() -> retryWantConfigIfStillWaiting(expectedPhase, expectedNonce, sendCount),
+            scheduler.schedule(
+                    () -> retryWantConfigIfStillWaiting(expectedPhase, expectedNonce, sendCount),
                     STARTUP_REQUEST_NUDGE_DELAY_MS,
                     TimeUnit.MILLISECONDS);
         }
 
-        scheduler.schedule(() -> {
-            CompletableFuture<Void> barrier = startupSyncBarrier;
-            if (barrier != null && !barrier.isDone()
-                    && startupSyncPhase == expectedPhase
-                    && currentSyncId == expectedNonce) {
-                barrier.completeExceptionally(new TimeoutException(
-                        "Startup sync timeout (phase " + expectedPhase + ", nonce " + expectedNonce + ")"));
-            }
-        }, startupSyncTimeoutSeconds, TimeUnit.SECONDS);
+        scheduler.schedule(
+                () -> {
+                    CompletableFuture<Void> barrier = startupSyncBarrier;
+                    if (barrier != null
+                            && !barrier.isDone()
+                            && startupSyncPhase == expectedPhase
+                            && currentSyncId == expectedNonce) {
+                        barrier.completeExceptionally(new TimeoutException(
+                                "Startup sync timeout (phase " + expectedPhase + ", nonce " + expectedNonce + ")"));
+                    }
+                },
+                startupSyncTimeoutSeconds,
+                TimeUnit.SECONDS);
     }
 
     /**
@@ -252,7 +257,8 @@ final class StartupSynchronizer {
      * @param expectedNonce want-config id sent for that phase.
      * @param sendCountAtSchedule send count captured when the nudge was scheduled.
      */
-    private synchronized void retryWantConfigIfStillWaiting(int expectedPhase, int expectedNonce, int sendCountAtSchedule) {
+    private synchronized void retryWantConfigIfStillWaiting(
+            int expectedPhase, int expectedNonce, int sendCountAtSchedule) {
         CompletableFuture<Void> barrier = startupSyncBarrier;
         if (barrier == null || barrier.isDone()) {
             return;
@@ -264,8 +270,10 @@ final class StartupSynchronizer {
             return;
         }
 
-        log.debug("[SYNC] Phase {} still waiting for config_complete_id={}; nudging want_config resend.",
-                expectedPhase, expectedNonce);
+        log.debug(
+                "[SYNC] Phase {} still waiting for config_complete_id={}; nudging want_config resend.",
+                expectedPhase,
+                expectedNonce);
         sendWantConfigForCurrentPhase();
     }
 }

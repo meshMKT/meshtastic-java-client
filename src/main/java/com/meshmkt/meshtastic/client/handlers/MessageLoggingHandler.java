@@ -3,10 +3,10 @@ package com.meshmkt.meshtastic.client.handlers;
 import com.meshmkt.meshtastic.client.MeshUtils;
 import com.meshmkt.meshtastic.client.storage.NodeDatabase;
 import com.meshmkt.meshtastic.client.storage.PacketContext;
+import java.nio.charset.StandardCharsets;
 import lombok.extern.slf4j.Slf4j;
 import org.meshtastic.proto.MeshProtos;
 import org.meshtastic.proto.Portnums;
-import java.nio.charset.StandardCharsets;
 
 /**
  * Dedicated logger for Chat messages.
@@ -47,10 +47,7 @@ public class MessageLoggingHandler extends BaseMeshHandler {
         String text = packet.getDecoded().getPayload().toString(StandardCharsets.UTF_8);
         String from = resolveName(packet.getFrom());
 
-        log.info("[CHAT] from={} ({}) text=\"{}\"",
-                MeshUtils.formatId(packet.getFrom()),
-                from,
-                text);
+        log.info("[CHAT] from={} ({}) text=\"{}\"", MeshUtils.formatId(packet.getFrom()), from, text);
         return false;
     }
 }

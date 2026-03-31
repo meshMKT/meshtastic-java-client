@@ -47,17 +47,12 @@ public class ChatMessageEvent extends MeshEvent {
      * @param text The decoded UTF-8 string.
      * @param ctx
      * @param selfId
-     * @return 
+     * @return
      */
     public static ChatMessageEvent of(MeshProtos.MeshPacket p, PacketContext ctx, int selfId, String text) {
         MeshProtos.Data data = p.getDecoded();
 
-        return new ChatMessageEvent(
-                text,
-                data.getRequestId(),
-                data.getPortnum(),
-                p.getTo() == selfId,
-                data
-        ).applyMetadata(p, ctx, selfId);
+        return new ChatMessageEvent(text, data.getRequestId(), data.getPortnum(), p.getTo() == selfId, data)
+                .applyMetadata(p, ctx, selfId);
     }
 }

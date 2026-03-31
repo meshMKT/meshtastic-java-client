@@ -1,15 +1,15 @@
 package com.meshmkt.meshtastic.client;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
 import com.google.protobuf.ByteString;
 import org.junit.jupiter.api.Test;
 import org.meshtastic.proto.ChannelProtos.Channel;
 import org.meshtastic.proto.ChannelProtos.ChannelSettings;
-
-import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.junit.jupiter.api.Assertions.assertThrows;
 
 /**
  * Unit tests for {@link ProtocolConstraints}.
@@ -47,8 +47,7 @@ class ProtocolConstraintsTest {
      */
     @Test
     void validateChannelNameRejectsNamesOverElevenUtf8Bytes() {
-        assertThrows(IllegalArgumentException.class,
-                () -> ProtocolConstraints.validateChannelName("Timmy9922-Yahoo"));
+        assertThrows(IllegalArgumentException.class, () -> ProtocolConstraints.validateChannelName("Timmy9922-Yahoo"));
     }
 
     /**
@@ -67,11 +66,14 @@ class ProtocolConstraintsTest {
      */
     @Test
     void validateChannelPskRejectsUnsupportedLengths() {
-        assertThrows(IllegalArgumentException.class,
+        assertThrows(
+                IllegalArgumentException.class,
                 () -> ProtocolConstraints.validateChannelPsk(ByteString.copyFrom(new byte[2])));
-        assertThrows(IllegalArgumentException.class,
+        assertThrows(
+                IllegalArgumentException.class,
                 () -> ProtocolConstraints.validateChannelPsk(ByteString.copyFrom(new byte[15])));
-        assertThrows(IllegalArgumentException.class,
+        assertThrows(
+                IllegalArgumentException.class,
                 () -> ProtocolConstraints.validateChannelPsk(ByteString.copyFrom(new byte[33])));
     }
 
@@ -92,12 +94,16 @@ class ProtocolConstraintsTest {
         assertDoesNotThrow(() -> ProtocolConstraints.validateChannel(valid));
 
         Channel badName = valid.toBuilder()
-                .setSettings(valid.getSettings().toBuilder().setName("Timmy9922-Yahoo").build())
+                .setSettings(valid.getSettings().toBuilder()
+                        .setName("Timmy9922-Yahoo")
+                        .build())
                 .build();
         assertThrows(IllegalArgumentException.class, () -> ProtocolConstraints.validateChannel(badName));
 
         Channel badPsk = valid.toBuilder()
-                .setSettings(valid.getSettings().toBuilder().setPsk(ByteString.copyFrom(new byte[5])).build())
+                .setSettings(valid.getSettings().toBuilder()
+                        .setPsk(ByteString.copyFrom(new byte[5]))
+                        .build())
                 .build();
         assertThrows(IllegalArgumentException.class, () -> ProtocolConstraints.validateChannel(badPsk));
     }

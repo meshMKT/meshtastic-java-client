@@ -1,10 +1,9 @@
 package com.meshmkt.meshtastic.client.transport.stream.serial;
 
-import lombok.Value;
-
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
+import lombok.Value;
 
 /**
  * Pure selector for choosing the best serial-port candidate during reconnect.
@@ -19,8 +18,7 @@ final class SerialPortSelector {
      * Creates a new SerialPortSelector instance.
      *
      */
-    private SerialPortSelector() {
-    }
+    private SerialPortSelector() {}
 
     /**
      * Lightweight immutable candidate view used by the selector.
@@ -57,10 +55,11 @@ final class SerialPortSelector {
      * @param <T> payload type.
      * @return selected candidate if any match.
      */
-    static <T> Optional<Candidate<T>> select(String preferredDescriptor,
-                                             String lastPortDescription,
-                                             String lastDescriptiveName,
-                                             List<Candidate<T>> candidates) {
+    static <T> Optional<Candidate<T>> select(
+            String preferredDescriptor,
+            String lastPortDescription,
+            String lastDescriptiveName,
+            List<Candidate<T>> candidates) {
         if (candidates == null || candidates.isEmpty()) {
             return Optional.empty();
         }
@@ -77,8 +76,10 @@ final class SerialPortSelector {
         String wantedDesc = normalize(lastPortDescription);
         String wantedName = normalize(lastDescriptiveName);
         Optional<Candidate<T>> metadata = candidates.stream()
-                .filter(c -> (!wantedDesc.isEmpty() && normalize(c.getPortDescription()).equals(wantedDesc))
-                || (!wantedName.isEmpty() && normalize(c.getDescriptiveName()).equals(wantedName)))
+                .filter(c -> (!wantedDesc.isEmpty()
+                                && normalize(c.getPortDescription()).equals(wantedDesc))
+                        || (!wantedName.isEmpty()
+                                && normalize(c.getDescriptiveName()).equals(wantedName)))
                 .findFirst();
         if (metadata.isPresent()) {
             return metadata;

@@ -1,9 +1,9 @@
 package com.meshmkt.meshtastic.client;
 
-import lombok.Value;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
+import lombok.Value;
 
 /**
  * Utility for preparing text payloads for Meshtastic transmission.

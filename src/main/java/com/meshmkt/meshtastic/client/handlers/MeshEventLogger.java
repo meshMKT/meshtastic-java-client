@@ -2,13 +2,13 @@ package com.meshmkt.meshtastic.client.handlers;
 
 import com.meshmkt.meshtastic.client.storage.NodeDatabase;
 import com.meshmkt.meshtastic.client.storage.PacketContext;
-import lombok.extern.slf4j.Slf4j;
-import org.meshtastic.proto.MeshProtos;
-import org.meshtastic.proto.Portnums.PortNum;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
+import lombok.extern.slf4j.Slf4j;
+import org.meshtastic.proto.MeshProtos;
+import org.meshtastic.proto.Portnums.PortNum;
 
 /**
  * Diagnostic logger that provides a deep-dive into mesh traffic. Standardized
@@ -17,8 +17,8 @@ import java.time.format.DateTimeFormatter;
 @Slf4j(topic = "MeshEvents")
 public class MeshEventLogger extends BaseMeshHandler {
 
-    private static final DateTimeFormatter TIME_FORMAT = DateTimeFormatter.ofPattern("HH:mm:ss.SSS")
-            .withZone(ZoneId.systemDefault());
+    private static final DateTimeFormatter TIME_FORMAT =
+            DateTimeFormatter.ofPattern("HH:mm:ss.SSS").withZone(ZoneId.systemDefault());
 
     /**
      *
@@ -42,7 +42,7 @@ public class MeshEventLogger extends BaseMeshHandler {
     /**
      * Handles local serial/BLE handshake messages.
      * @param message
-     * @return 
+     * @return
      */
     @Override
     protected boolean handleNonPacketMessage(MeshProtos.FromRadio message) {
@@ -50,14 +50,18 @@ public class MeshEventLogger extends BaseMeshHandler {
 
         if (message.hasMyInfo()) {
             // Local radio identifying itself
-            log.debug("[{}] [LOCAL] my_info self_id={}",
+            log.debug(
+                    "[{}] [LOCAL] my_info self_id={}",
                     pcTime,
                     Integer.toHexString(message.getMyInfo().getMyNodeNum()));
         } else if (message.hasNodeInfo()) {
             // Part of the initial node-list download
             MeshProtos.NodeInfo info = message.getNodeInfo();
-            log.debug("[{}] [LOCAL] node_info from={} ({})",
-                    pcTime, Integer.toHexString(info.getNum()), resolveName(info.getNum()));
+            log.debug(
+                    "[{}] [LOCAL] node_info from={} ({})",
+                    pcTime,
+                    Integer.toHexString(info.getNum()),
+                    resolveName(info.getNum()));
         }
         return false;
     }
@@ -66,7 +70,7 @@ public class MeshEventLogger extends BaseMeshHandler {
      * Handles live Over-The-Air traffic.
      * @param packet
      * @param ctx
-     * @return 
+     * @return
      */
     @Override
     protected boolean handlePacket(MeshProtos.MeshPacket packet, PacketContext ctx) {
@@ -77,13 +81,17 @@ public class MeshEventLogger extends BaseMeshHandler {
         PortNum port = packet.getDecoded().getPortnum();
 
         // Line 1: Basic Routing Info
-        log.debug("[{}] [PACKET] from={} to={} port={} packet_id={}",
-                pcTime, senderName, destName, port, packet.getId());
+        log.debug(
+                "[{}] [PACKET] from={} to={} port={} packet_id={}", pcTime, senderName, destName, port, packet.getId());
 
         // Line 2: Signal Metadata
-        log.trace("[{}] [SIGNAL] snr={}dB rssi={}dBm hops={} via_mqtt={}",
+        log.trace(
+                "[{}] [SIGNAL] snr={}dB rssi={}dBm hops={} via_mqtt={}",
                 pcTime,
-                ctx.getSnr(), ctx.getRssi(), ctx.getHopsAway(), ctx.isViaMqtt());
+                ctx.getSnr(),
+                ctx.getRssi(),
+                ctx.getHopsAway(),
+                ctx.isViaMqtt());
 
         // Line 3: Payload Decoding (Attempting to show what's inside)
         String payloadSummary = decodePayload(packet);
@@ -109,13 +117,14 @@ public class MeshEventLogger extends BaseMeshHandler {
                 case POSITION_APP:
                     var pos = MeshProtos.Position.parseFrom(data);
                     // Standard 1e7 conversion for logging
-                    return String.format("GPS: %.6f, %.6f | Alt: %dm",
+                    return String.format(
+                            "GPS: %.6f, %.6f | Alt: %dm",
                             pos.getLatitudeI() / 1e7, pos.getLongitudeI() / 1e7, pos.getAltitude());
 
                 case NODEINFO_APP:
                     var user = MeshProtos.User.parseFrom(data);
-                    return String.format("Identity: %s (%s) | HW: %s",
-                            user.getLongName(), user.getShortName(), user.getHwModel());
+                    return String.format(
+                            "Identity: %s (%s) | HW: %s", user.getLongName(), user.getShortName(), user.getHwModel());
 
                 case TELEMETRY_APP:
                     // Telemetry is complex (unions), so we just note its presence here.

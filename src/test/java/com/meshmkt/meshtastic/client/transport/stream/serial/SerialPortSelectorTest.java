@@ -1,12 +1,11 @@
 package com.meshmkt.meshtastic.client.transport.stream.serial;
 
-import org.junit.jupiter.api.Test;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.List;
 import java.util.Optional;
-
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import org.junit.jupiter.api.Test;
 
 /**
  * Unit tests for {@link SerialPortSelector}.
@@ -23,11 +22,10 @@ class SerialPortSelectorTest {
     void selectsExactDescriptorFirst() {
         List<SerialPortSelector.Candidate<String>> candidates = List.of(
                 candidate("/dev/cu.usbmodemABC", "usb modem", "t-deck", "A"),
-                candidate("/dev/cu.usbmodemXYZ", "usb modem", "heltec", "B")
-        );
+                candidate("/dev/cu.usbmodemXYZ", "usb modem", "heltec", "B"));
 
-        Optional<SerialPortSelector.Candidate<String>> selected = SerialPortSelector.select(
-                "/dev/cu.usbmodemXYZ", "", "", candidates);
+        Optional<SerialPortSelector.Candidate<String>> selected =
+                SerialPortSelector.select("/dev/cu.usbmodemXYZ", "", "", candidates);
 
         assertTrue(selected.isPresent());
         assertEquals("B", selected.get().getPayload());
@@ -40,14 +38,10 @@ class SerialPortSelectorTest {
     void fallsBackToDescriptionMatchWhenDescriptorMissing() {
         List<SerialPortSelector.Candidate<String>> candidates = List.of(
                 candidate("/dev/cu.usbmodemNEW", "heltec v3", "heltec serial", "NEW"),
-                candidate("/dev/cu.usbmodemOTHER", "t-deck", "deck serial", "OTHER")
-        );
+                candidate("/dev/cu.usbmodemOTHER", "t-deck", "deck serial", "OTHER"));
 
-        Optional<SerialPortSelector.Candidate<String>> selected = SerialPortSelector.select(
-                "/dev/cu.usbmodemOLD",
-                "heltec v3",
-                "",
-                candidates);
+        Optional<SerialPortSelector.Candidate<String>> selected =
+                SerialPortSelector.select("/dev/cu.usbmodemOLD", "heltec v3", "", candidates);
 
         assertTrue(selected.isPresent());
         assertEquals("NEW", selected.get().getPayload());
@@ -60,14 +54,10 @@ class SerialPortSelectorTest {
     void fallsBackToDescriptorFamilyMatch() {
         List<SerialPortSelector.Candidate<String>> candidates = List.of(
                 candidate("/dev/cu.usbmodem80B54ED11F999", "unknown", "unknown", "FAMILY"),
-                candidate("/dev/cu.usbserial-0001", "unknown", "unknown", "OTHER")
-        );
+                candidate("/dev/cu.usbserial-0001", "unknown", "unknown", "OTHER"));
 
-        Optional<SerialPortSelector.Candidate<String>> selected = SerialPortSelector.select(
-                "/dev/cu.usbmodem80B54ED11F101",
-                "",
-                "",
-                candidates);
+        Optional<SerialPortSelector.Candidate<String>> selected =
+                SerialPortSelector.select("/dev/cu.usbmodem80B54ED11F101", "", "", candidates);
 
         assertTrue(selected.isPresent());
         assertEquals("FAMILY", selected.get().getPayload());
@@ -80,14 +70,10 @@ class SerialPortSelectorTest {
     void returnsEmptyWhenNoCandidateMatches() {
         List<SerialPortSelector.Candidate<String>> candidates = List.of(
                 candidate("/dev/cu.usbserial-0001", "x", "y", "A"),
-                candidate("/dev/cu.usbserial-0002", "x2", "y2", "B")
-        );
+                candidate("/dev/cu.usbserial-0002", "x2", "y2", "B"));
 
-        Optional<SerialPortSelector.Candidate<String>> selected = SerialPortSelector.select(
-                "/dev/cu.usbmodem404",
-                "not-there",
-                "not-there",
-                candidates);
+        Optional<SerialPortSelector.Candidate<String>> selected =
+                SerialPortSelector.select("/dev/cu.usbmodem404", "not-there", "not-there", candidates);
 
         assertTrue(selected.isEmpty());
     }
@@ -113,10 +99,8 @@ class SerialPortSelectorTest {
     /**
      * Helper for concise candidate declarations.
      */
-    private static SerialPortSelector.Candidate<String> candidate(String descriptor,
-                                                                  String portDescription,
-                                                                  String descriptiveName,
-                                                                  String payload) {
+    private static SerialPortSelector.Candidate<String> candidate(
+            String descriptor, String portDescription, String descriptiveName, String payload) {
         return new SerialPortSelector.Candidate<>(descriptor, portDescription, descriptiveName, payload);
     }
 }

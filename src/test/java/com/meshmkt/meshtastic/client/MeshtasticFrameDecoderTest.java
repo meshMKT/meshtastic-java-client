@@ -1,15 +1,14 @@
 package com.meshmkt.meshtastic.client;
 
-import org.junit.jupiter.api.Test;
-import org.meshtastic.proto.MeshProtos;
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
-
-import static org.junit.jupiter.api.Assertions.assertArrayEquals;
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import org.junit.jupiter.api.Test;
+import org.meshtastic.proto.MeshProtos;
 
 /**
  * Unit tests for {@link MeshtasticFrameDecoder}.
@@ -29,7 +28,8 @@ class MeshtasticFrameDecoderTest {
         MeshtasticFrameDecoder decoder = new MeshtasticFrameDecoder(decodedPayloads::add);
 
         byte[] payload = MeshProtos.FromRadio.newBuilder()
-                .setMyInfo(MeshProtos.MyNodeInfo.newBuilder().setMyNodeNum(123456).build())
+                .setMyInfo(
+                        MeshProtos.MyNodeInfo.newBuilder().setMyNodeNum(123456).build())
                 .build()
                 .toByteArray();
 
@@ -81,7 +81,7 @@ class MeshtasticFrameDecoderTest {
         MeshtasticFrameDecoder decoder = new MeshtasticFrameDecoder(decodedPayloads::add);
 
         // Invalid frame header with length 0.
-        feed(decoder, new byte[]{(byte) 0x94, (byte) 0xC3, 0x00, 0x00});
+        feed(decoder, new byte[] {(byte) 0x94, (byte) 0xC3, 0x00, 0x00});
 
         byte[] payload = MeshProtos.FromRadio.newBuilder()
                 .setMyInfo(MeshProtos.MyNodeInfo.newBuilder().setMyNodeNum(42).build())
@@ -128,8 +128,8 @@ class MeshtasticFrameDecoderTest {
 
         byte[] p1 = protoPayload(2001);
         byte[] p2 = protoPayload(2002);
-        byte[] noiseA = new byte[]{0x01, 0x02, 0x03, 0x55, (byte) 0xFF};
-        byte[] noiseB = new byte[]{0x11, 0x22, 0x33, 0x44};
+        byte[] noiseA = new byte[] {0x01, 0x02, 0x03, 0x55, (byte) 0xFF};
+        byte[] noiseB = new byte[] {0x11, 0x22, 0x33, 0x44};
 
         feed(decoder, noiseA);
         feed(decoder, frame(p1));
@@ -150,7 +150,7 @@ class MeshtasticFrameDecoderTest {
         MeshtasticFrameDecoder decoder = new MeshtasticFrameDecoder(decodedPayloads::add);
 
         // Length 513 (0x0201) is above MAX_PAYLOAD_SIZE=512.
-        feed(decoder, new byte[]{(byte) 0x94, (byte) 0xC3, 0x02, 0x01});
+        feed(decoder, new byte[] {(byte) 0x94, (byte) 0xC3, 0x02, 0x01});
 
         byte[] payload = protoPayload(3001);
         feed(decoder, frame(payload));
@@ -168,7 +168,7 @@ class MeshtasticFrameDecoderTest {
         MeshtasticFrameDecoder decoder = new MeshtasticFrameDecoder(decodedPayloads::add);
 
         // Start marker + only one length byte, then timeout.
-        feed(decoder, new byte[]{(byte) 0x94, (byte) 0xC3, 0x00});
+        feed(decoder, new byte[] {(byte) 0x94, (byte) 0xC3, 0x00});
         Thread.sleep(250L);
 
         byte[] payload = protoPayload(4001);
@@ -210,7 +210,7 @@ class MeshtasticFrameDecoderTest {
         MeshtasticFrameDecoder decoder = new MeshtasticFrameDecoder(decodedPayloads::add);
 
         // Raw payload test for decoder framing: includes magic bytes in payload body.
-        byte[] payload = new byte[]{0x10, 0x01, (byte) 0x94, (byte) 0xC3, 0x20, 0x30};
+        byte[] payload = new byte[] {0x10, 0x01, (byte) 0x94, (byte) 0xC3, 0x20, 0x30};
         feed(decoder, frame(payload));
 
         assertEquals(1, decodedPayloads.size());
@@ -251,7 +251,7 @@ class MeshtasticFrameDecoderTest {
         MeshtasticFrameDecoder decoder = new MeshtasticFrameDecoder(decodedPayloads::add);
 
         // Multiple START_1 bytes before START_2 should still establish frame sync.
-        feed(decoder, new byte[]{(byte) 0x94, (byte) 0x94, (byte) 0x94, (byte) 0xC3});
+        feed(decoder, new byte[] {(byte) 0x94, (byte) 0x94, (byte) 0x94, (byte) 0xC3});
 
         byte[] payload = protoPayload(6001);
         // push length+payload only because magic header already started above
@@ -291,7 +291,9 @@ class MeshtasticFrameDecoderTest {
      */
     private static byte[] protoPayload(int myNodeNum) {
         return MeshProtos.FromRadio.newBuilder()
-                .setMyInfo(MeshProtos.MyNodeInfo.newBuilder().setMyNodeNum(myNodeNum).build())
+                .setMyInfo(MeshProtos.MyNodeInfo.newBuilder()
+                        .setMyNodeNum(myNodeNum)
+                        .build())
                 .build()
                 .toByteArray();
     }

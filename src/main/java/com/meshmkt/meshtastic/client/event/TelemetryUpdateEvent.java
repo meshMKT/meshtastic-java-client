@@ -51,7 +51,7 @@ public class TelemetryUpdateEvent extends MeshEvent {
         /**
          *
          */
-        OTHER          // Catch-all for niche/future types
+        OTHER // Catch-all for niche/future types
     }
 
     /**
@@ -97,7 +97,8 @@ public class TelemetryUpdateEvent extends MeshEvent {
      * @param tele The telemetry payload.
      * @return A populated TelemetryUpdateEvent.
      */
-    public static TelemetryUpdateEvent of(MeshProtos.MeshPacket p, PacketContext ctx, int selfId, TelemetryProtos.Telemetry tele) {
+    public static TelemetryUpdateEvent of(
+            MeshProtos.MeshPacket p, PacketContext ctx, int selfId, TelemetryProtos.Telemetry tele) {
 
         TelemetryVariant variant = TelemetryVariant.OTHER;
         float batt = 0, volt = 0;
@@ -130,13 +131,12 @@ public class TelemetryUpdateEvent extends MeshEvent {
                 break;
         }
 
-        return new TelemetryUpdateEvent(variant, batt, volt, temp, hum, tele)
-                .applyMetadata(p, ctx, selfId);
+        return new TelemetryUpdateEvent(variant, batt, volt, temp, hum, tele).applyMetadata(p, ctx, selfId);
     }
 
     /**
      * Helper to check if this event contains power/battery info.
-     * @return 
+     * @return
      */
     public boolean isDeviceMetrics() {
         return variant == TelemetryVariant.DEVICE_METRICS;
@@ -144,7 +144,7 @@ public class TelemetryUpdateEvent extends MeshEvent {
 
     /**
      * Helper to check if this event contains weather/env info.
-     * @return 
+     * @return
      */
     public boolean isEnvironmentMetrics() {
         return variant == TelemetryVariant.ENVIRONMENT_METRICS;

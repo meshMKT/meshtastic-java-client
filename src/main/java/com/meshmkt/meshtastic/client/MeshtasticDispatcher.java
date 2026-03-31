@@ -1,12 +1,12 @@
 package com.meshmkt.meshtastic.client;
 
 import com.meshmkt.meshtastic.client.handlers.MeshtasticMessageHandler;
-import lombok.extern.slf4j.Slf4j;
-import org.meshtastic.proto.MeshProtos;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import lombok.extern.slf4j.Slf4j;
+import org.meshtastic.proto.MeshProtos;
 
 /**
  * Routes incoming packets to registered handlers asynchronously.
@@ -15,7 +15,7 @@ import java.util.concurrent.Executors;
 @Slf4j
 public class MeshtasticDispatcher {
     private final List<MeshtasticMessageHandler> handlers = new CopyOnWriteArrayList<>();
-    
+
     // Single thread worker ensures messages are processed in the order they were received.
     private final ExecutorService worker = Executors.newSingleThreadExecutor(r -> {
         Thread t = new Thread(r, "Meshtastic-Dispatcher");
@@ -57,7 +57,10 @@ public class MeshtasticDispatcher {
                 }
             } catch (Exception e) {
                 // Log error but keep the worker thread alive for the next message.
-                log.error("Handler {} failed while dispatching message", handler.getClass().getSimpleName(), e);
+                log.error(
+                        "Handler {} failed while dispatching message",
+                        handler.getClass().getSimpleName(),
+                        e);
             }
         }
     }

@@ -1,8 +1,9 @@
 package com.meshmkt.meshtastic.client.transport.ble;
 
-import com.meshmkt.meshtastic.client.transport.TransportConnectionListener;
-import org.junit.jupiter.api.Test;
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.meshmkt.meshtastic.client.transport.TransportConnectionListener;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
@@ -10,9 +11,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
-
-import static org.junit.jupiter.api.Assertions.assertArrayEquals;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import org.junit.jupiter.api.Test;
 
 /**
  * Verifies BLE transport skeleton behavior with an in-memory backend SPI double.
@@ -50,17 +49,17 @@ class BleTransportTest {
         transport.start();
         assertTrue(connected.await(2, TimeUnit.SECONDS));
 
-        byte[] protobufPayload = new byte[]{0x01, 0x02, 0x03};
+        byte[] protobufPayload = new byte[] {0x01, 0x02, 0x03};
         transport.write(protobufPayload);
 
         // Verify framing header [0x94,0xC3,length_msb,length_lsb] + payload.
         assertTrue(waitFor(() -> !backend.writes.isEmpty(), Duration.ofSeconds(2)));
         byte[] framed = backend.writes.get(0);
         assertTrue(framed.length >= 7);
-        assertArrayEquals(new byte[]{(byte) 0x94, (byte) 0xC3, 0x00, 0x03, 0x01, 0x02, 0x03}, framed);
+        assertArrayEquals(new byte[] {(byte) 0x94, (byte) 0xC3, 0x00, 0x03, 0x01, 0x02, 0x03}, framed);
 
         // Feed one valid framed packet inbound and ensure consumer receives it.
-        backend.emitIncoming(new byte[]{(byte) 0x94, (byte) 0xC3, 0x00, 0x01, 0x7F});
+        backend.emitIncoming(new byte[] {(byte) 0x94, (byte) 0xC3, 0x00, 0x01, 0x7F});
         assertTrue(received.await(2, TimeUnit.SECONDS));
 
         transport.stop();
@@ -74,11 +73,11 @@ class BleTransportTest {
                 "2c55e69e-4993-11ed-b878-0242ac120002",
                 Duration.ofSeconds(10),
                 Duration.ofMillis(200),
-                true
-        );
+                true);
     }
 
-    private static boolean waitFor(java.util.function.BooleanSupplier condition, Duration timeout) throws InterruptedException {
+    private static boolean waitFor(java.util.function.BooleanSupplier condition, Duration timeout)
+            throws InterruptedException {
         long deadline = System.nanoTime() + timeout.toNanos();
         while (System.nanoTime() < deadline) {
             if (condition.getAsBoolean()) {
@@ -95,12 +94,9 @@ class BleTransportTest {
     private static final class RecordingBleBackend implements BleLinkBackend {
         private final List<byte[]> writes = new ArrayList<>();
         private final AtomicBoolean connected = new AtomicBoolean(false);
-        private volatile Consumer<byte[]> receiveListener = bytes -> {
-        };
-        private volatile Runnable disconnectListener = () -> {
-        };
-        private volatile Consumer<Throwable> errorListener = throwable -> {
-        };
+        private volatile Consumer<byte[]> receiveListener = bytes -> {};
+        private volatile Runnable disconnectListener = () -> {};
+        private volatile Consumer<Throwable> errorListener = throwable -> {};
 
         @Override
         public void connect(BleConfig config) {
@@ -124,20 +120,17 @@ class BleTransportTest {
 
         @Override
         public void setReceiveListener(Consumer<byte[]> receiver) {
-            receiveListener = receiver == null ? bytes -> {
-            } : receiver;
+            receiveListener = receiver == null ? bytes -> {} : receiver;
         }
 
         @Override
         public void setDisconnectListener(Runnable callback) {
-            disconnectListener = callback == null ? () -> {
-            } : callback;
+            disconnectListener = callback == null ? () -> {} : callback;
         }
 
         @Override
         public void setErrorListener(Consumer<Throwable> callback) {
-            errorListener = callback == null ? throwable -> {
-            } : callback;
+            errorListener = callback == null ? throwable -> {} : callback;
         }
 
         void emitIncoming(byte[] bytes) {

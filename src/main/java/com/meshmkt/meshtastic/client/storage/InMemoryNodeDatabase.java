@@ -2,15 +2,14 @@ package com.meshmkt.meshtastic.client.storage;
 
 import com.meshmkt.meshtastic.client.MeshConstants;
 import com.meshmkt.meshtastic.client.MeshUtils;
-import lombok.Data;
-import lombok.extern.slf4j.Slf4j;
-import org.meshtastic.proto.MeshProtos;
-import org.meshtastic.proto.TelemetryProtos;
-
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
+import lombok.Data;
+import lombok.extern.slf4j.Slf4j;
+import org.meshtastic.proto.MeshProtos;
+import org.meshtastic.proto.TelemetryProtos;
 
 /**
  *
@@ -43,7 +42,7 @@ public class InMemoryNodeDatabase extends AbstractNodeDatabase {
 
         // Timestamps for status calculation
         private long lastSeenRemote; // Radio Hardware Time (seconds)
-        private long lastSeenLocal;  // PC System Time (ms)
+        private long lastSeenLocal; // PC System Time (ms)
     }
 
     private final ConcurrentHashMap<Integer, NodeRecord> nodes = new ConcurrentHashMap<>();
@@ -128,8 +127,7 @@ public class InMemoryNodeDatabase extends AbstractNodeDatabase {
     public void updatePosition(MeshProtos.Position pos, PacketContext ctx) {
         // GATEKEEPER: Don't overwrite good data with "no fix" (0,0)
         if (pos.getLatitudeI() == 0 && pos.getLongitudeI() == 0) {
-            log.debug("Skipping position update: No valid GPS fix from !{}",
-                    Integer.toHexString(ctx.getFrom()));
+            log.debug("Skipping position update: No valid GPS fix from !{}", Integer.toHexString(ctx.getFrom()));
             return;
         }
 
@@ -151,7 +149,8 @@ public class InMemoryNodeDatabase extends AbstractNodeDatabase {
     @Override
     public void updateSignal(PacketContext ctx) {
         updateNodeRecord(ctx, r -> {
-            /* metadata updated in updateNodeRecord */ });
+            /* metadata updated in updateNodeRecord */
+        });
     }
 
     /**

@@ -1,7 +1,5 @@
 package com.meshmkt.meshtastic.client;
 
-import com.google.protobuf.InvalidProtocolBufferException;
-import org.meshtastic.proto.MeshProtos;
 import java.util.function.Consumer;
 import lombok.extern.slf4j.Slf4j;
 
@@ -96,19 +94,18 @@ public class MeshtasticFrameDecoder {
     public void processByte(byte b) {
 
         long now = System.currentTimeMillis();
-        
+
         // If mid-packet data pauses for too long, drop partial state and resync.
         if (state != State.LOOKING_FOR_START1 && (now - lastByteTime > stalledFrameTimeoutMs)) {
             resetParser();
         }
         lastByteTime = now;
-        
+
         // Convert to unsigned int (0-255) for clean comparison and math
         int ub = Byte.toUnsignedInt(b);
 
         // Manage state transitions using a Java 17 Switch Expression
         this.state = switch (state) {
-
             case LOOKING_FOR_START1 -> {
                 // Return LOOKING_FOR_START2 if we found the first magic byte
                 yield (ub == START_1) ? State.LOOKING_FOR_START2 : State.LOOKING_FOR_START1;
@@ -150,7 +147,7 @@ public class MeshtasticFrameDecoder {
 
                     // Defensive reset to avoid carry-over if subsequent bytes are malformed.
                     payloadPos = 0;
-                    
+
                     yield State.LOOKING_FOR_START1;
                 }
                 yield State.READING_PAYLOAD;

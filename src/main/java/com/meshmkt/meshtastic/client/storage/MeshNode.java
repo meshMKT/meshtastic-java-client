@@ -204,5 +204,4 @@ public class MeshNode {
         Objects.requireNonNull(now, "now must not be null");
         return calculator.calculate(this, now);
     }
-
 }

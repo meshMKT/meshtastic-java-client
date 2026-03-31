@@ -1,10 +1,9 @@
 package com.meshmkt.meshtastic.client.transport.ble;
 
 import com.meshmkt.meshtastic.client.transport.stream.StreamTransport;
-import lombok.extern.slf4j.Slf4j;
-
 import java.io.IOException;
 import java.util.concurrent.atomic.AtomicBoolean;
+import lombok.extern.slf4j.Slf4j;
 
 /**
  * BLE transport skeleton backed by a pluggable {@link BleLinkBackend}.
@@ -119,26 +118,28 @@ public class BleTransport extends StreamTransport {
             return;
         }
 
-        Thread retryThread = new Thread(() -> {
-            try {
-                log.debug("BLE link lost. Retrying device {}...", config.getDeviceId());
-                while (running && !isConnected()) {
+        Thread retryThread = new Thread(
+                () -> {
                     try {
-                        Thread.sleep(config.getReconnectBackoff().toMillis());
-                        connect();
-                        if (isConnected()) {
-                            log.debug("BLE link restored for device {}.", config.getDeviceId());
-                            notifyConnected();
-                            break;
+                        log.debug("BLE link lost. Retrying device {}...", config.getDeviceId());
+                        while (running && !isConnected()) {
+                            try {
+                                Thread.sleep(config.getReconnectBackoff().toMillis());
+                                connect();
+                                if (isConnected()) {
+                                    log.debug("BLE link restored for device {}.", config.getDeviceId());
+                                    notifyConnected();
+                                    break;
+                                }
+                            } catch (Exception ignored) {
+                                // Continue retry loop until restored or transport stopped.
+                            }
                         }
-                    } catch (Exception ignored) {
-                        // Continue retry loop until restored or transport stopped.
+                    } finally {
+                        retryLoopActive.set(false);
                     }
-                }
-            } finally {
-                retryLoopActive.set(false);
-            }
-        }, "BleRetryThread");
+                },
+                "BleRetryThread");
         retryThread.setDaemon(true);
         retryThread.start();
     }

@@ -11,11 +11,11 @@ import lombok.Getter;
 public class TcpConfig {
 
     @Builder.Default
-    private String host = "127.0.0.1"; 
-    
+    private String host = "127.0.0.1";
+
     @Builder.Default
-    private int port = 4403;             // Default Meshtastic TCP Port
-    
+    private int port = 4403; // Default Meshtastic TCP Port
+
     @Builder.Default
     private int connectionTimeoutMs = 5000;
 

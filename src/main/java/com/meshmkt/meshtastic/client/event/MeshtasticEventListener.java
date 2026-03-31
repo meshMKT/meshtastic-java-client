@@ -83,5 +83,4 @@ public interface MeshtasticEventListener {
     default void onAdminModelUpdate(AdminModelUpdateEvent event) {
         // No-op by default. Override only when needed.
     }
-
 }

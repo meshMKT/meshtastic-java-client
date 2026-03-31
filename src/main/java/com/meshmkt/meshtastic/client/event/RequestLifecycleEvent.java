@@ -1,10 +1,9 @@
 package com.meshmkt.meshtastic.client.event;
 
-import lombok.Getter;
-import org.meshtastic.proto.Portnums.PortNum;
-
 import java.time.Instant;
 import java.util.Objects;
+import lombok.Getter;
+import org.meshtastic.proto.Portnums.PortNum;
 
 /**
  * Describes lifecycle transitions for one outbound request initiated by {@code MeshtasticClient}.
@@ -58,12 +57,8 @@ public final class RequestLifecycleEvent {
     private final Throwable error;
     private final Instant timestamp;
 
-    private RequestLifecycleEvent(int requestId,
-                                  int destinationNodeId,
-                                  PortNum port,
-                                  Stage stage,
-                                  String message,
-                                  Throwable error) {
+    private RequestLifecycleEvent(
+            int requestId, int destinationNodeId, PortNum port, Stage stage, String message, Throwable error) {
         this.requestId = requestId;
         this.destinationNodeId = destinationNodeId;
         this.port = Objects.requireNonNull(port, "port must not be null");
@@ -84,12 +79,8 @@ public final class RequestLifecycleEvent {
      * @param error optional error for failure stages.
      * @return immutable lifecycle event.
      */
-    public static RequestLifecycleEvent of(int requestId,
-                                           int destinationNodeId,
-                                           PortNum port,
-                                           Stage stage,
-                                           String message,
-                                           Throwable error) {
+    public static RequestLifecycleEvent of(
+            int requestId, int destinationNodeId, PortNum port, Stage stage, String message, Throwable error) {
         return new RequestLifecycleEvent(requestId, destinationNodeId, port, stage, message, error);
     }
 }

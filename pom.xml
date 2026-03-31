@@ -1,414 +1,447 @@
-<project xmlns="http://maven.apache.org/POM/4.0.0"
-         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0
-         http://maven.apache.org/xsd/maven-4.0.0.xsd">
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0          http://maven.apache.org/xsd/maven-4.0.0.xsd">
 
-    <modelVersion>4.0.0</modelVersion>
+  <modelVersion>4.0.0</modelVersion>
 
-    <groupId>com.meshmkt.meshtastic</groupId>
-    <artifactId>meshtastic-java-client</artifactId>
-    <version>1.0.0-SNAPSHOT</version>
-    <name>meshtastic-java-client</name>
-    <description>Meshtastic Java client library.</description>
+  <groupId>com.meshmkt.meshtastic</groupId>
+  <artifactId>meshtastic-java-client</artifactId>
+  <version>1.0.0-SNAPSHOT</version>
+  <name>meshtastic-java-client</name>
+  <description>Meshtastic Java client library.</description>
+  <url>https://github.com/meshMKT/meshtastic-java-client</url>
+  <licenses>
+    <license>
+      <name>Apache License, Version 2.0</name>
+      <url>https://www.apache.org/licenses/LICENSE-2.0.txt</url>
+      <distribution>repo</distribution>
+    </license>
+  </licenses>
+  <developers>
+    <developer>
+      <id>tmulle</id>
+      <name>Tim Mullé</name>
+      <email>tim@meshmkt.com</email>
+      <roles>
+        <role>Developer</role>
+        <role>Maintainer</role>
+      </roles>
+      <timezone>America/New_York</timezone>
+    </developer>
+  </developers>
+  <scm>
+    <connection>scm:git:https://github.com/meshMKT/meshtastic-java-client.git</connection>
+    <developerConnection>scm:git:https://github.com/meshMKT/meshtastic-java-client.git</developerConnection>
+    <tag>HEAD</tag>
     <url>https://github.com/meshMKT/meshtastic-java-client</url>
-    <licenses>
-        <license>
-            <name>Apache License, Version 2.0</name>
-            <url>https://www.apache.org/licenses/LICENSE-2.0.txt</url>
-            <distribution>repo</distribution>
-        </license>
-    </licenses>
-    <issueManagement>
-        <system>GitHub</system>
-        <url>https://github.com/meshMKT/meshtastic-java-client/issues</url>
-    </issueManagement>
-    <scm>
-        <connection>scm:git:https://github.com/meshMKT/meshtastic-java-client.git</connection>
-        <developerConnection>scm:git:https://github.com/meshMKT/meshtastic-java-client.git</developerConnection>
-        <url>https://github.com/meshMKT/meshtastic-java-client</url>
-        <tag>HEAD</tag>
-    </scm>
-    <developers>
-        <developer>
-            <id>tmulle</id>
-            <name>Tim Mullé</name>
-            <email>tim@meshmkt.com</email>
-            <roles>
-                <role>Developer</role>
-                <role>Maintainer</role>
-            </roles>
-            <timezone>America/New_York</timezone>
-        </developer>
-    </developers>
+  </scm>
+  <issueManagement>
+    <system>GitHub</system>
+    <url>https://github.com/meshMKT/meshtastic-java-client/issues</url>
+  </issueManagement>
 
-    <properties>
-        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-        <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
-        <maven.compiler.encoding>${project.build.sourceEncoding}</maven.compiler.encoding>
-        <maven.compiler.source>21</maven.compiler.source>
-        <maven.compiler.target>21</maven.compiler.target>
-        <protobuf.version>3.25.8</protobuf.version>
-        <lombok.version>1.18.42</lombok.version>
-        <jserialcomm.version>2.11.4</jserialcomm.version>
-        <slf4j.version>2.0.17</slf4j.version>
-        <junit.jupiter.version>6.0.3</junit.jupiter.version>
-        <os.maven.plugin.version>1.7.1</os.maven.plugin.version>
-        <maven.compiler.plugin.version>3.15.0</maven.compiler.plugin.version>
-        <protobuf.maven.plugin.version>0.6.1</protobuf.maven.plugin.version>
-        <maven.surefire.plugin.version>3.5.5</maven.surefire.plugin.version>
-        <maven.failsafe.plugin.version>3.5.5</maven.failsafe.plugin.version>
-        <maven.source.plugin.version>3.4.0</maven.source.plugin.version>
-        <maven.javadoc.plugin.version>3.12.0</maven.javadoc.plugin.version>
-        <maven.deploy.plugin.version>3.1.4</maven.deploy.plugin.version>
-        <asciidoctor.maven.plugin.version>3.2.0</asciidoctor.maven.plugin.version>
-        <asciidoctorj.diagram.version>3.2.1</asciidoctorj.diagram.version>
-        <asciidoctorj.diagram.plantuml.version>1.2026.2</asciidoctorj.diagram.plantuml.version>
-        <jreleaser.maven.plugin.version>1.23.0</jreleaser.maven.plugin.version>
-    </properties>
+  <properties>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
+    <maven.compiler.encoding>${project.build.sourceEncoding}</maven.compiler.encoding>
+    <maven.compiler.source>21</maven.compiler.source>
+    <maven.compiler.target>21</maven.compiler.target>
+    <protobuf.version>3.25.8</protobuf.version>
+    <lombok.version>1.18.42</lombok.version>
+    <jserialcomm.version>2.11.4</jserialcomm.version>
+    <slf4j.version>2.0.17</slf4j.version>
+    <junit.jupiter.version>6.0.3</junit.jupiter.version>
+    <os.maven.plugin.version>1.7.1</os.maven.plugin.version>
+    <maven.compiler.plugin.version>3.15.0</maven.compiler.plugin.version>
+    <protobuf.maven.plugin.version>0.6.1</protobuf.maven.plugin.version>
+    <maven.surefire.plugin.version>3.5.5</maven.surefire.plugin.version>
+    <maven.failsafe.plugin.version>3.5.5</maven.failsafe.plugin.version>
+    <maven.source.plugin.version>3.4.0</maven.source.plugin.version>
+    <maven.javadoc.plugin.version>3.12.0</maven.javadoc.plugin.version>
+    <maven.deploy.plugin.version>3.1.4</maven.deploy.plugin.version>
+    <spotless.maven.plugin.version>3.0.0</spotless.maven.plugin.version>
+    <palantir.java.format.version>2.71.0</palantir.java.format.version>
+    <asciidoctor.maven.plugin.version>3.2.0</asciidoctor.maven.plugin.version>
+    <asciidoctorj.diagram.version>3.2.1</asciidoctorj.diagram.version>
+    <asciidoctorj.diagram.plantuml.version>1.2026.2</asciidoctorj.diagram.plantuml.version>
+    <jreleaser.maven.plugin.version>1.23.0</jreleaser.maven.plugin.version>
+  </properties>
 
-    <dependencies>
-        
-        <!-- Lombok -->
-        <dependency>
-            <groupId>org.projectlombok</groupId>
-            <artifactId>lombok</artifactId>
-            <version>${lombok.version}</version>
-            <scope>provided</scope>
-        </dependency>
-        
-        <!-- Serial -->
-        <dependency>
-            <groupId>com.fazecast</groupId>
-            <artifactId>jSerialComm</artifactId>
-            <version>${jserialcomm.version}</version>
-        </dependency>
+  <dependencies>
 
-        <!-- Logging -->
-        <dependency>
-            <groupId>org.slf4j</groupId>
-            <artifactId>slf4j-api</artifactId>
-            <version>${slf4j.version}</version>
-        </dependency>
-    
-        <!-- Protobuf Java runtime -->
-        <dependency>
-            <groupId>com.google.protobuf</groupId>
-            <artifactId>protobuf-java</artifactId>
-            <version>${protobuf.version}</version>
-        </dependency>
-        
-        <dependency>
-            <groupId>com.google.protobuf</groupId>
-            <artifactId>protobuf-java-util</artifactId>
-            <version>${protobuf.version}</version>
-        </dependency>
+    <!-- Lombok -->
+    <dependency>
+      <groupId>org.projectlombok</groupId>
+      <artifactId>lombok</artifactId>
+      <version>${lombok.version}</version>
+      <scope>provided</scope>
+    </dependency>
 
-        <!-- Tests -->
-        <dependency>
-            <groupId>org.junit.jupiter</groupId>
-            <artifactId>junit-jupiter</artifactId>
-            <version>${junit.jupiter.version}</version>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
-            <groupId>org.slf4j</groupId>
-            <artifactId>slf4j-simple</artifactId>
-            <version>${slf4j.version}</version>
-            <scope>test</scope>
-        </dependency>
-    </dependencies>
-  
-    <build>
-        <extensions>
-            <extension>
-                <groupId>kr.motd.maven</groupId>
-                <artifactId>os-maven-plugin</artifactId>
-                <version>${os.maven.plugin.version}</version>
-            </extension>
-        </extensions>
+    <!-- Serial -->
+    <dependency>
+      <groupId>com.fazecast</groupId>
+      <artifactId>jSerialComm</artifactId>
+      <version>${jserialcomm.version}</version>
+    </dependency>
 
+    <!-- Logging -->
+    <dependency>
+      <groupId>org.slf4j</groupId>
+      <artifactId>slf4j-api</artifactId>
+      <version>${slf4j.version}</version>
+    </dependency>
+
+    <!-- Protobuf Java runtime -->
+    <dependency>
+      <groupId>com.google.protobuf</groupId>
+      <artifactId>protobuf-java</artifactId>
+      <version>${protobuf.version}</version>
+    </dependency>
+
+    <dependency>
+      <groupId>com.google.protobuf</groupId>
+      <artifactId>protobuf-java-util</artifactId>
+      <version>${protobuf.version}</version>
+    </dependency>
+
+    <!-- Tests -->
+    <dependency>
+      <groupId>org.junit.jupiter</groupId>
+      <artifactId>junit-jupiter</artifactId>
+      <version>${junit.jupiter.version}</version>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.slf4j</groupId>
+      <artifactId>slf4j-simple</artifactId>
+      <version>${slf4j.version}</version>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+
+  <build>
+
+    <plugins>
+      <!-- Resource plugin -->
+      <plugin>
+        <artifactId>maven-resources-plugin</artifactId>
+        <version>3.5.0</version>
+        <configuration>
+          <encoding>${project.build.sourceEncoding}</encoding>
+        </configuration>
+        <executions>
+          <execution>
+            <id>copy-doc-theme</id>
+            <goals>
+              <goal>copy-resources</goal>
+            </goals>
+            <phase>prepare-package</phase>
+            <configuration>
+              <outputDirectory>${project.build.directory}/docs</outputDirectory>
+              <resources>
+                <resource>
+                  <directory>${project.basedir}/src/docs/asciidoc/theme/html</directory>
+                  <includes>
+                    <include>meshmkt-docs.css</include>
+                  </includes>
+                </resource>
+              </resources>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+
+      <!-- Compiler plugin -->
+      <plugin>
+        <artifactId>maven-compiler-plugin</artifactId>
+        <version>${maven.compiler.plugin.version}</version>
+        <configuration>
+          <release>${maven.compiler.target}</release>
+          <encoding>${maven.compiler.encoding}</encoding>
+          <annotationProcessorPaths>
+            <path>
+              <groupId>org.projectlombok</groupId>
+              <artifactId>lombok</artifactId>
+              <version>${lombok.version}</version>
+            </path>
+          </annotationProcessorPaths>
+        </configuration>
+      </plugin>
+
+      <!-- Protobuf plugin -->
+      <plugin>
+        <groupId>org.xolstice.maven.plugins</groupId>
+        <artifactId>protobuf-maven-plugin</artifactId>
+        <version>${protobuf.maven.plugin.version}</version>
+        <configuration>
+          <protocArtifact>com.google.protobuf:protoc:${protobuf.version}:exe:${os.detected.classifier}</protocArtifact>
+          <pluginId>java</pluginId>
+        </configuration>
+        <executions>
+          <execution>
+            <goals>
+              <goal>compile</goal>
+            </goals>
+          </execution>
+        </executions>
+      </plugin>
+
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-surefire-plugin</artifactId>
+        <version>${maven.surefire.plugin.version}</version>
+        <configuration>
+          <useModulePath>false</useModulePath>
+        </configuration>
+      </plugin>
+
+      <!-- Attach project sources as -sources.jar -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-source-plugin</artifactId>
+        <version>${maven.source.plugin.version}</version>
+        <executions>
+          <execution>
+            <id>attach-sources</id>
+            <goals>
+              <goal>jar-no-fork</goal>
+            </goals>
+          </execution>
+        </executions>
+      </plugin>
+
+      <!-- Attach generated Javadocs as -javadoc.jar -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-javadoc-plugin</artifactId>
+        <version>${maven.javadoc.plugin.version}</version>
+        <configuration>
+          <skip>${maven.javadoc.skip}</skip>
+          <!-- Publish docs for client API packages only. -->
+          <subpackages>com.meshmkt.meshtastic.client</subpackages>
+          <!-- Exclude generated protobuf package from published API docs. -->
+          <excludePackageNames>org.meshtastic.proto*</excludePackageNames>
+          <!-- Keep builds stable across JDKs and avoid doclint noise in transitive/generated signatures. -->
+          <doclint>none</doclint>
+          <quiet>true</quiet>
+        </configuration>
+        <executions>
+          <execution>
+            <id>attach-javadocs</id>
+            <goals>
+              <goal>jar</goal>
+            </goals>
+          </execution>
+        </executions>
+      </plugin>
+
+      <!-- Version-pinned deploy plugin for release staging/publishing -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-deploy-plugin</artifactId>
+        <version>${maven.deploy.plugin.version}</version>
+      </plugin>
+
+      <plugin>
+        <groupId>com.diffplug.spotless</groupId>
+        <artifactId>spotless-maven-plugin</artifactId>
+        <version>${spotless.maven.plugin.version}</version>
+        <configuration>
+          <java>
+            <includes>
+              <include>src/main/java/**/*.java</include>
+              <include>src/test/java/**/*.java</include>
+            </includes>
+            <palantirJavaFormat>
+              <version>${palantir.java.format.version}</version>
+            </palantirJavaFormat>
+            <removeUnusedImports/>
+            <formatAnnotations/>
+          </java>
+          <pom>
+            <sortPom>
+              <expandEmptyElements>false</expandEmptyElements>
+            </sortPom>
+          </pom>
+        </configuration>
+        <executions>
+          <execution>
+            <id>spotless-check</id>
+            <goals>
+              <goal>check</goal>
+            </goals>
+            <phase>verify</phase>
+          </execution>
+        </executions>
+      </plugin>
+
+      <!-- Build AsciiDoc API guides as HTML -->
+      <plugin>
+        <groupId>org.asciidoctor</groupId>
+        <artifactId>asciidoctor-maven-plugin</artifactId>
+        <version>${asciidoctor.maven.plugin.version}</version>
+        <configuration>
+          <skip>${asciidoctor.skip}</skip>
+          <sourceDirectory>${project.basedir}/src/docs/asciidoc</sourceDirectory>
+          <outputDirectory>${project.build.directory}/docs</outputDirectory>
+          <requires>
+            <require>asciidoctor-diagram</require>
+          </requires>
+          <attributes>
+            <project-name>${project.artifactId}</project-name>
+            <project-version>${project.version}</project-version>
+            <javadocs-url>../apidocs/index.html</javadocs-url>
+            <sectanchors>true</sectanchors>
+            <toc>left</toc>
+            <icons>font</icons>
+            <docinfo>shared</docinfo>
+            <data-uri>true</data-uri>
+            <imagesoutdir>${project.build.directory}/docs/images</imagesoutdir>
+            <diagram-cachedir>${project.build.directory}/docs/.diagram-cache</diagram-cachedir>
+          </attributes>
+        </configuration>
+        <dependencies>
+          <dependency>
+            <groupId>org.asciidoctor</groupId>
+            <artifactId>asciidoctorj-diagram</artifactId>
+            <version>${asciidoctorj.diagram.version}</version>
+          </dependency>
+          <dependency>
+            <groupId>org.asciidoctor</groupId>
+            <artifactId>asciidoctorj-diagram-plantuml</artifactId>
+            <version>${asciidoctorj.diagram.plantuml.version}</version>
+          </dependency>
+        </dependencies>
+        <executions>
+          <execution>
+            <id>docs-html</id>
+            <goals>
+              <goal>process-asciidoc</goal>
+            </goals>
+            <phase>prepare-package</phase>
+            <configuration>
+              <backend>html5</backend>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+
+      <!-- GitHub release creation + Maven Central publication -->
+      <plugin>
+        <groupId>org.jreleaser</groupId>
+        <artifactId>jreleaser-maven-plugin</artifactId>
+        <version>${jreleaser.maven.plugin.version}</version>
+        <inherited>false</inherited>
+        <configuration>
+          <jreleaser>
+            <release>
+              <github>
+                <releaseName>{{projectVersion}}</releaseName>
+                <overwrite>true</overwrite>
+                <releaseNotes>
+                  <enabled>true</enabled>
+                </releaseNotes>
+              </github>
+            </release>
+            <signing>
+              <active>ALWAYS</active>
+              <armored>true</armored>
+            </signing>
+            <deploy>
+              <maven>
+                <pomchecker>
+                  <failOnWarning>false</failOnWarning>
+                  <strict>false</strict>
+                </pomchecker>
+                <mavenCentral>
+                  <sonatype>
+                    <active>ALWAYS</active>
+                    <url>https://central.sonatype.com/api/v1/publisher</url>
+                    <stagingRepositories>target/staging-deploy</stagingRepositories>
+                  </sonatype>
+                </mavenCentral>
+              </maven>
+            </deploy>
+          </jreleaser>
+        </configuration>
+      </plugin>
+
+    </plugins>
+    <extensions>
+      <extension>
+        <groupId>kr.motd.maven</groupId>
+        <artifactId>os-maven-plugin</artifactId>
+        <version>${os.maven.plugin.version}</version>
+      </extension>
+    </extensions>
+  </build>
+
+  <profiles>
+    <profile>
+      <id>release</id>
+      <activation>
+        <property>
+          <name>performRelease</name>
+          <value>true</value>
+        </property>
+      </activation>
+      <properties>
+        <asciidoctor.skip>true</asciidoctor.skip>
+        <altDeploymentRepository>local::file:./target/staging-deploy</altDeploymentRepository>
+      </properties>
+      <build>
+        <defaultGoal>clean deploy</defaultGoal>
+      </build>
+    </profile>
+    <profile>
+      <id>hardware-it</id>
+      <properties>
+        <asciidoctor.skip>true</asciidoctor.skip>
+        <maven.javadoc.skip>true</maven.javadoc.skip>
+      </properties>
+      <build>
         <plugins>
-            <!-- Resource plugin -->
-            <plugin>
-                <artifactId>maven-resources-plugin</artifactId>
-                <version>3.5.0</version>
-                <configuration>
-                    <encoding>${project.build.sourceEncoding}</encoding>
-                </configuration>
-                <executions>
-                    <execution>
-                        <id>copy-doc-theme</id>
-                        <phase>prepare-package</phase>
-                        <goals>
-                            <goal>copy-resources</goal>
-                        </goals>
-                        <configuration>
-                            <outputDirectory>${project.build.directory}/docs</outputDirectory>
-                            <resources>
-                                <resource>
-                                    <directory>${project.basedir}/src/docs/asciidoc/theme/html</directory>
-                                    <includes>
-                                        <include>meshmkt-docs.css</include>
-                                    </includes>
-                                </resource>
-                            </resources>
-                        </configuration>
-                    </execution>
-                </executions>
-            </plugin>
-
-            <!-- Compiler plugin -->
-            <plugin>
-                <artifactId>maven-compiler-plugin</artifactId>
-                <version>${maven.compiler.plugin.version}</version>
-                <configuration>
-                    <release>${maven.compiler.target}</release>
-                    <encoding>${maven.compiler.encoding}</encoding>
-                    <annotationProcessorPaths>
-                        <path>
-                            <groupId>org.projectlombok</groupId>
-                            <artifactId>lombok</artifactId>
-                            <version>${lombok.version}</version>
-                        </path>
-                    </annotationProcessorPaths>
-                </configuration>
-            </plugin>
-
-            <!-- Protobuf plugin -->
-            <plugin>
-                <groupId>org.xolstice.maven.plugins</groupId>
-                <artifactId>protobuf-maven-plugin</artifactId>
-                <version>${protobuf.maven.plugin.version}</version>
-                <configuration>
-                    <protocArtifact>com.google.protobuf:protoc:${protobuf.version}:exe:${os.detected.classifier}</protocArtifact>
-                    <pluginId>java</pluginId>
-                </configuration>
-                <executions>
-                    <execution>
-                        <goals>
-                            <goal>compile</goal>
-                        </goals>
-                    </execution>
-                </executions>
-            </plugin>
-
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-surefire-plugin</artifactId>
-                <version>${maven.surefire.plugin.version}</version>
-                <configuration>
-                    <useModulePath>false</useModulePath>
-                </configuration>
-            </plugin>
-
-            <!-- Attach project sources as -sources.jar -->
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-source-plugin</artifactId>
-                <version>${maven.source.plugin.version}</version>
-                <executions>
-                    <execution>
-                        <id>attach-sources</id>
-                        <goals>
-                            <goal>jar-no-fork</goal>
-                        </goals>
-                    </execution>
-                </executions>
-            </plugin>
-
-            <!-- Attach generated Javadocs as -javadoc.jar -->
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-javadoc-plugin</artifactId>
-                <version>${maven.javadoc.plugin.version}</version>
-                <configuration>
-                    <skip>${maven.javadoc.skip}</skip>
-                    <!-- Publish docs for client API packages only. -->
-                    <subpackages>com.meshmkt.meshtastic.client</subpackages>
-                    <!-- Exclude generated protobuf package from published API docs. -->
-                    <excludePackageNames>org.meshtastic.proto*</excludePackageNames>
-                    <!-- Keep builds stable across JDKs and avoid doclint noise in transitive/generated signatures. -->
-                    <doclint>none</doclint>
-                    <quiet>true</quiet>
-                </configuration>
-                <executions>
-                    <execution>
-                        <id>attach-javadocs</id>
-                        <goals>
-                            <goal>jar</goal>
-                        </goals>
-                    </execution>
-                </executions>
-            </plugin>
-
-            <!-- Version-pinned deploy plugin for release staging/publishing -->
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-deploy-plugin</artifactId>
-                <version>${maven.deploy.plugin.version}</version>
-            </plugin>
-
-            <!-- Build AsciiDoc API guides as HTML -->
-            <plugin>
-                <groupId>org.asciidoctor</groupId>
-                <artifactId>asciidoctor-maven-plugin</artifactId>
-                <version>${asciidoctor.maven.plugin.version}</version>
-                <dependencies>
-                    <dependency>
-                        <groupId>org.asciidoctor</groupId>
-                        <artifactId>asciidoctorj-diagram</artifactId>
-                        <version>${asciidoctorj.diagram.version}</version>
-                    </dependency>
-                    <dependency>
-                        <groupId>org.asciidoctor</groupId>
-                        <artifactId>asciidoctorj-diagram-plantuml</artifactId>
-                        <version>${asciidoctorj.diagram.plantuml.version}</version>
-                    </dependency>
-                </dependencies>
-                <configuration>
-                    <skip>${asciidoctor.skip}</skip>
-                    <sourceDirectory>${project.basedir}/src/docs/asciidoc</sourceDirectory>
-                    <outputDirectory>${project.build.directory}/docs</outputDirectory>
-                    <requires>
-                        <require>asciidoctor-diagram</require>
-                    </requires>
-                    <attributes>
-                        <project-name>${project.artifactId}</project-name>
-                        <project-version>${project.version}</project-version>
-                        <javadocs-url>../apidocs/index.html</javadocs-url>
-                        <sectanchors>true</sectanchors>
-                        <toc>left</toc>
-                        <icons>font</icons>
-                        <docinfo>shared</docinfo>
-                        <data-uri>true</data-uri>
-                        <imagesoutdir>${project.build.directory}/docs/images</imagesoutdir>
-                        <diagram-cachedir>${project.build.directory}/docs/.diagram-cache</diagram-cachedir>
-                    </attributes>
-                </configuration>
-                <executions>
-                    <execution>
-                        <id>docs-html</id>
-                        <phase>prepare-package</phase>
-                        <goals>
-                            <goal>process-asciidoc</goal>
-                        </goals>
-                        <configuration>
-                            <backend>html5</backend>
-                        </configuration>
-                    </execution>
-                </executions>
-            </plugin>
-
-            <!-- GitHub release creation + Maven Central publication -->
-            <plugin>
-                <groupId>org.jreleaser</groupId>
-                <artifactId>jreleaser-maven-plugin</artifactId>
-                <version>${jreleaser.maven.plugin.version}</version>
-                <inherited>false</inherited>
-                <configuration>
-                    <jreleaser>
-                        <release>
-                            <github>
-                                <releaseName>{{projectVersion}}</releaseName>
-                                <overwrite>true</overwrite>
-                                <releaseNotes>
-                                    <enabled>true</enabled>
-                                </releaseNotes>
-                            </github>
-                        </release>
-                        <signing>
-                            <active>ALWAYS</active>
-                            <armored>true</armored>
-                        </signing>
-                        <deploy>
-                            <maven>
-                                <pomchecker>
-                                    <failOnWarning>false</failOnWarning>
-                                    <strict>false</strict>
-                                </pomchecker>
-                                <mavenCentral>
-                                    <sonatype>
-                                        <active>ALWAYS</active>
-                                        <url>https://central.sonatype.com/api/v1/publisher</url>
-                                        <stagingRepositories>target/staging-deploy</stagingRepositories>
-                                    </sonatype>
-                                </mavenCentral>
-                            </maven>
-                        </deploy>
-                    </jreleaser>
-                </configuration>
-            </plugin>
-
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-surefire-plugin</artifactId>
+            <version>${maven.surefire.plugin.version}</version>
+            <configuration>
+              <skipTests>true</skipTests>
+            </configuration>
+          </plugin>
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-failsafe-plugin</artifactId>
+            <version>${maven.failsafe.plugin.version}</version>
+            <configuration>
+              <useModulePath>false</useModulePath>
+              <includes>
+                <include>**/*IT.java</include>
+              </includes>
+              <systemPropertyVariables>
+                <MESHTASTIC_TEST_TRANSPORT>${env.MESHTASTIC_TEST_TRANSPORT}</MESHTASTIC_TEST_TRANSPORT>
+                <MESHTASTIC_TEST_PORT>${env.MESHTASTIC_TEST_PORT}</MESHTASTIC_TEST_PORT>
+                <MESHTASTIC_TEST_TCP_HOST>${env.MESHTASTIC_TEST_TCP_HOST}</MESHTASTIC_TEST_TCP_HOST>
+                <MESHTASTIC_TEST_TCP_PORT>${env.MESHTASTIC_TEST_TCP_PORT}</MESHTASTIC_TEST_TCP_PORT>
+                <MESHTASTIC_TEST_TIMEOUT_SEC>${env.MESHTASTIC_TEST_TIMEOUT_SEC}</MESHTASTIC_TEST_TIMEOUT_SEC>
+                <MESHTASTIC_TEST_MUTABLE_CHANNEL_INDEX>${env.MESHTASTIC_TEST_MUTABLE_CHANNEL_INDEX}</MESHTASTIC_TEST_MUTABLE_CHANNEL_INDEX>
+                <MESHTASTIC_TEST_ENABLE_OWNER_WRITE>${env.MESHTASTIC_TEST_ENABLE_OWNER_WRITE}</MESHTASTIC_TEST_ENABLE_OWNER_WRITE>
+                <MESHTASTIC_TEST_ENABLE_SECURITY_WRITE>${env.MESHTASTIC_TEST_ENABLE_SECURITY_WRITE}</MESHTASTIC_TEST_ENABLE_SECURITY_WRITE>
+                <MESHTASTIC_TEST_ENABLE_MQTT_WRITE>${env.MESHTASTIC_TEST_ENABLE_MQTT_WRITE}</MESHTASTIC_TEST_ENABLE_MQTT_WRITE>
+                <MESHTASTIC_TEST_ENABLE_REBOOT_TEST>${env.MESHTASTIC_TEST_ENABLE_REBOOT_TEST}</MESHTASTIC_TEST_ENABLE_REBOOT_TEST>
+              </systemPropertyVariables>
+            </configuration>
+            <executions>
+              <execution>
+                <goals>
+                  <goal>integration-test</goal>
+                  <goal>verify</goal>
+                </goals>
+              </execution>
+            </executions>
+          </plugin>
         </plugins>
-    </build>
+      </build>
+    </profile>
+  </profiles>
 
-    <profiles>
-        <profile>
-            <id>release</id>
-            <activation>
-                <property>
-                    <name>performRelease</name>
-                    <value>true</value>
-                </property>
-            </activation>
-            <properties>
-                <asciidoctor.skip>true</asciidoctor.skip>
-                <altDeploymentRepository>local::file:./target/staging-deploy</altDeploymentRepository>
-            </properties>
-            <build>
-                <defaultGoal>clean deploy</defaultGoal>
-            </build>
-        </profile>
-        <profile>
-            <id>hardware-it</id>
-            <properties>
-                <asciidoctor.skip>true</asciidoctor.skip>
-                <maven.javadoc.skip>true</maven.javadoc.skip>
-            </properties>
-            <build>
-                <plugins>
-                    <plugin>
-                        <groupId>org.apache.maven.plugins</groupId>
-                        <artifactId>maven-surefire-plugin</artifactId>
-                        <version>${maven.surefire.plugin.version}</version>
-                        <configuration>
-                            <skipTests>true</skipTests>
-                        </configuration>
-                    </plugin>
-                    <plugin>
-                        <groupId>org.apache.maven.plugins</groupId>
-                        <artifactId>maven-failsafe-plugin</artifactId>
-                        <version>${maven.failsafe.plugin.version}</version>
-                        <configuration>
-                            <useModulePath>false</useModulePath>
-                            <includes>
-                                <include>**/*IT.java</include>
-                            </includes>
-                            <systemPropertyVariables>
-                                <MESHTASTIC_TEST_TRANSPORT>${env.MESHTASTIC_TEST_TRANSPORT}</MESHTASTIC_TEST_TRANSPORT>
-                                <MESHTASTIC_TEST_PORT>${env.MESHTASTIC_TEST_PORT}</MESHTASTIC_TEST_PORT>
-                                <MESHTASTIC_TEST_TCP_HOST>${env.MESHTASTIC_TEST_TCP_HOST}</MESHTASTIC_TEST_TCP_HOST>
-                                <MESHTASTIC_TEST_TCP_PORT>${env.MESHTASTIC_TEST_TCP_PORT}</MESHTASTIC_TEST_TCP_PORT>
-                                <MESHTASTIC_TEST_TIMEOUT_SEC>${env.MESHTASTIC_TEST_TIMEOUT_SEC}</MESHTASTIC_TEST_TIMEOUT_SEC>
-                                <MESHTASTIC_TEST_MUTABLE_CHANNEL_INDEX>${env.MESHTASTIC_TEST_MUTABLE_CHANNEL_INDEX}</MESHTASTIC_TEST_MUTABLE_CHANNEL_INDEX>
-                                <MESHTASTIC_TEST_ENABLE_OWNER_WRITE>${env.MESHTASTIC_TEST_ENABLE_OWNER_WRITE}</MESHTASTIC_TEST_ENABLE_OWNER_WRITE>
-                                <MESHTASTIC_TEST_ENABLE_SECURITY_WRITE>${env.MESHTASTIC_TEST_ENABLE_SECURITY_WRITE}</MESHTASTIC_TEST_ENABLE_SECURITY_WRITE>
-                                <MESHTASTIC_TEST_ENABLE_MQTT_WRITE>${env.MESHTASTIC_TEST_ENABLE_MQTT_WRITE}</MESHTASTIC_TEST_ENABLE_MQTT_WRITE>
-                                <MESHTASTIC_TEST_ENABLE_REBOOT_TEST>${env.MESHTASTIC_TEST_ENABLE_REBOOT_TEST}</MESHTASTIC_TEST_ENABLE_REBOOT_TEST>
-                            </systemPropertyVariables>
-                        </configuration>
-                        <executions>
-                            <execution>
-                                <goals>
-                                    <goal>integration-test</goal>
-                                    <goal>verify</goal>
-                                </goals>
-                            </execution>
-                        </executions>
-                    </plugin>
-                </plugins>
-            </build>
-        </profile>
-    </profiles>
-    
 </project>

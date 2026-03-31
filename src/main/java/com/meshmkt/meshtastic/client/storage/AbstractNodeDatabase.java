@@ -7,8 +7,8 @@ import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import org.meshtastic.proto.MeshProtos;
 
@@ -22,6 +22,7 @@ public abstract class AbstractNodeDatabase implements NodeDatabase {
      *
      */
     protected int localNodeId;
+
     private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor();
     private final Object cleanupTaskLock = new Object();
     private ScheduledFuture<?> cleanupTask;
@@ -117,8 +118,7 @@ public abstract class AbstractNodeDatabase implements NodeDatabase {
                     () -> purgeStaleNodes(policy.getStaleAfter()),
                     policy.getInitialDelay().toMillis(),
                     policy.getInterval().toMillis(),
-                    TimeUnit.MILLISECONDS
-            );
+                    TimeUnit.MILLISECONDS);
         }
     }
 
@@ -167,7 +167,7 @@ public abstract class AbstractNodeDatabase implements NodeDatabase {
      * @param selfId
      */
     protected void handleSelfLocationUpdate(int selfId) {
-        // We call this to let the implementation (In-Memory or SQL) 
+        // We call this to let the implementation (In-Memory or SQL)
         // provide the list of nodes to refresh.
         refreshDistancesRelativeto(selfId);
     }
@@ -178,7 +178,7 @@ public abstract class AbstractNodeDatabase implements NodeDatabase {
      * @param remoteId
      * @param remotePos
      * @param ctx
-     * @return 
+     * @return
      */
     protected double calculateDistance(int remoteId, MeshProtos.Position remotePos, PacketContext ctx) {
         if (ctx != null && ctx.isViaMqtt()) {
@@ -192,11 +192,11 @@ public abstract class AbstractNodeDatabase implements NodeDatabase {
                 .filter(MeshNode::hasGpsFix)
                 .filter(self -> remotePos != null && remotePos.getLatitudeI() != 0)
                 .map(self -> MeshUtils.calculateDistance(
-                MeshUtils.toDecimal(self.getPosition().getLatitudeI()),
-                MeshUtils.toDecimal(self.getPosition().getLongitudeI()),
-                MeshUtils.toDecimal(remotePos.getLatitudeI()),
-                MeshUtils.toDecimal(remotePos.getLongitudeI())
-        )).orElse(MeshConstants.DISTANCE_UNKNOWN);
+                        MeshUtils.toDecimal(self.getPosition().getLatitudeI()),
+                        MeshUtils.toDecimal(self.getPosition().getLongitudeI()),
+                        MeshUtils.toDecimal(remotePos.getLatitudeI()),
+                        MeshUtils.toDecimal(remotePos.getLongitudeI())))
+                .orElse(MeshConstants.DISTANCE_UNKNOWN);
     }
 
     /**

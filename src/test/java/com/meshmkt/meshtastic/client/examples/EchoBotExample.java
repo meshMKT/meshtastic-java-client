@@ -8,7 +8,6 @@ import com.meshmkt.meshtastic.client.storage.MeshNode;
 import com.meshmkt.meshtastic.client.storage.NodeDatabase;
 import com.meshmkt.meshtastic.client.transport.stream.tcp.TcpConfig;
 import com.meshmkt.meshtastic.client.transport.stream.tcp.TcpTransport;
-
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 
@@ -28,15 +27,14 @@ import java.util.concurrent.TimeUnit;
  */
 public final class EchoBotExample {
 
-    private static final String LISTEN_CHANNEL =  "LISTEN_CHANNEL";
+    private static final String LISTEN_CHANNEL = "LISTEN_CHANNEL";
     private static final String HOST_KEY = "MESHTASTIC_TCP_HOST";
     private static final String PORT_KEY = "MESHTASTIC_TCP_PORT";
     private static final String CONNECT_TIMEOUT_KEY = "MESHTASTIC_TCP_TIMEOUT_MS";
     private static final String PACING_KEY = "MESHTASTIC_TCP_PACING_MS";
     private static final String READY_TIMEOUT_KEY = "MESHTASTIC_TCP_READY_TIMEOUT_SEC";
 
-    private EchoBotExample() {
-    }
+    private EchoBotExample() {}
 
     /**
      * Runs the TCP smoke example until the process is interrupted.
@@ -52,7 +50,7 @@ public final class EchoBotExample {
         int connectTimeoutMs = intSetting(CONNECT_TIMEOUT_KEY, 5000);
         long pacingMs = longSetting(PACING_KEY, 200L);
         long readyTimeoutSec = longSetting(READY_TIMEOUT_KEY, 45L);
-        int  channel = intSetting(LISTEN_CHANNEL, 1);
+        int channel = intSetting(LISTEN_CHANNEL, 1);
 
         NodeDatabase db = new InMemoryNodeDatabase();
         MeshtasticClient client = new MeshtasticClient(db);
@@ -76,8 +74,7 @@ public final class EchoBotExample {
                         MeshUtils.formatId(event.getDestinationId()),
                         event.getChannel(),
                         event.isDirect(),
-                        event.getText()
-                );
+                        event.getText());
 
                 if (event.getNodeId() == db.getSelfNodeId()) {
                     return;
@@ -89,31 +86,31 @@ public final class EchoBotExample {
                     return;
                 }
 
-                System.out.printf("[TEXT] from=%s text=%s%n",
-                        MeshUtils.formatId(event.getNodeId()),
-                        event.getText());
+                System.out.printf("[TEXT] from=%s text=%s%n", MeshUtils.formatId(event.getNodeId()), event.getText());
 
-                String longName = db.getNode(event.getNodeId())
-                        .map(MeshNode::getLongName)
-                        .orElse("N/A");
+                String longName =
+                        db.getNode(event.getNodeId()).map(MeshNode::getLongName).orElse("N/A");
 
                 // Say a nice greeting to the user who texted to the channel.
                 String reply = """
                         Hi! %s (%s), nice to meet you!
-                        """.formatted(longName, MeshUtils.formatId(event.getNodeId()));
+                        """
+                        .formatted(longName, MeshUtils.formatId(event.getNodeId()));
 
                 client.sendDirectText(event.getNodeId(), reply);
             }
-
         });
 
-        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
-            try {
-                client.shutdown();
-            } catch (Exception ex) {
-                System.err.printf("[SHUTDOWN] %s%n", ex.getMessage());
-            }
-        }, "echo-bot-shutdown"));
+        Runtime.getRuntime()
+                .addShutdownHook(new Thread(
+                        () -> {
+                            try {
+                                client.shutdown();
+                            } catch (Exception ex) {
+                                System.err.printf("[SHUTDOWN] %s%n", ex.getMessage());
+                            }
+                        },
+                        "echo-bot-shutdown"));
 
         TcpConfig config = TcpConfig.builder()
                 .host(host)
@@ -122,16 +119,16 @@ public final class EchoBotExample {
                 .outboundPacingDelayMs(pacingMs)
                 .build();
 
-        System.out.printf("[TCP] Connecting to %s:%d (timeout=%dms pacing=%dms)%n",
-                host, port, connectTimeoutMs, pacingMs);
+        System.out.printf(
+                "[TCP] Connecting to %s:%d (timeout=%dms pacing=%dms)%n", host, port, connectTimeoutMs, pacingMs);
         client.connect(new TcpTransport(config));
 
         boolean ready = readyLatch.await(readyTimeoutSec, TimeUnit.SECONDS);
         if (ready) {
             System.out.printf("[TCP] Client reached READY within %ds.%n", readyTimeoutSec);
         } else {
-            System.out.printf("[TCP] Client did not reach READY within %ds. Check startup/sync logs.%n",
-                    readyTimeoutSec);
+            System.out.printf(
+                    "[TCP] Client did not reach READY within %ds. Check startup/sync logs.%n", readyTimeoutSec);
         }
 
         System.out.println("[TCP] Running. Press Ctrl+C to stop.");
@@ -150,7 +147,8 @@ public final class EchoBotExample {
         setIfMissing("org.slf4j.simpleLogger.showLogName", "true");
         setIfMissing("org.slf4j.simpleLogger.defaultLogLevel", "info");
         setIfMissing("org.slf4j.simpleLogger.log.com.meshmkt.meshtastic.client", "error");
-        setIfMissing("org.slf4j.simpleLogger.log.com.meshmkt.meshtastic.client.transport.stream.tcp.TcpTransport", "warn");
+        setIfMissing(
+                "org.slf4j.simpleLogger.log.com.meshmkt.meshtastic.client.transport.stream.tcp.TcpTransport", "warn");
     }
 
     /**

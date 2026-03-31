@@ -1,17 +1,16 @@
 package com.meshmkt.meshtastic.client.service;
 
-import lombok.Value;
-import lombok.extern.slf4j.Slf4j;
-import org.meshtastic.proto.AdminProtos.AdminMessage.ConfigType;
-import org.meshtastic.proto.ConfigProtos.Config;
-import org.meshtastic.proto.ModuleConfigProtos.ModuleConfig;
-
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Supplier;
+import lombok.Value;
+import lombok.extern.slf4j.Slf4j;
+import org.meshtastic.proto.AdminProtos.AdminMessage.ConfigType;
+import org.meshtastic.proto.ConfigProtos.Config;
+import org.meshtastic.proto.ModuleConfigProtos.ModuleConfig;
 
 /**
  * Encapsulates verify-applied retry policy and payload comparison rules for admin writes.
@@ -35,7 +34,8 @@ final class AdminVerificationEngine {
         Throwable error;
     }
 
-    private volatile AdminVerificationPolicy verificationPolicy = AdminVerificationPolicy.builder().build().validated();
+    private volatile AdminVerificationPolicy verificationPolicy =
+            AdminVerificationPolicy.builder().build().validated();
 
     /**
      * Returns the current verification policy.
@@ -63,8 +63,7 @@ final class AdminVerificationEngine {
      * @param verifier verification attempt supplier.
      * @return future completing with {@code true} once one attempt verifies applied state.
      */
-    CompletableFuture<Boolean> verifyWithPolicy(String operation,
-                                                Supplier<CompletableFuture<Boolean>> verifier) {
+    CompletableFuture<Boolean> verifyWithPolicy(String operation, Supplier<CompletableFuture<Boolean>> verifier) {
         return verifyWithPolicy(operation, verifier, 1);
     }
 
@@ -86,29 +85,50 @@ final class AdminVerificationEngine {
             if (observed == null) {
                 return false;
             }
-            boolean sectionMatches = switch (type) {
-                case DEVICE_CONFIG -> requested.hasDevice() && observed.hasDevice()
-                        && requested.getDevice().equals(observed.getDevice());
-                case POSITION_CONFIG -> requested.hasPosition() && observed.hasPosition()
-                        && requested.getPosition().equals(observed.getPosition());
-                case POWER_CONFIG -> requested.hasPower() && observed.hasPower()
-                        && requested.getPower().equals(observed.getPower());
-                case NETWORK_CONFIG -> requested.hasNetwork() && observed.hasNetwork()
-                        && requested.getNetwork().equals(observed.getNetwork());
-                case DISPLAY_CONFIG -> requested.hasDisplay() && observed.hasDisplay()
-                        && requested.getDisplay().equals(observed.getDisplay());
-                case LORA_CONFIG -> requested.hasLora() && observed.hasLora()
-                        && requested.getLora().equals(observed.getLora());
-                case BLUETOOTH_CONFIG -> requested.hasBluetooth() && observed.hasBluetooth()
-                        && requested.getBluetooth().equals(observed.getBluetooth());
-                case SECURITY_CONFIG -> requested.hasSecurity() && observed.hasSecurity()
-                        && requested.getSecurity().equals(observed.getSecurity());
-                case SESSIONKEY_CONFIG -> requested.hasSessionkey() && observed.hasSessionkey()
-                        && requested.getSessionkey().equals(observed.getSessionkey());
-                case DEVICEUI_CONFIG -> requested.hasDeviceUi() && observed.hasDeviceUi()
-                        && requested.getDeviceUi().equals(observed.getDeviceUi());
-                case UNRECOGNIZED -> false;
-            };
+            boolean sectionMatches =
+                    switch (type) {
+                        case DEVICE_CONFIG ->
+                            requested.hasDevice()
+                                    && observed.hasDevice()
+                                    && requested.getDevice().equals(observed.getDevice());
+                        case POSITION_CONFIG ->
+                            requested.hasPosition()
+                                    && observed.hasPosition()
+                                    && requested.getPosition().equals(observed.getPosition());
+                        case POWER_CONFIG ->
+                            requested.hasPower()
+                                    && observed.hasPower()
+                                    && requested.getPower().equals(observed.getPower());
+                        case NETWORK_CONFIG ->
+                            requested.hasNetwork()
+                                    && observed.hasNetwork()
+                                    && requested.getNetwork().equals(observed.getNetwork());
+                        case DISPLAY_CONFIG ->
+                            requested.hasDisplay()
+                                    && observed.hasDisplay()
+                                    && requested.getDisplay().equals(observed.getDisplay());
+                        case LORA_CONFIG ->
+                            requested.hasLora()
+                                    && observed.hasLora()
+                                    && requested.getLora().equals(observed.getLora());
+                        case BLUETOOTH_CONFIG ->
+                            requested.hasBluetooth()
+                                    && observed.hasBluetooth()
+                                    && requested.getBluetooth().equals(observed.getBluetooth());
+                        case SECURITY_CONFIG ->
+                            requested.hasSecurity()
+                                    && observed.hasSecurity()
+                                    && requested.getSecurity().equals(observed.getSecurity());
+                        case SESSIONKEY_CONFIG ->
+                            requested.hasSessionkey()
+                                    && observed.hasSessionkey()
+                                    && requested.getSessionkey().equals(observed.getSessionkey());
+                        case DEVICEUI_CONFIG ->
+                            requested.hasDeviceUi()
+                                    && observed.hasDeviceUi()
+                                    && requested.getDeviceUi().equals(observed.getDeviceUi());
+                        case UNRECOGNIZED -> false;
+                    };
             if (!sectionMatches) {
                 return false;
             }
@@ -136,7 +156,8 @@ final class AdminVerificationEngine {
         return switch (requested.getPayloadVariantCase()) {
             case MQTT -> requested.getMqtt().equals(observed.getMqtt());
             case SERIAL -> requested.getSerial().equals(observed.getSerial());
-            case EXTERNAL_NOTIFICATION -> requested.getExternalNotification().equals(observed.getExternalNotification());
+            case EXTERNAL_NOTIFICATION ->
+                requested.getExternalNotification().equals(observed.getExternalNotification());
             case STORE_FORWARD -> requested.getStoreForward().equals(observed.getStoreForward());
             case RANGE_TEST -> requested.getRangeTest().equals(observed.getRangeTest());
             case TELEMETRY -> requested.getTelemetry().equals(observed.getTelemetry());
@@ -159,25 +180,24 @@ final class AdminVerificationEngine {
      * @param appliedChannel observed channel.
      * @return {@code true} when role and settings match.
      */
-    boolean isChannelApplied(org.meshtastic.proto.ChannelProtos.Channel expected,
-                             org.meshtastic.proto.ChannelProtos.Channel appliedChannel) {
+    boolean isChannelApplied(
+            org.meshtastic.proto.ChannelProtos.Channel expected,
+            org.meshtastic.proto.ChannelProtos.Channel appliedChannel) {
         return expected.getRole() == appliedChannel.getRole()
                 && expected.getSettings().equals(appliedChannel.getSettings());
     }
 
-    private CompletableFuture<Boolean> verifyWithPolicy(String operation,
-                                                        Supplier<CompletableFuture<Boolean>> verifier,
-                                                        int attempt) {
+    private CompletableFuture<Boolean> verifyWithPolicy(
+            String operation, Supplier<CompletableFuture<Boolean>> verifier, int attempt) {
         long delayMs = verificationDelayMs(attempt);
         CompletableFuture<Boolean> attemptFuture = delayMs <= 0
                 ? invokeVerifier(verifier)
                 : CompletableFuture.runAsync(
-                        () -> {
-                        },
-                        CompletableFuture.delayedExecutor(delayMs, TimeUnit.MILLISECONDS))
-                .thenCompose(unused -> invokeVerifier(verifier));
+                                () -> {}, CompletableFuture.delayedExecutor(delayMs, TimeUnit.MILLISECONDS))
+                        .thenCompose(unused -> invokeVerifier(verifier));
 
-        return attemptFuture.handle((applied, error) -> new VerificationAttemptResult(Boolean.TRUE.equals(applied), error))
+        return attemptFuture
+                .handle((applied, error) -> new VerificationAttemptResult(Boolean.TRUE.equals(applied), error))
                 .thenCompose(result -> {
                     if (result.isApplied()) {
                         return CompletableFuture.completedFuture(true);
@@ -186,18 +206,28 @@ final class AdminVerificationEngine {
                     int maxAttempts = verificationPolicy.getMaxAttempts();
                     if (attempt >= maxAttempts) {
                         if (result.getError() != null) {
-                            log.debug("[ADMIN] {} verification exhausted after {} attempt(s). Last error: {}",
-                                    operation, attempt, unwrap(result.getError()).getMessage());
+                            log.debug(
+                                    "[ADMIN] {} verification exhausted after {} attempt(s). Last error: {}",
+                                    operation,
+                                    attempt,
+                                    unwrap(result.getError()).getMessage());
                         }
                         return CompletableFuture.completedFuture(false);
                     }
 
                     if (result.getError() != null) {
-                        log.debug("[ADMIN] {} verification attempt {}/{} failed with error: {}",
-                                operation, attempt, maxAttempts, unwrap(result.getError()).getMessage());
+                        log.debug(
+                                "[ADMIN] {} verification attempt {}/{} failed with error: {}",
+                                operation,
+                                attempt,
+                                maxAttempts,
+                                unwrap(result.getError()).getMessage());
                     } else {
-                        log.debug("[ADMIN] {} verification attempt {}/{} did not match; retrying...",
-                                operation, attempt, maxAttempts);
+                        log.debug(
+                                "[ADMIN] {} verification attempt {}/{} did not match; retrying...",
+                                operation,
+                                attempt,
+                                maxAttempts);
                     }
 
                     return verifyWithPolicy(operation, verifier, attempt + 1);
@@ -246,7 +276,7 @@ final class AdminVerificationEngine {
         Throwable current = error;
         while (current.getCause() != null
                 && (current instanceof java.util.concurrent.CompletionException
-                || current instanceof java.util.concurrent.ExecutionException)) {
+                        || current instanceof java.util.concurrent.ExecutionException)) {
             current = current.getCause();
         }
         return current;

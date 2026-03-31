@@ -5,10 +5,10 @@ import com.meshmkt.meshtastic.client.event.MeshEventDispatcher;
 import com.meshmkt.meshtastic.client.event.TelemetryUpdateEvent;
 import com.meshmkt.meshtastic.client.storage.NodeDatabase;
 import com.meshmkt.meshtastic.client.storage.PacketContext;
-import org.meshtastic.proto.MeshProtos;
-import org.meshtastic.proto.TelemetryProtos;
 import lombok.extern.slf4j.Slf4j;
+import org.meshtastic.proto.MeshProtos;
 import org.meshtastic.proto.Portnums.PortNum;
+import org.meshtastic.proto.TelemetryProtos;
 
 /**
  * Processes TELEMETRY_APP packets containing device vitals and environmental
@@ -34,7 +34,8 @@ public class TelemetryHandler extends BaseMeshHandler {
      */
     @Override
     public boolean canHandle(MeshProtos.FromRadio message) {
-        return message.hasPacket() && message.getPacket().hasDecoded()
+        return message.hasPacket()
+                && message.getPacket().hasDecoded()
                 && message.getPacket().getDecoded().getPortnum() == PortNum.TELEMETRY_APP;
     }
 
@@ -48,7 +49,8 @@ public class TelemetryHandler extends BaseMeshHandler {
     @Override
     protected boolean handlePacket(MeshProtos.MeshPacket packet, PacketContext ctx) {
         try {
-            TelemetryProtos.Telemetry tele = TelemetryProtos.Telemetry.parseFrom(packet.getDecoded().getPayload());
+            TelemetryProtos.Telemetry tele =
+                    TelemetryProtos.Telemetry.parseFrom(packet.getDecoded().getPayload());
             String fromId = MeshUtils.formatId(packet.getFrom());
             String name = resolveName(packet.getFrom());
 
@@ -56,26 +58,36 @@ public class TelemetryHandler extends BaseMeshHandler {
             switch (tele.getVariantCase()) {
                 case DEVICE_METRICS:
                     nodeDb.updateMetrics(tele.getDeviceMetrics(), ctx);
-                    log.debug("[TELE] from={} ({}) battery={}% snr={}dB",
+                    log.debug(
+                            "[TELE] from={} ({}) battery={}% snr={}dB",
                             fromId, name, tele.getDeviceMetrics().getBatteryLevel(), ctx.getSnr());
                     break;
 
                 case ENVIRONMENT_METRICS:
                     nodeDb.updateEnvMetrics(tele.getEnvironmentMetrics(), ctx);
-                    log.debug("[TELE] from={} ({}) temp={}C snr={}dB",
-                            fromId, name, tele.getEnvironmentMetrics().getTemperature(), ctx.getSnr());
+                    log.debug(
+                            "[TELE] from={} ({}) temp={}C snr={}dB",
+                            fromId,
+                            name,
+                            tele.getEnvironmentMetrics().getTemperature(),
+                            ctx.getSnr());
                     break;
 
                 default:
-                    log.trace("[TELE] from={} ({}) variant={} snr={}dB",
-                            fromId, name, tele.getVariantCase(), ctx.getSnr());
+                    log.trace(
+                            "[TELE] from={} ({}) variant={} snr={}dB",
+                            fromId,
+                            name,
+                            tele.getVariantCase(),
+                            ctx.getSnr());
                     break;
             }
 
             dispatcher.onTelemetryUpdate(TelemetryUpdateEvent.of(packet, ctx, nodeDb.getSelfNodeId(), tele));
             return true;
         } catch (Exception e) {
-            log.error("[TELE] Failed to parse payload from={} packet_id={}",
+            log.error(
+                    "[TELE] Failed to parse payload from={} packet_id={}",
                     MeshUtils.formatId(packet.getFrom()),
                     packet.getId(),
                     e);

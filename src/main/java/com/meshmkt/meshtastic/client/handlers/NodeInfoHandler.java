@@ -6,8 +6,8 @@ import com.meshmkt.meshtastic.client.event.NodeDiscoveryEvent;
 import com.meshmkt.meshtastic.client.service.AdminService;
 import com.meshmkt.meshtastic.client.storage.NodeDatabase;
 import com.meshmkt.meshtastic.client.storage.PacketContext;
-import org.meshtastic.proto.MeshProtos;
 import lombok.extern.slf4j.Slf4j;
+import org.meshtastic.proto.MeshProtos;
 import org.meshtastic.proto.Portnums.PortNum;
 
 /**
@@ -38,8 +38,10 @@ public class NodeInfoHandler extends BaseMeshHandler {
      */
     @Override
     public boolean canHandle(MeshProtos.FromRadio message) {
-        return message.hasNodeInfo() || (message.hasPacket() && message.getPacket().hasDecoded()
-                && message.getPacket().getDecoded().getPortnum() == PortNum.NODEINFO_APP);
+        return message.hasNodeInfo()
+                || (message.hasPacket()
+                        && message.getPacket().hasDecoded()
+                        && message.getPacket().getDecoded().getPortnum() == PortNum.NODEINFO_APP);
     }
 
     /**
@@ -47,7 +49,7 @@ public class NodeInfoHandler extends BaseMeshHandler {
      * nodes to us via Serial/Bluetooth. These represent "Cached" nodes and do
      * not have current signal (SNR/RSSI) data.
      * @param message
-     * @return 
+     * @return
      */
     @Override
     protected boolean handleNonPacketMessage(MeshProtos.FromRadio message) {
@@ -76,7 +78,7 @@ public class NodeInfoHandler extends BaseMeshHandler {
             }
 
             // 3. Update cached Device Metrics (Battery/Voltage)
-            // This is the part I missed - the radio often caches how much battery 
+            // This is the part I missed - the radio often caches how much battery
             // your friends had the last time it heard from them.
             if (info.hasDeviceMetrics()) {
                 nodeDb.updateMetrics(info.getDeviceMetrics(), localCtx);
@@ -95,14 +97,15 @@ public class NodeInfoHandler extends BaseMeshHandler {
      * (SNR/RSSI).
      * @param packet
      * @param ctx
-     * @return 
+     * @return
      */
     @Override
     protected boolean handlePacket(MeshProtos.MeshPacket packet, PacketContext ctx) {
         try {
             MeshProtos.User user = MeshProtos.User.parseFrom(packet.getDecoded().getPayload());
 
-            log.info("[NODE] discovered from={} ({}) snr={}dB hops={} via_mqtt={}",
+            log.info(
+                    "[NODE] discovered from={} ({}) snr={}dB hops={} via_mqtt={}",
                     MeshUtils.formatId(packet.getFrom()),
                     user.getLongName(),
                     ctx.getSnr(),
@@ -115,7 +118,8 @@ public class NodeInfoHandler extends BaseMeshHandler {
             dispatcher.onNodeDiscovery(NodeDiscoveryEvent.of(packet, ctx, nodeDb.getSelfNodeId(), user));
             return true;
         } catch (Exception e) {
-            log.error("[NODE] Failed to parse NODEINFO_APP payload from={} packet_id={}",
+            log.error(
+                    "[NODE] Failed to parse NODEINFO_APP payload from={} packet_id={}",
                     MeshUtils.formatId(packet.getFrom()),
                     packet.getId(),
                     e);

@@ -1,10 +1,10 @@
 package com.meshmkt.meshtastic.client.storage;
 
-import org.meshtastic.proto.MeshProtos;
-import org.meshtastic.proto.TelemetryProtos;
 import java.time.Duration;
 import java.util.Collection;
 import java.util.Optional;
+import org.meshtastic.proto.MeshProtos;
+import org.meshtastic.proto.TelemetryProtos;
 
 /**
  * The central authority for Meshtastic node state. This interface standardizes

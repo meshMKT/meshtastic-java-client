@@ -1,18 +1,17 @@
 package com.meshmkt.meshtastic.client.storage;
 
-import com.meshmkt.meshtastic.client.MeshConstants;
-import org.junit.jupiter.api.Test;
-import org.meshtastic.proto.MeshProtos;
-
-import java.time.Duration;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.concurrent.atomic.AtomicInteger;
-
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import com.meshmkt.meshtastic.client.MeshConstants;
+import java.time.Duration;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
+import org.junit.jupiter.api.Test;
+import org.meshtastic.proto.MeshProtos;
 
 /**
  * Tests observer notification semantics for {@link InMemoryNodeDatabase}.
@@ -29,9 +28,11 @@ class NodeDatabaseObserverTest {
         db.addObserver(new RecordingObserver(updates, new AtomicInteger()));
 
         db.updateUser(
-                MeshProtos.User.newBuilder().setLongName("Alpha").setShortName("a").build(),
-                PacketContext.builder().from(0x1234).live(true).build()
-        );
+                MeshProtos.User.newBuilder()
+                        .setLongName("Alpha")
+                        .setShortName("a")
+                        .build(),
+                PacketContext.builder().from(0x1234).live(true).build());
 
         assertEquals(1, updates.size());
         assertEquals(0x1234, updates.get(0).getNodeId());
@@ -50,16 +51,20 @@ class NodeDatabaseObserverTest {
         db.addObserver(observer);
 
         db.updateUser(
-                MeshProtos.User.newBuilder().setLongName("Before").setShortName("b").build(),
-                PacketContext.builder().from(1).live(true).build()
-        );
+                MeshProtos.User.newBuilder()
+                        .setLongName("Before")
+                        .setShortName("b")
+                        .build(),
+                PacketContext.builder().from(1).live(true).build());
 
         db.removeObserver(observer);
 
         db.updateUser(
-                MeshProtos.User.newBuilder().setLongName("After").setShortName("a").build(),
-                PacketContext.builder().from(2).live(true).build()
-        );
+                MeshProtos.User.newBuilder()
+                        .setLongName("After")
+                        .setShortName("a")
+                        .build(),
+                PacketContext.builder().from(2).live(true).build());
         db.clear();
 
         assertEquals(1, updates.size());
@@ -77,15 +82,19 @@ class NodeDatabaseObserverTest {
         db.addObserver(new RecordingObserver(updates, purges));
 
         db.updatePosition(
-                MeshProtos.Position.newBuilder().setLatitudeI(0).setLongitudeI(0).build(),
-                PacketContext.builder().from(9).live(true).build()
-        );
+                MeshProtos.Position.newBuilder()
+                        .setLatitudeI(0)
+                        .setLongitudeI(0)
+                        .build(),
+                PacketContext.builder().from(9).live(true).build());
         assertTrue(updates.isEmpty(), "0,0 position should be ignored");
 
         db.updateUser(
-                MeshProtos.User.newBuilder().setLongName("Node").setShortName("n").build(),
-                PacketContext.builder().from(9).live(true).build()
-        );
+                MeshProtos.User.newBuilder()
+                        .setLongName("Node")
+                        .setShortName("n")
+                        .build(),
+                PacketContext.builder().from(9).live(true).build());
         assertFalse(updates.isEmpty());
 
         db.clear();
@@ -105,34 +114,27 @@ class NodeDatabaseObserverTest {
 
         // Seed remote node as MQTT-origin with a valid position.
         db.updatePosition(
-                MeshProtos.Position.newBuilder().setLatitudeI(407123456).setLongitudeI(-751234567).build(),
-                PacketContext.builder()
-                        .from(remoteId)
-                        .live(true)
-                        .viaMqtt(true)
-                        .build()
-        );
+                MeshProtos.Position.newBuilder()
+                        .setLatitudeI(407123456)
+                        .setLongitudeI(-751234567)
+                        .build(),
+                PacketContext.builder().from(remoteId).live(true).viaMqtt(true).build());
 
         assertEquals(
-                MeshConstants.DISTANCE_MQTT,
-                db.getNode(remoteId).orElseThrow().getDistanceKm()
-        );
+                MeshConstants.DISTANCE_MQTT, db.getNode(remoteId).orElseThrow().getDistanceKm());
 
         // Move self node to trigger full distance refresh.
         db.updatePosition(
-                MeshProtos.Position.newBuilder().setLatitudeI(407223456).setLongitudeI(-751334567).build(),
-                PacketContext.builder()
-                        .from(selfId)
-                        .live(true)
-                        .viaMqtt(false)
-                        .build()
-        );
+                MeshProtos.Position.newBuilder()
+                        .setLatitudeI(407223456)
+                        .setLongitudeI(-751334567)
+                        .build(),
+                PacketContext.builder().from(selfId).live(true).viaMqtt(false).build());
 
         assertEquals(
                 MeshConstants.DISTANCE_MQTT,
                 db.getNode(remoteId).orElseThrow().getDistanceKm(),
-                "MQTT nodes should keep sentinel distance after global refresh"
-        );
+                "MQTT nodes should keep sentinel distance after global refresh");
     }
 
     @Test
@@ -161,9 +163,10 @@ class NodeDatabaseObserverTest {
         db.purgeStaleNodes(Duration.ofMinutes(5));
         assertFalse(db.isCleanupTaskRunning(), "manual purge should not implicitly start the scheduler");
 
-        assertThrows(IllegalArgumentException.class, () -> db.startCleanupTask(NodeCleanupPolicy.builder()
-                .staleAfter(Duration.ZERO)
-                .build()));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> db.startCleanupTask(
+                        NodeCleanupPolicy.builder().staleAfter(Duration.ZERO).build()));
         assertThrows(IllegalArgumentException.class, () -> db.purgeStaleNodes(Duration.ZERO));
     }
 

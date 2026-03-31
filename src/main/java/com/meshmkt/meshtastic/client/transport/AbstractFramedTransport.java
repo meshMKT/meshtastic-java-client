@@ -19,12 +19,14 @@ public abstract class AbstractFramedTransport implements MeshtasticTransport {
      *
      */
     protected final BlockingQueue<byte[]> dataQueue = new LinkedBlockingQueue<>(1000);
+
     private final List<TransportConnectionListener> connectionListeners = new CopyOnWriteArrayList<>();
 
     /**
      *
      */
     protected final BlockingQueue<byte[]> txQueue = new LinkedBlockingQueue<>(100);
+
     private ExecutorService txExecutor;
 
     private ExecutorService consumerExecutor;
@@ -33,8 +35,7 @@ public abstract class AbstractFramedTransport implements MeshtasticTransport {
     /**
      *
      */
-    protected Consumer<byte[]> packetConsumer = (data) -> {
-    };
+    protected Consumer<byte[]> packetConsumer = (data) -> {};
 
     /**
      *
@@ -146,7 +147,7 @@ public abstract class AbstractFramedTransport implements MeshtasticTransport {
                 log.trace("processTxQueue - Activity event sent");
 
                 /// Use the configurable delay
-            if (outboundPacingDelay > 0) {
+                if (outboundPacingDelay > 0) {
                     log.trace("processTxQueue - Sleeping for {}ms", outboundPacingDelay);
                     Thread.sleep(outboundPacingDelay);
                     log.trace("processTxQueue - Sleep finished");
@@ -279,14 +280,13 @@ public abstract class AbstractFramedTransport implements MeshtasticTransport {
             disconnect();
             notifyDisconnected();
 
-            
             dataQueue.clear();
             txQueue.clear();
 
         } catch (Exception e) {
             notifyError(e);
         } finally {
-            
+
             if (consumerExecutor != null) {
                 consumerExecutor.shutdownNow();
             }
@@ -300,7 +300,6 @@ public abstract class AbstractFramedTransport implements MeshtasticTransport {
                 txExecutor.shutdownNow();
             }
 
-            
             consumerExecutor = null;
             eventExecutor = null;
             txExecutor = null;
@@ -337,8 +336,7 @@ public abstract class AbstractFramedTransport implements MeshtasticTransport {
      */
     @Override
     public void addParsedPacketConsumer(Consumer<byte[]> c) {
-        this.packetConsumer = (c != null) ? c : (d) -> {
-        };
+        this.packetConsumer = (c != null) ? c : (d) -> {};
     }
 
     /**

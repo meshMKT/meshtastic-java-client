@@ -1,8 +1,8 @@
 package com.meshmkt.meshtastic.client.service;
 
-import lombok.Builder;
 import lombok.AccessLevel;
 import lombok.AllArgsConstructor;
+import lombok.Builder;
 import lombok.Value;
 
 /**

@@ -1,5 +1,7 @@
 package com.meshmkt.meshtastic.client.examples;
 
+import com.meshmkt.meshtastic.client.MeshUtils;
+import com.meshmkt.meshtastic.client.MeshtasticClient;
 import com.meshmkt.meshtastic.client.event.ChatMessageEvent;
 import com.meshmkt.meshtastic.client.event.MeshtasticEventListener;
 import com.meshmkt.meshtastic.client.event.NodeDiscoveryEvent;
@@ -10,8 +12,6 @@ import com.meshmkt.meshtastic.client.storage.InMemoryNodeDatabase;
 import com.meshmkt.meshtastic.client.storage.NodeDatabase;
 import com.meshmkt.meshtastic.client.transport.stream.tcp.TcpConfig;
 import com.meshmkt.meshtastic.client.transport.stream.tcp.TcpTransport;
-import com.meshmkt.meshtastic.client.MeshtasticClient;
-import com.meshmkt.meshtastic.client.MeshUtils;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 
@@ -37,8 +37,7 @@ public final class TcpTransportSmokeExample {
     private static final String PACING_KEY = "MESHTASTIC_TCP_PACING_MS";
     private static final String READY_TIMEOUT_KEY = "MESHTASTIC_TCP_READY_TIMEOUT_SEC";
 
-    private TcpTransportSmokeExample() {
-    }
+    private TcpTransportSmokeExample() {}
 
     /**
      * Runs the TCP smoke example until the process is interrupted.
@@ -70,41 +69,38 @@ public final class TcpTransportSmokeExample {
 
             @Override
             public void onNodeDiscovery(NodeDiscoveryEvent event) {
-                System.out.printf("[NODE] %s (%s)%n",
-                        event.getLongName(),
-                        MeshUtils.formatId(event.getNodeId()));
+                System.out.printf("[NODE] %s (%s)%n", event.getLongName(), MeshUtils.formatId(event.getNodeId()));
             }
 
             @Override
             public void onTextMessage(ChatMessageEvent event) {
-                System.out.printf("[TEXT] from=%s text=%s%n",
-                        MeshUtils.formatId(event.getNodeId()),
-                        event.getText());
+                System.out.printf("[TEXT] from=%s text=%s%n", MeshUtils.formatId(event.getNodeId()), event.getText());
             }
 
             @Override
             public void onPositionUpdate(PositionUpdateEvent event) {
-                System.out.printf("[POS] from=%s lat=%.6f lon=%.6f%n",
-                        MeshUtils.formatId(event.getNodeId()),
-                        event.getLatitude(),
-                        event.getLongitude());
+                System.out.printf(
+                        "[POS] from=%s lat=%.6f lon=%.6f%n",
+                        MeshUtils.formatId(event.getNodeId()), event.getLatitude(), event.getLongitude());
             }
 
             @Override
             public void onTelemetryUpdate(TelemetryUpdateEvent event) {
-                System.out.printf("[TELE] from=%s variant=%s%n",
-                        MeshUtils.formatId(event.getNodeId()),
-                        event.getVariant());
+                System.out.printf(
+                        "[TELE] from=%s variant=%s%n", MeshUtils.formatId(event.getNodeId()), event.getVariant());
             }
         });
 
-        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
-            try {
-                client.shutdown();
-            } catch (Exception ex) {
-                System.err.printf("[SHUTDOWN] %s%n", ex.getMessage());
-            }
-        }, "tcp-smoke-shutdown"));
+        Runtime.getRuntime()
+                .addShutdownHook(new Thread(
+                        () -> {
+                            try {
+                                client.shutdown();
+                            } catch (Exception ex) {
+                                System.err.printf("[SHUTDOWN] %s%n", ex.getMessage());
+                            }
+                        },
+                        "tcp-smoke-shutdown"));
 
         TcpConfig config = TcpConfig.builder()
                 .host(host)
@@ -113,16 +109,16 @@ public final class TcpTransportSmokeExample {
                 .outboundPacingDelayMs(pacingMs)
                 .build();
 
-        System.out.printf("[TCP] Connecting to %s:%d (timeout=%dms pacing=%dms)%n",
-                host, port, connectTimeoutMs, pacingMs);
+        System.out.printf(
+                "[TCP] Connecting to %s:%d (timeout=%dms pacing=%dms)%n", host, port, connectTimeoutMs, pacingMs);
         client.connect(new TcpTransport(config));
 
         boolean ready = readyLatch.await(readyTimeoutSec, TimeUnit.SECONDS);
         if (ready) {
             System.out.printf("[TCP] Client reached READY within %ds.%n", readyTimeoutSec);
         } else {
-            System.out.printf("[TCP] Client did not reach READY within %ds. Check startup/sync logs.%n",
-                    readyTimeoutSec);
+            System.out.printf(
+                    "[TCP] Client did not reach READY within %ds. Check startup/sync logs.%n", readyTimeoutSec);
         }
 
         System.out.println("[TCP] Running. Press Ctrl+C to stop.");
@@ -141,7 +137,8 @@ public final class TcpTransportSmokeExample {
         setIfMissing("org.slf4j.simpleLogger.showLogName", "true");
         setIfMissing("org.slf4j.simpleLogger.defaultLogLevel", "info");
         setIfMissing("org.slf4j.simpleLogger.log.com.meshmkt.meshtastic.client", "debug");
-        setIfMissing("org.slf4j.simpleLogger.log.com.meshmkt.meshtastic.client.transport.stream.tcp.TcpTransport", "trace");
+        setIfMissing(
+                "org.slf4j.simpleLogger.log.com.meshmkt.meshtastic.client.transport.stream.tcp.TcpTransport", "trace");
     }
 
     /**

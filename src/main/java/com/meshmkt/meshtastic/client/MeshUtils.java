@@ -1,15 +1,14 @@
 package com.meshmkt.meshtastic.client;
 
 import com.meshmkt.meshtastic.client.storage.MeshNode;
-import org.meshtastic.proto.ConfigProtos;
-import org.meshtastic.proto.MeshProtos;
-
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.Objects;
+import org.meshtastic.proto.ConfigProtos;
+import org.meshtastic.proto.MeshProtos;
 
 /**
  * <h2>MeshUtils</h2>
@@ -47,9 +46,9 @@ public final class MeshUtils {
 
     /**
      * Converts byte array to Hex String
-     * 
+     *
      * @param bytes
-     * @return 
+     * @return
      */
     public static String bytesToHex(byte[] bytes) {
         StringBuilder sb = new StringBuilder();
@@ -220,7 +219,8 @@ public final class MeshUtils {
         if (lastSeenMs <= 0) {
             return Long.MAX_VALUE;
         }
-        return Math.abs(Duration.between(Instant.ofEpochMilli(lastSeenMs), Instant.now()).toSeconds());
+        return Math.abs(Duration.between(Instant.ofEpochMilli(lastSeenMs), Instant.now())
+                .toSeconds());
     }
 
     // --- Geographic Mathematics ---
@@ -246,8 +246,10 @@ public final class MeshUtils {
         double dLon = Math.toRadians(lon2 - lon1);
 
         double a = Math.sin(dLat / 2) * Math.sin(dLat / 2)
-                + Math.cos(Math.toRadians(lat1)) * Math.cos(Math.toRadians(lat2))
-                * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+                + Math.cos(Math.toRadians(lat1))
+                        * Math.cos(Math.toRadians(lat2))
+                        * Math.sin(dLon / 2)
+                        * Math.sin(dLon / 2);
 
         double c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
         return EARTH_RADIUS_KM * c;
@@ -363,32 +365,19 @@ public final class MeshUtils {
         }
 
         return switch (role) {
-            case CLIENT ->
-                "C";
-            case CLIENT_MUTE ->
-                "M";
-            case CLIENT_HIDDEN ->
-                "H";
-            case CLIENT_BASE ->
-                "B";
-            case ROUTER ->
-                "R";
-            case ROUTER_CLIENT ->
-                "RC";
-            case REPEATER ->
-                "X";
-            case TRACKER ->
-                "T";
-            case SENSOR ->
-                "S";
-            case TAK ->
-                "K";
-            case TAK_TRACKER ->
-                "TK";
-            case LOST_AND_FOUND ->
-                "LF";
-            default ->
-                "C";
+            case CLIENT -> "C";
+            case CLIENT_MUTE -> "M";
+            case CLIENT_HIDDEN -> "H";
+            case CLIENT_BASE -> "B";
+            case ROUTER -> "R";
+            case ROUTER_CLIENT -> "RC";
+            case REPEATER -> "X";
+            case TRACKER -> "T";
+            case SENSOR -> "S";
+            case TAK -> "K";
+            case TAK_TRACKER -> "TK";
+            case LOST_AND_FOUND -> "LF";
+            default -> "C";
         };
     }
 

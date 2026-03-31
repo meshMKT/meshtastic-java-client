@@ -1,8 +1,6 @@
 package com.meshmkt.meshtastic.client.event;
 
-
 import com.meshmkt.meshtastic.client.MeshUtils;
-import com.meshmkt.meshtastic.client.event.MeshEvent;
 import com.meshmkt.meshtastic.client.storage.PacketContext;
 import lombok.AccessLevel;
 import lombok.AllArgsConstructor;
@@ -33,12 +31,13 @@ public class PositionUpdateEvent extends MeshEvent {
      * @param raw
      * @return
      */
-    public static PositionUpdateEvent of(MeshProtos.MeshPacket p, PacketContext ctx, int selfId, MeshProtos.Position raw) {
+    public static PositionUpdateEvent of(
+            MeshProtos.MeshPacket p, PacketContext ctx, int selfId, MeshProtos.Position raw) {
         return new PositionUpdateEvent(
-                MeshUtils.toDecimal(raw.getLatitudeI()),
-                MeshUtils.toDecimal(raw.getLongitudeI()),
-                raw.getAltitude(),
-                raw
-        ).applyMetadata(p, ctx, selfId);
+                        MeshUtils.toDecimal(raw.getLatitudeI()),
+                        MeshUtils.toDecimal(raw.getLongitudeI()),
+                        raw.getAltitude(),
+                        raw)
+                .applyMetadata(p, ctx, selfId);
     }
 }

@@ -1,7 +1,13 @@
 package com.meshmkt.meshtastic.client.service;
 
-import com.meshmkt.meshtastic.client.MeshtasticClient;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
+
 import com.meshmkt.meshtastic.client.MeshConstants;
+import com.meshmkt.meshtastic.client.MeshtasticClient;
 import com.meshmkt.meshtastic.client.ProtocolConstraints;
 import com.meshmkt.meshtastic.client.event.MeshtasticEventListener;
 import com.meshmkt.meshtastic.client.event.RequestLifecycleEvent;
@@ -13,23 +19,6 @@ import com.meshmkt.meshtastic.client.transport.stream.serial.SerialConfig;
 import com.meshmkt.meshtastic.client.transport.stream.serial.SerialTransport;
 import com.meshmkt.meshtastic.client.transport.stream.tcp.TcpConfig;
 import com.meshmkt.meshtastic.client.transport.stream.tcp.TcpTransport;
-import org.junit.jupiter.api.AfterAll;
-import org.junit.jupiter.api.BeforeAll;
-import org.junit.jupiter.api.Tag;
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.TestInstance;
-import org.junit.jupiter.api.Timeout;
-import org.meshtastic.proto.AdminProtos.AdminMessage.ConfigType;
-import org.meshtastic.proto.AdminProtos.AdminMessage.ModuleConfigType;
-import org.meshtastic.proto.ConfigProtos.Config;
-import org.meshtastic.proto.ChannelProtos.Channel;
-import org.meshtastic.proto.ChannelProtos.ChannelSettings;
-import org.meshtastic.proto.MeshProtos.DeviceMetadata;
-import org.meshtastic.proto.MeshProtos.User;
-import org.meshtastic.proto.ModuleConfigProtos.ModuleConfig;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.EnumMap;
@@ -39,17 +28,27 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
-import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.function.Supplier;
-
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.junit.jupiter.api.Assumptions.assumeTrue;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestInstance;
+import org.junit.jupiter.api.Timeout;
+import org.meshtastic.proto.AdminProtos.AdminMessage.ConfigType;
+import org.meshtastic.proto.AdminProtos.AdminMessage.ModuleConfigType;
+import org.meshtastic.proto.ChannelProtos.Channel;
+import org.meshtastic.proto.ChannelProtos.ChannelSettings;
+import org.meshtastic.proto.ConfigProtos.Config;
+import org.meshtastic.proto.MeshProtos.DeviceMetadata;
+import org.meshtastic.proto.MeshProtos.User;
+import org.meshtastic.proto.ModuleConfigProtos.ModuleConfig;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Hardware-in-the-loop integration tests for admin/config flows against a real radio.
@@ -92,14 +91,12 @@ class RealRadioAdminIT {
             ConfigType.DEVICE_CONFIG,
             ConfigType.DISPLAY_CONFIG,
             ConfigType.NETWORK_CONFIG,
-            ConfigType.SECURITY_CONFIG
-    );
+            ConfigType.SECURITY_CONFIG);
     private static final List<ModuleConfigType> MODULE_CONFIG_MATRIX = List.of(
             ModuleConfigType.MQTT_CONFIG,
             ModuleConfigType.SERIAL_CONFIG,
             ModuleConfigType.TELEMETRY_CONFIG,
-            ModuleConfigType.STOREFORWARD_CONFIG
-    );
+            ModuleConfigType.STOREFORWARD_CONFIG);
 
     private MeshtasticClient client;
     private AdminService adminService;
@@ -121,14 +118,17 @@ class RealRadioAdminIT {
     void connectToHardware() throws Exception {
         this.transportKind = parseTransportKind(trimToNull(System.getProperty("MESHTASTIC_TEST_TRANSPORT")));
         this.operationTimeout = parseDurationSeconds(
-                trimToNull(System.getProperty("MESHTASTIC_TEST_TIMEOUT_SEC")),
-                DEFAULT_OPERATION_TIMEOUT
-        );
-        this.mutableChannelIndex = parseMutableChannelIndex(trimToNull(System.getProperty("MESHTASTIC_TEST_MUTABLE_CHANNEL_INDEX")));
-        this.enableOwnerWriteTest = parseBoolean(trimToNull(System.getProperty("MESHTASTIC_TEST_ENABLE_OWNER_WRITE")), false);
-        this.enableSecurityWriteTest = parseBoolean(trimToNull(System.getProperty("MESHTASTIC_TEST_ENABLE_SECURITY_WRITE")), false);
-        this.enableMqttWriteTest = parseBoolean(trimToNull(System.getProperty("MESHTASTIC_TEST_ENABLE_MQTT_WRITE")), false);
-        this.enableRebootResilienceTest = parseBoolean(trimToNull(System.getProperty("MESHTASTIC_TEST_ENABLE_REBOOT_TEST")), false);
+                trimToNull(System.getProperty("MESHTASTIC_TEST_TIMEOUT_SEC")), DEFAULT_OPERATION_TIMEOUT);
+        this.mutableChannelIndex =
+                parseMutableChannelIndex(trimToNull(System.getProperty("MESHTASTIC_TEST_MUTABLE_CHANNEL_INDEX")));
+        this.enableOwnerWriteTest =
+                parseBoolean(trimToNull(System.getProperty("MESHTASTIC_TEST_ENABLE_OWNER_WRITE")), false);
+        this.enableSecurityWriteTest =
+                parseBoolean(trimToNull(System.getProperty("MESHTASTIC_TEST_ENABLE_SECURITY_WRITE")), false);
+        this.enableMqttWriteTest =
+                parseBoolean(trimToNull(System.getProperty("MESHTASTIC_TEST_ENABLE_MQTT_WRITE")), false);
+        this.enableRebootResilienceTest =
+                parseBoolean(trimToNull(System.getProperty("MESHTASTIC_TEST_ENABLE_REBOOT_TEST")), false);
 
         NodeDatabase nodeDatabase = new InMemoryNodeDatabase();
         client = new MeshtasticClient(nodeDatabase);
@@ -153,8 +153,8 @@ class RealRadioAdminIT {
 
         boolean ready = client.isReady() || readyLatch.await(READY_TIMEOUT.toSeconds(), TimeUnit.SECONDS);
         assertTrue(ready, "Client did not reach READY within " + READY_TIMEOUT.toSeconds() + "s");
-        requireAssumption(awaitKnownSelfNodeId(SELF_ID_READY_TIMEOUT),
-                "Self node ID did not become available after READY.");
+        requireAssumption(
+                awaitKnownSelfNodeId(SELF_ID_READY_TIMEOUT), "Self node ID did not become available after READY.");
     }
 
     /**
@@ -178,16 +178,12 @@ class RealRadioAdminIT {
         DeviceMetadata metadata = awaitWithRetry(adminService::refreshMetadata, 2);
         assertNotNull(metadata, "Device metadata should be returned.");
 
-        assertNotNull(
-                awaitWithRetry(adminService::refreshOwner, 2),
-                "Owner should be returned."
-        );
+        assertNotNull(awaitWithRetry(adminService::refreshOwner, 2), "Owner should be returned.");
 
         try {
             assertFalse(
                     awaitWithRetry(adminService::refreshLikelyActiveChannels, 2).isEmpty(),
-                    "Likely active channel refresh should return at least the primary slot."
-            );
+                    "Likely active channel refresh should return at least the primary slot.");
         } catch (TimeoutException timeout) {
             Channel primary = awaitWithRetry(() -> adminService.refreshChannel(0), 2);
             assertNotNull(primary, "Primary channel refresh fallback should succeed.");
@@ -216,8 +212,7 @@ class RealRadioAdminIT {
 
         assertTrue(observed.containsKey(ConfigType.LORA_CONFIG), "LORA_CONFIG refresh should succeed.");
         assertTrue(observed.containsKey(ConfigType.DEVICE_CONFIG), "DEVICE_CONFIG refresh should succeed.");
-        assertTrue(observed.size() >= 2,
-                "Expected at least two core config refresh successes; failures=" + failures);
+        assertTrue(observed.size() >= 2, "Expected at least two core config refresh successes; failures=" + failures);
     }
 
     /**
@@ -246,8 +241,7 @@ class RealRadioAdminIT {
             }
         }
 
-        assertTrue(successCount >= 1,
-                "Expected at least one module config refresh success; failures=" + failures);
+        assertTrue(successCount >= 1, "Expected at least one module config refresh success; failures=" + failures);
     }
 
     /**
@@ -262,7 +256,8 @@ class RealRadioAdminIT {
     @Test
     @Timeout(value = 300)
     void reversibleOwnerWriteReadbackWhenEnabled() throws Exception {
-        requireAssumption(enableOwnerWriteTest, "Set MESHTASTIC_TEST_ENABLE_OWNER_WRITE=true to enable owner write IT.");
+        requireAssumption(
+                enableOwnerWriteTest, "Set MESHTASTIC_TEST_ENABLE_OWNER_WRITE=true to enable owner write IT.");
 
         int originalSelfNodeId = client.getSelfNodeId();
         requireAssumption(isKnownSelfNodeId(originalSelfNodeId), "Self node ID is unavailable.");
@@ -276,9 +271,7 @@ class RealRadioAdminIT {
 
         try {
             AdminWriteResult write = awaitWithRetry(
-                    () -> adminService.setOwnerResult(originalSelfNodeId, proposedLong, proposedShort, false),
-                    2
-            );
+                    () -> adminService.setOwnerResult(originalSelfNodeId, proposedLong, proposedShort, false), 2);
             assertTrue(write.isSuccess(), "Owner write request did not succeed: " + write.getMessage());
 
             try {
@@ -286,12 +279,15 @@ class RealRadioAdminIT {
                 assertEquals(proposedLong, observed.getLongName(), "Owner long name readback mismatch.");
                 assertEquals(proposedShort, observed.getShortName(), "Owner short name readback mismatch.");
             } catch (AssertionError timeoutLike) {
-                requireAssumption(false, "Owner write accepted but readback was unstable on this firmware: "
-                        + timeoutLike.getMessage());
+                requireAssumption(
+                        false,
+                        "Owner write accepted but readback was unstable on this firmware: " + timeoutLike.getMessage());
             }
         } finally {
             restoreOwnerWithRetry(originalSelfNodeId, originalLong, originalShort);
-            assertEquals(originalSelfNodeId, client.getSelfNodeId(),
+            assertEquals(
+                    originalSelfNodeId,
+                    client.getSelfNodeId(),
                     "Owner write/restore should not change the local node ID.");
         }
     }
@@ -311,29 +307,27 @@ class RealRadioAdminIT {
 
         requireAssumption(
                 original.getRole() != Channel.Role.PRIMARY,
-                "Mutable channel index points to PRIMARY slot. Set MESHTASTIC_TEST_MUTABLE_CHANNEL_INDEX to a non-primary slot."
-        );
+                "Mutable channel index points to PRIMARY slot. Set MESHTASTIC_TEST_MUTABLE_CHANNEL_INDEX to a non-primary slot.");
         requireAssumption(
                 original.getRole() != Channel.Role.DISABLED,
-                "Mutable channel index points to DISABLED slot. Use an active non-primary slot for reversible write tests."
-        );
+                "Mutable channel index points to DISABLED slot. Use an active non-primary slot for reversible write tests.");
 
         String proposedName = buildSafeTestChannelName(original.getSettings().getName());
         Channel updated = original.toBuilder()
-                .setSettings(ChannelSettings.newBuilder(original.getSettings()).setName(proposedName).build())
+                .setSettings(ChannelSettings.newBuilder(original.getSettings())
+                        .setName(proposedName)
+                        .build())
                 .build();
 
         try {
             assertTrue(
                     awaitWithRetry(() -> adminService.setChannel(mutableChannelIndex, updated, false), 3),
-                    "Channel write request was not accepted."
-            );
+                    "Channel write request was not accepted.");
 
             Channel observed = awaitChannelName(mutableChannelIndex, proposedName, READBACK_POLL_WINDOW);
             assertTrue(
                     Objects.equals(proposedName, observed.getSettings().getName()),
-                    "Readback name did not match proposed value."
-            );
+                    "Readback name did not match proposed value.");
         } finally {
             restoreChannelWithRetry(mutableChannelIndex, original);
         }
@@ -350,15 +344,16 @@ class RealRadioAdminIT {
     @Test
     @Timeout(value = 300)
     void reversibleSecurityConfigWriteReadbackWhenEnabled() throws Exception {
-        requireAssumption(enableSecurityWriteTest,
-                "Set MESHTASTIC_TEST_ENABLE_SECURITY_WRITE=true to enable security write IT.");
+        requireAssumption(
+                enableSecurityWriteTest, "Set MESHTASTIC_TEST_ENABLE_SECURITY_WRITE=true to enable security write IT.");
 
         Config current = awaitWithRetry(adminService::refreshSecurityConfig, 2);
         requireAssumption(current != null && current.hasSecurity(), "Security config is unavailable on this device.");
         Config.SecurityConfig original = current.getSecurity();
 
         boolean proposed = !original.getDebugLogApiEnabled();
-        Config.SecurityConfig updated = original.toBuilder().setDebugLogApiEnabled(proposed).build();
+        Config.SecurityConfig updated =
+                original.toBuilder().setDebugLogApiEnabled(proposed).build();
         Config writePayload = Config.newBuilder().setSecurity(updated).build();
 
         try {
@@ -366,19 +361,22 @@ class RealRadioAdminIT {
             assertTrue(write.isSuccess(), "Security config write request did not succeed: " + write.getMessage());
 
             awaitBooleanCondition(
-                    () -> awaitWithRetry(adminService::refreshSecurityConfig, 2).getSecurity().getDebugLogApiEnabled() == proposed,
+                    () -> awaitWithRetry(adminService::refreshSecurityConfig, 2)
+                                    .getSecurity()
+                                    .getDebugLogApiEnabled()
+                            == proposed,
                     READBACK_POLL_WINDOW,
-                    "Timed out waiting for security.debug_log_api_enabled to update."
-            );
+                    "Timed out waiting for security.debug_log_api_enabled to update.");
         } finally {
             Config restorePayload = Config.newBuilder().setSecurity(original).build();
             awaitWithRetry(() -> adminService.setConfigResult(restorePayload, false), 2);
             awaitBooleanCondition(
-                    () -> awaitWithRetry(adminService::refreshSecurityConfig, 2).getSecurity().getDebugLogApiEnabled()
+                    () -> awaitWithRetry(adminService::refreshSecurityConfig, 2)
+                                    .getSecurity()
+                                    .getDebugLogApiEnabled()
                             == original.getDebugLogApiEnabled(),
                     RESTORE_READBACK_WINDOW,
-                    "Timed out waiting for security config restore."
-            );
+                    "Timed out waiting for security config restore.");
         }
     }
 
@@ -393,15 +391,15 @@ class RealRadioAdminIT {
     @Test
     @Timeout(value = 300)
     void reversibleMqttModuleConfigWriteReadbackWhenEnabled() throws Exception {
-        requireAssumption(enableMqttWriteTest,
-                "Set MESHTASTIC_TEST_ENABLE_MQTT_WRITE=true to enable MQTT write IT.");
+        requireAssumption(enableMqttWriteTest, "Set MESHTASTIC_TEST_ENABLE_MQTT_WRITE=true to enable MQTT write IT.");
 
         ModuleConfig current = awaitWithRetry(adminService::refreshMqttConfig, 2);
         requireAssumption(current != null && current.hasMqtt(), "MQTT module config is unavailable on this device.");
         ModuleConfig.MQTTConfig original = current.getMqtt();
 
         boolean proposed = !original.getJsonEnabled();
-        ModuleConfig.MQTTConfig updated = original.toBuilder().setJsonEnabled(proposed).build();
+        ModuleConfig.MQTTConfig updated =
+                original.toBuilder().setJsonEnabled(proposed).build();
         ModuleConfig writePayload = ModuleConfig.newBuilder().setMqtt(updated).build();
 
         try {
@@ -409,19 +407,23 @@ class RealRadioAdminIT {
             assertTrue(write.isSuccess(), "MQTT config write request did not succeed: " + write.getMessage());
 
             awaitBooleanCondition(
-                    () -> awaitWithRetry(adminService::refreshMqttConfig, 2).getMqtt().getJsonEnabled() == proposed,
+                    () -> awaitWithRetry(adminService::refreshMqttConfig, 2)
+                                    .getMqtt()
+                                    .getJsonEnabled()
+                            == proposed,
                     READBACK_POLL_WINDOW,
-                    "Timed out waiting for mqtt.json_enabled to update."
-            );
+                    "Timed out waiting for mqtt.json_enabled to update.");
         } finally {
-            ModuleConfig restorePayload = ModuleConfig.newBuilder().setMqtt(original).build();
+            ModuleConfig restorePayload =
+                    ModuleConfig.newBuilder().setMqtt(original).build();
             awaitWithRetry(() -> adminService.setModuleConfigResult(restorePayload, false), 2);
             awaitBooleanCondition(
-                    () -> awaitWithRetry(adminService::refreshMqttConfig, 2).getMqtt().getJsonEnabled()
+                    () -> awaitWithRetry(adminService::refreshMqttConfig, 2)
+                                    .getMqtt()
+                                    .getJsonEnabled()
                             == original.getJsonEnabled(),
                     RESTORE_READBACK_WINDOW,
-                    "Timed out waiting for mqtt config restore."
-            );
+                    "Timed out waiting for mqtt config restore.");
         }
     }
 
@@ -449,21 +451,24 @@ class RealRadioAdminIT {
             }
         }
 
-        awaitBooleanCondition(() -> {
-            Set<Integer> sent = new HashSet<>();
-            Set<Integer> terminal = new HashSet<>();
-            for (RequestLifecycleEvent event : lifecycleEvents) {
-                if (event.getDestinationNodeId() != targetNodeId) {
-                    continue;
-                }
-                if (event.getStage() == RequestLifecycleEvent.Stage.SENT) {
-                    sent.add(event.getRequestId());
-                } else if (isTerminalLifecycleStage(event.getStage())) {
-                    terminal.add(event.getRequestId());
-                }
-            }
-            return !sent.isEmpty() && terminal.containsAll(sent);
-        }, Duration.ofSeconds(45), "Timed out waiting for request burst terminal lifecycle events.");
+        awaitBooleanCondition(
+                () -> {
+                    Set<Integer> sent = new HashSet<>();
+                    Set<Integer> terminal = new HashSet<>();
+                    for (RequestLifecycleEvent event : lifecycleEvents) {
+                        if (event.getDestinationNodeId() != targetNodeId) {
+                            continue;
+                        }
+                        if (event.getStage() == RequestLifecycleEvent.Stage.SENT) {
+                            sent.add(event.getRequestId());
+                        } else if (isTerminalLifecycleStage(event.getStage())) {
+                            terminal.add(event.getRequestId());
+                        }
+                    }
+                    return !sent.isEmpty() && terminal.containsAll(sent);
+                },
+                Duration.ofSeconds(45),
+                "Timed out waiting for request burst terminal lifecycle events.");
     }
 
     /**
@@ -477,7 +482,8 @@ class RealRadioAdminIT {
     @Test
     @Timeout(value = 360)
     void rebootReconnectResilienceWhenEnabled() throws Exception {
-        requireAssumption(enableRebootResilienceTest,
+        requireAssumption(
+                enableRebootResilienceTest,
                 "Set MESHTASTIC_TEST_ENABLE_REBOOT_TEST=true to enable reboot resilience IT.");
         requireAssumption(isKnownSelfNodeId(client.getSelfNodeId()), "Self node ID is unavailable.");
 
@@ -485,9 +491,9 @@ class RealRadioAdminIT {
         assertTrue(accepted, "Reboot request was not accepted.");
 
         awaitReadyState(Duration.ofSeconds(180));
-        requireAssumption(awaitKnownSelfNodeId(Duration.ofSeconds(45)),
-                "Self node ID did not recover after reboot.");
-        assertNotNull(awaitWithRetry(adminService::refreshMetadata, 2), "Metadata refresh after reboot should succeed.");
+        requireAssumption(awaitKnownSelfNodeId(Duration.ofSeconds(45)), "Self node ID did not recover after reboot.");
+        assertNotNull(
+                awaitWithRetry(adminService::refreshMetadata, 2), "Metadata refresh after reboot should succeed.");
     }
 
     /**
@@ -512,8 +518,9 @@ class RealRadioAdminIT {
             Thread.sleep(READBACK_POLL_INTERVAL.toMillis());
         }
 
-        throw new AssertionError("Timed out waiting for channel " + channelIndex
-                + " name '" + expectedName + "'. Last observed: '" + (latest == null ? "<none>" : latest.getSettings().getName()) + "'");
+        throw new AssertionError(
+                "Timed out waiting for channel " + channelIndex + " name '" + expectedName + "'. Last observed: '"
+                        + (latest == null ? "<none>" : latest.getSettings().getName()) + "'");
     }
 
     /**
@@ -728,8 +735,7 @@ class RealRadioAdminIT {
     private MeshtasticTransport buildTransport() {
         if ("tcp".equals(transportKind)) {
             String host = trimToNull(System.getProperty("MESHTASTIC_TEST_TCP_HOST"));
-            requireAssumption(host != null,
-                    "MESHTASTIC_TEST_TCP_HOST is required when MESHTASTIC_TEST_TRANSPORT=tcp.");
+            requireAssumption(host != null, "MESHTASTIC_TEST_TCP_HOST is required when MESHTASTIC_TEST_TRANSPORT=tcp.");
             return new TcpTransport(TcpConfig.builder()
                     .host(host)
                     .port(parseTcpPort(trimToNull(System.getProperty("MESHTASTIC_TEST_TCP_PORT"))))
@@ -737,11 +743,8 @@ class RealRadioAdminIT {
         }
 
         String port = trimToNull(System.getProperty("MESHTASTIC_TEST_PORT"));
-        requireAssumption(port != null,
-                "MESHTASTIC_TEST_PORT is required when MESHTASTIC_TEST_TRANSPORT=serial.");
-        return new SerialTransport(SerialConfig.builder()
-                .portName(port)
-                .build());
+        requireAssumption(port != null, "MESHTASTIC_TEST_PORT is required when MESHTASTIC_TEST_TRANSPORT=serial.");
+        return new SerialTransport(SerialConfig.builder().portName(port).build());
     }
 
     /**
@@ -755,7 +758,8 @@ class RealRadioAdminIT {
             return "serial";
         }
         String normalized = raw.trim().toLowerCase(Locale.ROOT);
-        requireAssumption("serial".equals(normalized) || "tcp".equals(normalized),
+        requireAssumption(
+                "serial".equals(normalized) || "tcp".equals(normalized),
                 "MESHTASTIC_TEST_TRANSPORT must be 'serial' or 'tcp'.");
         return normalized;
     }
@@ -828,9 +832,7 @@ class RealRadioAdminIT {
         for (int attempt = 1; attempt <= RESTORE_ATTEMPTS; attempt++) {
             try {
                 AdminWriteResult result = awaitWithRetry(
-                        () -> adminService.setOwnerResult(selfNodeId, originalLong, originalShort, false),
-                        2
-                );
+                        () -> adminService.setOwnerResult(selfNodeId, originalLong, originalShort, false), 2);
                 if (!result.isSuccess()) {
                     throw new IllegalStateException("Owner restore write not accepted: " + result.getMessage());
                 }
@@ -839,16 +841,19 @@ class RealRadioAdminIT {
                 return;
             } catch (Exception ex) {
                 last = ex;
-                log.warn("[HARDWARE-IT] Owner restore attempt {}/{} failed: {}",
-                        attempt, RESTORE_ATTEMPTS, ex.getMessage());
+                log.warn(
+                        "[HARDWARE-IT] Owner restore attempt {}/{} failed: {}",
+                        attempt,
+                        RESTORE_ATTEMPTS,
+                        ex.getMessage());
                 if (attempt < RESTORE_ATTEMPTS) {
                     Thread.sleep(READBACK_POLL_INTERVAL.toMillis());
                 }
             }
         }
 
-        throw new AssertionError("Owner restore failed after " + RESTORE_ATTEMPTS
-                + " attempts. Manual restore may be required.", last);
+        throw new AssertionError(
+                "Owner restore failed after " + RESTORE_ATTEMPTS + " attempts. Manual restore may be required.", last);
     }
 
     /**
@@ -871,16 +876,20 @@ class RealRadioAdminIT {
                 return;
             } catch (Exception ex) {
                 last = ex;
-                log.warn("[HARDWARE-IT] Channel restore attempt {}/{} failed: {}",
-                        attempt, RESTORE_ATTEMPTS, ex.getMessage());
+                log.warn(
+                        "[HARDWARE-IT] Channel restore attempt {}/{} failed: {}",
+                        attempt,
+                        RESTORE_ATTEMPTS,
+                        ex.getMessage());
                 if (attempt < RESTORE_ATTEMPTS) {
                     Thread.sleep(READBACK_POLL_INTERVAL.toMillis());
                 }
             }
         }
 
-        throw new AssertionError("Channel restore failed after " + RESTORE_ATTEMPTS
-                + " attempts. Manual restore may be required.", last);
+        throw new AssertionError(
+                "Channel restore failed after " + RESTORE_ATTEMPTS + " attempts. Manual restore may be required.",
+                last);
     }
 
     /**

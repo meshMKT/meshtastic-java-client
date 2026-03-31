@@ -1,6 +1,5 @@
 package com.meshmkt.meshtastic.client.storage;
 
-
 import lombok.Builder;
 import lombok.Value;
 import org.meshtastic.proto.MeshProtos;
@@ -25,16 +24,16 @@ public class PacketContext {
     int priority;
 
     // Identity & Sequencing
-    long timestamp;       // Radio time (rxTime * 1000)
-    int requestId;        // To track ACKs
-    boolean encrypted;    // Was the radio able to decrypt this?
+    long timestamp; // Radio time (rxTime * 1000)
+    int requestId; // To track ACKs
+    boolean encrypted; // Was the radio able to decrypt this?
     int from;
     int to;
-    
+
     // Is this a live packet from the mesh or a dummy one
     // created during the initial radio sync
     boolean live;
-    
+
     MeshProtos.MeshPacket rawProto;
 
     /**

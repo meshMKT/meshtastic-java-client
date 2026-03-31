@@ -1,12 +1,5 @@
 package com.meshmkt.meshtastic.client;
 
-import lombok.Value;
-import lombok.extern.slf4j.Slf4j;
-import org.meshtastic.proto.MeshProtos.Data;
-import org.meshtastic.proto.MeshProtos.FromRadio;
-import org.meshtastic.proto.MeshProtos.MeshPacket;
-import org.meshtastic.proto.Portnums.PortNum;
-
 import java.time.Duration;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
@@ -17,6 +10,12 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Supplier;
+import lombok.Value;
+import lombok.extern.slf4j.Slf4j;
+import org.meshtastic.proto.MeshProtos.Data;
+import org.meshtastic.proto.MeshProtos.FromRadio;
+import org.meshtastic.proto.MeshProtos.MeshPacket;
+import org.meshtastic.proto.Portnums.PortNum;
 
 /**
  * Coordinates in-flight request correlation, request timeouts, and single-flight radio locking.
@@ -60,8 +59,7 @@ final class RequestCoordinator {
     RequestCoordinator(
             ScheduledExecutorService scheduler,
             Supplier<Long> lockReleaseCooldownMsSupplier,
-            Supplier<Duration> correlationTimeoutSupplier
-    ) {
+            Supplier<Duration> correlationTimeoutSupplier) {
         this.scheduler = scheduler;
         this.lockReleaseCooldownMsSupplier = lockReleaseCooldownMsSupplier;
         this.correlationTimeoutSupplier = correlationTimeoutSupplier;
@@ -118,13 +116,9 @@ final class RequestCoordinator {
             int requestId,
             CompletableFuture<MeshPacket> future,
             boolean expectAdminAppResponse,
-            boolean allowRoutingNoResponseAsAccept
-    ) {
-        pendingRequests.put(requestId, new PendingRequest(
-                future,
-                expectAdminAppResponse,
-                allowRoutingNoResponseAsAccept
-        ));
+            boolean allowRoutingNoResponseAsAccept) {
+        pendingRequests.put(
+                requestId, new PendingRequest(future, expectAdminAppResponse, allowRoutingNoResponseAsAccept));
     }
 
     /**
@@ -137,18 +131,22 @@ final class RequestCoordinator {
      * @param lockEpochAtAcquire epoch captured when the request acquired the lock.
      */
     void scheduleLockReleaseAfterCooldown(int requestId, long lockEpochAtAcquire) {
-        scheduler.schedule(() -> {
-            if (requestLockEpoch.get() != lockEpochAtAcquire) {
-                log.trace("[TX] Skipping stale lock release for ID {} due to epoch change.", requestId);
-                return;
-            }
-            if (radioLock.availablePermits() == 0) {
-                log.trace("[TX] Cooldown finished. Releasing radio lock for ID: {}", requestId);
-                radioLock.release();
-            } else {
-                log.trace("[TX] Skipping lock release for ID {} because permit is already available.", requestId);
-            }
-        }, lockReleaseCooldownMsSupplier.get(), TimeUnit.MILLISECONDS);
+        scheduler.schedule(
+                () -> {
+                    if (requestLockEpoch.get() != lockEpochAtAcquire) {
+                        log.trace("[TX] Skipping stale lock release for ID {} due to epoch change.", requestId);
+                        return;
+                    }
+                    if (radioLock.availablePermits() == 0) {
+                        log.trace("[TX] Cooldown finished. Releasing radio lock for ID: {}", requestId);
+                        radioLock.release();
+                    } else {
+                        log.trace(
+                                "[TX] Skipping lock release for ID {} because permit is already available.", requestId);
+                    }
+                },
+                lockReleaseCooldownMsSupplier.get(),
+                TimeUnit.MILLISECONDS);
     }
 
     /**
@@ -158,12 +156,15 @@ final class RequestCoordinator {
      * @param future completion target.
      */
     void scheduleCorrelationTimeout(int requestId, CompletableFuture<MeshPacket> future) {
-        scheduler.schedule(() -> {
-            if (!future.isDone()) {
-                pendingRequests.remove(requestId);
-                future.completeExceptionally(new TimeoutException("Response timeout for: " + requestId));
-            }
-        }, correlationTimeoutSupplier.get().toMillis(), TimeUnit.MILLISECONDS);
+        scheduler.schedule(
+                () -> {
+                    if (!future.isDone()) {
+                        pendingRequests.remove(requestId);
+                        future.completeExceptionally(new TimeoutException("Response timeout for: " + requestId));
+                    }
+                },
+                correlationTimeoutSupplier.get().toMillis(),
+                TimeUnit.MILLISECONDS);
     }
 
     /**
@@ -179,8 +180,13 @@ final class RequestCoordinator {
         MeshPacket incoming = fromRadio.getPacket();
         Data decoded = incoming.getDecoded();
 
-        log.debug("correlateResponse - Packet from={} to={} id={} request_id={} port={}",
-                incoming.getFrom(), incoming.getTo(), incoming.getId(), decoded.getRequestId(), decoded.getPortnum());
+        log.debug(
+                "correlateResponse - Packet from={} to={} id={} request_id={} port={}",
+                incoming.getFrom(),
+                incoming.getTo(),
+                incoming.getId(),
+                decoded.getRequestId(),
+                decoded.getPortnum());
 
         int confirmedId = decoded.getRequestId();
         if (confirmedId == 0) {
@@ -202,8 +208,10 @@ final class RequestCoordinator {
         }
 
         if (pendingRequests.remove(confirmedId, pending)) {
-            log.debug("[CORRELATOR] Match found for Packet ID: {} via port {}. Releasing queue.",
-                    confirmedId, decoded.getPortnum());
+            log.debug(
+                    "[CORRELATOR] Match found for Packet ID: {} via port {}. Releasing queue.",
+                    confirmedId,
+                    decoded.getPortnum());
             pending.getFuture().complete(incoming);
         }
     }
@@ -229,14 +237,15 @@ final class RequestCoordinator {
      */
     private void handleRoutingCorrelation(int confirmedId, PendingRequest pending, MeshPacket incoming) {
         try {
-            org.meshtastic.proto.MeshProtos.Routing routing = org.meshtastic.proto.MeshProtos.Routing
-                    .parseFrom(incoming.getDecoded().getPayload());
+            org.meshtastic.proto.MeshProtos.Routing routing = org.meshtastic.proto.MeshProtos.Routing.parseFrom(
+                    incoming.getDecoded().getPayload());
 
             if (routing.getErrorReason() != org.meshtastic.proto.MeshProtos.Routing.Error.NONE) {
                 if (routing.getErrorReason() == org.meshtastic.proto.MeshProtos.Routing.Error.NO_RESPONSE
                         && pending.isAllowRoutingNoResponseAsAccept()) {
                     if (pendingRequests.remove(confirmedId, pending)) {
-                        log.debug("[CORRELATOR] Treating ROUTING NO_RESPONSE as soft-accept for text request {}",
+                        log.debug(
+                                "[CORRELATOR] Treating ROUTING NO_RESPONSE as soft-accept for text request {}",
                                 confirmedId);
                         pending.getFuture().complete(incoming);
                     }
@@ -244,8 +253,9 @@ final class RequestCoordinator {
                 }
 
                 if (pendingRequests.remove(confirmedId, pending)) {
-                    pending.getFuture().completeExceptionally(new IllegalStateException(
-                            "Routing rejected request " + confirmedId + " with status " + routing.getErrorReason()));
+                    pending.getFuture()
+                            .completeExceptionally(new IllegalStateException("Routing rejected request " + confirmedId
+                                    + " with status " + routing.getErrorReason()));
                 }
                 return;
             }
@@ -256,8 +266,9 @@ final class RequestCoordinator {
             }
         } catch (Exception ex) {
             if (pendingRequests.remove(confirmedId, pending)) {
-                pending.getFuture().completeExceptionally(new IllegalStateException(
-                        "Failed to parse ROUTING_APP correlation for request " + confirmedId, ex));
+                pending.getFuture()
+                        .completeExceptionally(new IllegalStateException(
+                                "Failed to parse ROUTING_APP correlation for request " + confirmedId, ex));
             }
         }
     }

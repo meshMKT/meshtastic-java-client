@@ -130,26 +130,28 @@ public class TcpTransport extends StreamTransport {
             return;
         }
 
-        Thread retryThread = new Thread(() -> {
-            try {
-                log.debug(">>> TCP Link lost. Retrying {}...", config.getHost());
-                while (running && !isConnected()) {
+        Thread retryThread = new Thread(
+                () -> {
                     try {
-                        Thread.sleep(5000); // 5-second backoff
-                        attemptConnection();
-                        if (isConnected()) {
-                            log.debug(">>> TCP Link Restored!");
-                            notifyConnected();
-                            break;
+                        log.debug(">>> TCP Link lost. Retrying {}...", config.getHost());
+                        while (running && !isConnected()) {
+                            try {
+                                Thread.sleep(5000); // 5-second backoff
+                                attemptConnection();
+                                if (isConnected()) {
+                                    log.debug(">>> TCP Link Restored!");
+                                    notifyConnected();
+                                    break;
+                                }
+                            } catch (Exception e) {
+                                // Stay in loop until connection is restored or transport stopped.
+                            }
                         }
-                    } catch (Exception e) {
-                        // Stay in loop until connection is restored or transport stopped.
+                    } finally {
+                        retryLoopActive.set(false);
                     }
-                }
-            } finally {
-                retryLoopActive.set(false);
-            }
-        }, "TcpRetryThread");
+                },
+                "TcpRetryThread");
         retryThread.setDaemon(true);
         retryThread.start();
     }

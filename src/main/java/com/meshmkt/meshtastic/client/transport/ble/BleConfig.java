@@ -1,9 +1,8 @@
 package com.meshmkt.meshtastic.client.transport.ble;
 
+import java.time.Duration;
 import lombok.Builder;
 import lombok.Value;
-
-import java.time.Duration;
 
 /**
  * Configuration for BLE transport wiring.
@@ -25,13 +24,14 @@ public class BleConfig {
     /**
      * Creates a validated BLE config.
      */
-    public BleConfig(String deviceId,
-                     String serviceUuid,
-                     String toRadioCharacteristicUuid,
-                     String fromRadioCharacteristicUuid,
-                     Duration connectTimeout,
-                     Duration reconnectBackoff,
-                     boolean autoReconnect) {
+    public BleConfig(
+            String deviceId,
+            String serviceUuid,
+            String toRadioCharacteristicUuid,
+            String fromRadioCharacteristicUuid,
+            Duration connectTimeout,
+            Duration reconnectBackoff,
+            boolean autoReconnect) {
         if (deviceId == null || deviceId.isBlank()) {
             throw new IllegalArgumentException("deviceId must not be blank");
         }

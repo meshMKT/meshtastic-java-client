@@ -2,7 +2,6 @@ package com.meshmkt.meshtastic.client.support;
 
 import com.meshmkt.meshtastic.client.transport.MeshtasticTransport;
 import com.meshmkt.meshtastic.client.transport.TransportConnectionListener;
-
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -19,8 +18,7 @@ public class FakeTransport implements MeshtasticTransport {
 
     private final List<byte[]> writes = new CopyOnWriteArrayList<>();
     private final List<TransportConnectionListener> listeners = new CopyOnWriteArrayList<>();
-    private volatile Consumer<byte[]> parsedPacketConsumer = data -> {
-    };
+    private volatile Consumer<byte[]> parsedPacketConsumer = data -> {};
     private volatile boolean connected;
 
     @Override
@@ -50,8 +48,7 @@ public class FakeTransport implements MeshtasticTransport {
 
     @Override
     public void addParsedPacketConsumer(Consumer<byte[]> consumer) {
-        parsedPacketConsumer = (consumer != null) ? consumer : data -> {
-        };
+        parsedPacketConsumer = (consumer != null) ? consumer : data -> {};
     }
 
     @Override

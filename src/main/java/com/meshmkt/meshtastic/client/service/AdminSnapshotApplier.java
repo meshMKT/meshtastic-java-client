@@ -4,6 +4,7 @@ import com.google.protobuf.ByteString;
 import com.meshmkt.meshtastic.client.MeshConstants;
 import com.meshmkt.meshtastic.client.MeshUtils;
 import com.meshmkt.meshtastic.client.model.RadioModel;
+import java.util.List;
 import lombok.extern.slf4j.Slf4j;
 import org.meshtastic.proto.AdminProtos.AdminMessage;
 import org.meshtastic.proto.AdminProtos.AdminMessage.ConfigType;
@@ -15,8 +16,6 @@ import org.meshtastic.proto.MeshProtos.FromRadio;
 import org.meshtastic.proto.MeshProtos.NodeInfo;
 import org.meshtastic.proto.MeshProtos.User;
 import org.meshtastic.proto.ModuleConfigProtos.ModuleConfig;
-
-import java.util.List;
 
 /**
  * Applies inbound admin/local snapshot payloads to the shared {@link RadioModel}.
@@ -83,7 +82,9 @@ final class AdminSnapshotApplier {
         }
         if (msg.hasGetChannelResponse()) {
             applyChannel(msg.getGetChannelResponse());
-            log.debug("[ADMIN] Model Updated: Channel Slot {}", msg.getGetChannelResponse().getIndex());
+            log.debug(
+                    "[ADMIN] Model Updated: Channel Slot {}",
+                    msg.getGetChannelResponse().getIndex());
         }
         if (msg.hasGetModuleConfigResponse()) {
             applyModuleConfig(msg.getGetModuleConfigResponse());
@@ -238,19 +239,20 @@ final class AdminSnapshotApplier {
             return List.of();
         }
 
-        ConfigType type = switch (cfg.getPayloadVariantCase()) {
-            case DEVICE -> ConfigType.DEVICE_CONFIG;
-            case POSITION -> ConfigType.POSITION_CONFIG;
-            case POWER -> ConfigType.POWER_CONFIG;
-            case NETWORK -> ConfigType.NETWORK_CONFIG;
-            case DISPLAY -> ConfigType.DISPLAY_CONFIG;
-            case LORA -> ConfigType.LORA_CONFIG;
-            case BLUETOOTH -> ConfigType.BLUETOOTH_CONFIG;
-            case SECURITY -> ConfigType.SECURITY_CONFIG;
-            case SESSIONKEY -> ConfigType.SESSIONKEY_CONFIG;
-            case DEVICE_UI -> ConfigType.DEVICEUI_CONFIG;
-            case PAYLOADVARIANT_NOT_SET -> null;
-        };
+        ConfigType type =
+                switch (cfg.getPayloadVariantCase()) {
+                    case DEVICE -> ConfigType.DEVICE_CONFIG;
+                    case POSITION -> ConfigType.POSITION_CONFIG;
+                    case POWER -> ConfigType.POWER_CONFIG;
+                    case NETWORK -> ConfigType.NETWORK_CONFIG;
+                    case DISPLAY -> ConfigType.DISPLAY_CONFIG;
+                    case LORA -> ConfigType.LORA_CONFIG;
+                    case BLUETOOTH -> ConfigType.BLUETOOTH_CONFIG;
+                    case SECURITY -> ConfigType.SECURITY_CONFIG;
+                    case SESSIONKEY -> ConfigType.SESSIONKEY_CONFIG;
+                    case DEVICE_UI -> ConfigType.DEVICEUI_CONFIG;
+                    case PAYLOADVARIANT_NOT_SET -> null;
+                };
         return type == null ? List.of() : List.of(type);
     }
 

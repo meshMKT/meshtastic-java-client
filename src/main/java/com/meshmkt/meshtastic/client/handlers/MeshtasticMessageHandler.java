@@ -14,7 +14,7 @@ public interface MeshtasticMessageHandler {
     boolean canHandle(MeshProtos.FromRadio message);
 
     /**
-     * Executes the business logic. 
+     * Executes the business logic.
      * @param message The message to process.
      * @return true if the message is "consumed" and should not be passed to further handlers.
      */

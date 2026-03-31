@@ -24,23 +24,11 @@ public final class NodeCleanupPolicy {
     private final Duration interval;
 
     @Builder
-    private NodeCleanupPolicy(
-            Duration staleAfter,
-            Duration initialDelay,
-            Duration interval
-    ) {
-        this.staleAfter = requirePositive(
-                staleAfter != null ? staleAfter : Duration.ofDays(7),
-                "staleAfter"
-        );
-        this.initialDelay = requirePositive(
-                initialDelay != null ? initialDelay : Duration.ofMinutes(5),
-                "initialDelay"
-        );
-        this.interval = requirePositive(
-                interval != null ? interval : Duration.ofMinutes(1),
-                "interval"
-        );
+    private NodeCleanupPolicy(Duration staleAfter, Duration initialDelay, Duration interval) {
+        this.staleAfter = requirePositive(staleAfter != null ? staleAfter : Duration.ofDays(7), "staleAfter");
+        this.initialDelay =
+                requirePositive(initialDelay != null ? initialDelay : Duration.ofMinutes(5), "initialDelay");
+        this.interval = requirePositive(interval != null ? interval : Duration.ofMinutes(1), "interval");
     }
 
     private static Duration requirePositive(Duration duration, String name) {

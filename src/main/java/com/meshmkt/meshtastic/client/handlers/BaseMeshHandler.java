@@ -1,9 +1,9 @@
 package com.meshmkt.meshtastic.client.handlers;
 
+import com.meshmkt.meshtastic.client.MeshUtils;
 import com.meshmkt.meshtastic.client.event.MeshEventDispatcher;
 import com.meshmkt.meshtastic.client.storage.NodeDatabase;
 import com.meshmkt.meshtastic.client.storage.PacketContext;
-import com.meshmkt.meshtastic.client.MeshUtils;
 import org.meshtastic.proto.MeshProtos;
 
 /**
@@ -25,8 +25,7 @@ public abstract class BaseMeshHandler implements MeshtasticMessageHandler {
          * @param event event payload.
          */
         @Override
-        public void onChatMessage(com.meshmkt.meshtastic.client.event.ChatMessageEvent event) {
-        }
+        public void onChatMessage(com.meshmkt.meshtastic.client.event.ChatMessageEvent event) {}
 
         /**
          * Dispatches position-update events to registered listeners.
@@ -34,8 +33,7 @@ public abstract class BaseMeshHandler implements MeshtasticMessageHandler {
          * @param event event payload.
          */
         @Override
-        public void onPositionUpdate(com.meshmkt.meshtastic.client.event.PositionUpdateEvent event) {
-        }
+        public void onPositionUpdate(com.meshmkt.meshtastic.client.event.PositionUpdateEvent event) {}
 
         /**
          * Dispatches telemetry-update events to registered listeners.
@@ -43,8 +41,7 @@ public abstract class BaseMeshHandler implements MeshtasticMessageHandler {
          * @param event event payload.
          */
         @Override
-        public void onTelemetryUpdate(com.meshmkt.meshtastic.client.event.TelemetryUpdateEvent event) {
-        }
+        public void onTelemetryUpdate(com.meshmkt.meshtastic.client.event.TelemetryUpdateEvent event) {}
 
         /**
          * Dispatches node-discovery events to registered listeners.
@@ -52,8 +49,7 @@ public abstract class BaseMeshHandler implements MeshtasticMessageHandler {
          * @param event event payload.
          */
         @Override
-        public void onNodeDiscovery(com.meshmkt.meshtastic.client.event.NodeDiscoveryEvent event) {
-        }
+        public void onNodeDiscovery(com.meshmkt.meshtastic.client.event.NodeDiscoveryEvent event) {}
 
         /**
          * Dispatches message-status events to registered listeners.
@@ -61,8 +57,7 @@ public abstract class BaseMeshHandler implements MeshtasticMessageHandler {
          * @param event event payload.
          */
         @Override
-        public void onMessageStatusUpdate(com.meshmkt.meshtastic.client.event.MessageStatusEvent event) {
-        }
+        public void onMessageStatusUpdate(com.meshmkt.meshtastic.client.event.MessageStatusEvent event) {}
 
         /**
          * Dispatches admin-model update events to registered listeners.
@@ -70,8 +65,7 @@ public abstract class BaseMeshHandler implements MeshtasticMessageHandler {
          * @param event event payload.
          */
         @Override
-        public void onAdminModelUpdate(com.meshmkt.meshtastic.client.event.AdminModelUpdateEvent event) {
-        }
+        public void onAdminModelUpdate(com.meshmkt.meshtastic.client.event.AdminModelUpdateEvent event) {}
     };
 
     /**
@@ -103,14 +97,14 @@ public abstract class BaseMeshHandler implements MeshtasticMessageHandler {
     @Override
     public final boolean handle(MeshProtos.FromRadio message) {
         // SCENARIO A: LOCAL HANDSHAKE / STATUS
-        // If the message does NOT have a packet, it is the local radio 
+        // If the message does NOT have a packet, it is the local radio
         // talking about itself or syncing its internal memory with us.
         if (!message.hasPacket()) {
             return handleNonPacketMessage(message);
         }
 
         // SCENARIO B: LIVE MESH PACKET
-        // If it has a packet, it was heard on the mesh. It has signal 
+        // If it has a packet, it was heard on the mesh. It has signal
         // quality metadata (RSSI/SNR) which we extract into the PacketContext.
         MeshProtos.MeshPacket packet = message.getPacket();
         PacketContext ctx = PacketContext.from(message);
@@ -151,8 +145,6 @@ public abstract class BaseMeshHandler implements MeshtasticMessageHandler {
      * @return display-friendly name.
      */
     protected String resolveName(int nodeId) {
-        return nodeDb.getNode(nodeId)
-                .map(MeshUtils::resolveName)
-                .orElse(MeshUtils.formatId(nodeId));
+        return nodeDb.getNode(nodeId).map(MeshUtils::resolveName).orElse(MeshUtils.formatId(nodeId));
     }
 }

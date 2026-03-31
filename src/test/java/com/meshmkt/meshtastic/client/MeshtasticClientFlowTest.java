@@ -1,33 +1,32 @@
 package com.meshmkt.meshtastic.client;
 
-import com.google.protobuf.ByteString;
-import com.meshmkt.meshtastic.client.storage.InMemoryNodeDatabase;
-import com.meshmkt.meshtastic.client.storage.MeshNode;
-import com.meshmkt.meshtastic.client.support.FakeTransport;
-import com.meshmkt.meshtastic.client.event.RequestLifecycleEvent;
-import com.meshmkt.meshtastic.client.event.StartupState;
-import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.Test;
-import org.meshtastic.proto.AdminProtos.AdminMessage;
-import org.meshtastic.proto.MeshProtos;
-import org.meshtastic.proto.Portnums;
-
-import java.time.Duration;
-import java.util.concurrent.CountDownLatch;
-import java.util.List;
-import java.util.concurrent.CancellationException;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
-import java.util.concurrent.CopyOnWriteArrayList;
-import java.util.function.Predicate;
-
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import com.google.protobuf.ByteString;
+import com.meshmkt.meshtastic.client.event.RequestLifecycleEvent;
+import com.meshmkt.meshtastic.client.event.StartupState;
+import com.meshmkt.meshtastic.client.storage.InMemoryNodeDatabase;
+import com.meshmkt.meshtastic.client.storage.MeshNode;
+import com.meshmkt.meshtastic.client.support.FakeTransport;
+import java.time.Duration;
+import java.util.List;
+import java.util.concurrent.CancellationException;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
+import java.util.function.Predicate;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.Test;
+import org.meshtastic.proto.AdminProtos.AdminMessage;
+import org.meshtastic.proto.MeshProtos;
+import org.meshtastic.proto.Portnums;
 
 /**
  * Integration-lite tests for {@link MeshtasticClient} using an in-memory transport.
@@ -57,8 +56,8 @@ class MeshtasticClientFlowTest {
 
         assertEquals(StartupState.SYNC_LOCAL_CONFIG, client.getStartupState());
 
-        MeshProtos.ToRadio phase1 = awaitToRadio(transport, tr -> tr.hasWantConfigId() && tr.getWantConfigId() == 69420,
-                Duration.ofSeconds(2));
+        MeshProtos.ToRadio phase1 = awaitToRadio(
+                transport, tr -> tr.hasWantConfigId() && tr.getWantConfigId() == 69420, Duration.ofSeconds(2));
         assertEquals(69420, phase1.getWantConfigId());
 
         transport.emitParsedPacket(MeshProtos.FromRadio.newBuilder()
@@ -66,13 +65,19 @@ class MeshtasticClientFlowTest {
                 .build()
                 .toByteArray());
 
-        transport.emitParsedPacket(MeshProtos.FromRadio.newBuilder().setConfigCompleteId(69420).build().toByteArray());
+        transport.emitParsedPacket(MeshProtos.FromRadio.newBuilder()
+                .setConfigCompleteId(69420)
+                .build()
+                .toByteArray());
 
-        MeshProtos.ToRadio phase2 = awaitToRadio(transport, tr -> tr.hasWantConfigId() && tr.getWantConfigId() == 69421,
-                Duration.ofSeconds(2));
+        MeshProtos.ToRadio phase2 = awaitToRadio(
+                transport, tr -> tr.hasWantConfigId() && tr.getWantConfigId() == 69421, Duration.ofSeconds(2));
         assertEquals(69421, phase2.getWantConfigId());
 
-        transport.emitParsedPacket(MeshProtos.FromRadio.newBuilder().setConfigCompleteId(69421).build().toByteArray());
+        transport.emitParsedPacket(MeshProtos.FromRadio.newBuilder()
+                .setConfigCompleteId(69421)
+                .build()
+                .toByteArray());
         assertEquals(StartupState.READY, client.getStartupState());
         assertTrue(client.isReady());
     }
@@ -116,22 +121,25 @@ class MeshtasticClientFlowTest {
         client = new MeshtasticClient(new InMemoryNodeDatabase());
         client.connect(transport);
 
-        assertNotNull(awaitToRadio(transport,
-                tr -> tr.hasWantConfigId() && tr.getWantConfigId() == 69420,
-                Duration.ofSeconds(2)));
+        assertNotNull(awaitToRadio(
+                transport, tr -> tr.hasWantConfigId() && tr.getWantConfigId() == 69420, Duration.ofSeconds(2)));
 
         // Reboot signal arrives while phase 1 is active; it should not reset the current startup handshake.
-        transport.emitParsedPacket(MeshProtos.FromRadio.newBuilder().setRebooted(true).build().toByteArray());
+        transport.emitParsedPacket(
+                MeshProtos.FromRadio.newBuilder().setRebooted(true).build().toByteArray());
 
         // Existing phase-1 handshake should still progress directly to phase 2.
         transport.emitParsedPacket(MeshProtos.FromRadio.newBuilder()
                 .setMyInfo(MeshProtos.MyNodeInfo.newBuilder().setMyNodeNum(1234).build())
-                .build().toByteArray());
-        transport.emitParsedPacket(MeshProtos.FromRadio.newBuilder().setConfigCompleteId(69420).build().toByteArray());
+                .build()
+                .toByteArray());
+        transport.emitParsedPacket(MeshProtos.FromRadio.newBuilder()
+                .setConfigCompleteId(69420)
+                .build()
+                .toByteArray());
 
-        assertNotNull(awaitToRadio(transport,
-                tr -> tr.hasWantConfigId() && tr.getWantConfigId() == 69421,
-                Duration.ofSeconds(2)));
+        assertNotNull(awaitToRadio(
+                transport, tr -> tr.hasWantConfigId() && tr.getWantConfigId() == 69421, Duration.ofSeconds(2)));
     }
 
     /**
@@ -148,13 +156,17 @@ class MeshtasticClientFlowTest {
                 client.getSelfNodeId(),
                 AdminMessage.newBuilder().setGetOwnerRequest(true).build());
 
-        MeshProtos.ToRadio outbound = awaitToRadio(transport,
+        MeshProtos.ToRadio outbound = awaitToRadio(
+                transport,
                 tr -> tr.hasPacket() && tr.getPacket().getDecoded().getPortnum() == Portnums.PortNum.ADMIN_APP,
                 Duration.ofSeconds(2));
 
         int requestId = outbound.getPacket().getId();
         AdminMessage adminResponse = AdminMessage.newBuilder()
-                .setGetOwnerResponse(MeshProtos.User.newBuilder().setLongName("RadioOwner").setShortName("rdo").build())
+                .setGetOwnerResponse(MeshProtos.User.newBuilder()
+                        .setLongName("RadioOwner")
+                        .setShortName("rdo")
+                        .build())
                 .build();
 
         MeshProtos.MeshPacket inboundPacket = MeshProtos.MeshPacket.newBuilder()
@@ -168,7 +180,10 @@ class MeshtasticClientFlowTest {
                 .setId(900001)
                 .build();
 
-        transport.emitParsedPacket(MeshProtos.FromRadio.newBuilder().setPacket(inboundPacket).build().toByteArray());
+        transport.emitParsedPacket(MeshProtos.FromRadio.newBuilder()
+                .setPacket(inboundPacket)
+                .build()
+                .toByteArray());
 
         MeshProtos.MeshPacket completed = future.get(2, TimeUnit.SECONDS);
         assertEquals(requestId, completed.getDecoded().getRequestId());
@@ -186,7 +201,8 @@ class MeshtasticClientFlowTest {
 
         CompletableFuture<MeshProtos.MeshPacket> future = client.requestNodeInfo(424242);
 
-        MeshProtos.ToRadio outbound = awaitToRadio(transport,
+        MeshProtos.ToRadio outbound = awaitToRadio(
+                transport,
                 tr -> tr.hasPacket() && tr.getPacket().getDecoded().getPortnum() == Portnums.PortNum.NODEINFO_APP,
                 Duration.ofSeconds(2));
 
@@ -198,12 +214,13 @@ class MeshtasticClientFlowTest {
                 .setDecoded(MeshProtos.Data.newBuilder()
                         .setPortnum(Portnums.PortNum.ROUTING_APP)
                         .setRequestId(requestId)
-                        .setPayload(ByteString.copyFrom(new byte[]{0x18, 0x00}))
+                        .setPayload(ByteString.copyFrom(new byte[] {0x18, 0x00}))
                         .build())
                 .setId(900002)
                 .build();
 
-        transport.emitParsedPacket(MeshProtos.FromRadio.newBuilder().setPacket(routingAck).build().toByteArray());
+        transport.emitParsedPacket(
+                MeshProtos.FromRadio.newBuilder().setPacket(routingAck).build().toByteArray());
 
         MeshProtos.MeshPacket completed = future.get(2, TimeUnit.SECONDS);
         assertEquals(requestId, completed.getDecoded().getRequestId());
@@ -221,10 +238,14 @@ class MeshtasticClientFlowTest {
 
         CompletableFuture<MeshProtos.MeshPacket> future = client.executeAdminRequest(
                 client.getSelfNodeId(),
-                AdminMessage.newBuilder().setSetOwner(MeshProtos.User.newBuilder().setLongName("Nope").build()).build(),
+                AdminMessage.newBuilder()
+                        .setSetOwner(
+                                MeshProtos.User.newBuilder().setLongName("Nope").build())
+                        .build(),
                 false);
 
-        MeshProtos.ToRadio outbound = awaitToRadio(transport,
+        MeshProtos.ToRadio outbound = awaitToRadio(
+                transport,
                 tr -> tr.hasPacket() && tr.getPacket().getDecoded().getPortnum() == Portnums.PortNum.ADMIN_APP,
                 Duration.ofSeconds(2));
 
@@ -244,7 +265,10 @@ class MeshtasticClientFlowTest {
                 .setId(900003)
                 .build();
 
-        transport.emitParsedPacket(MeshProtos.FromRadio.newBuilder().setPacket(routingError).build().toByteArray());
+        transport.emitParsedPacket(MeshProtos.FromRadio.newBuilder()
+                .setPacket(routingError)
+                .build()
+                .toByteArray());
 
         ExecutionException ex = assertThrows(ExecutionException.class, () -> future.get(2, TimeUnit.SECONDS));
         assertTrue(ex.getCause() instanceof IllegalStateException);
@@ -262,7 +286,8 @@ class MeshtasticClientFlowTest {
         completeStartupSync(transport, 8888);
 
         CompletableFuture<MeshProtos.MeshPacket> future = client.requestNodeInfo(1337);
-        assertNotNull(awaitToRadio(transport,
+        assertNotNull(awaitToRadio(
+                transport,
                 tr -> tr.hasPacket() && tr.getPacket().getDecoded().getPortnum() == Portnums.PortNum.NODEINFO_APP,
                 Duration.ofSeconds(2)));
 
@@ -282,7 +307,8 @@ class MeshtasticClientFlowTest {
         completeStartupSync(transport, 10001);
 
         CompletableFuture<MeshProtos.MeshPacket> pending = client.requestNodeInfo(0x11111111);
-        assertNotNull(awaitToRadio(transport,
+        assertNotNull(awaitToRadio(
+                transport,
                 tr -> tr.hasPacket() && tr.getPacket().getDecoded().getPortnum() == Portnums.PortNum.NODEINFO_APP,
                 Duration.ofSeconds(2)));
 
@@ -293,7 +319,8 @@ class MeshtasticClientFlowTest {
         completeStartupSync(transport, 10002);
 
         CompletableFuture<MeshProtos.MeshPacket> fresh = client.requestNodeInfo(0x22222222);
-        MeshProtos.ToRadio outbound = awaitToRadio(transport,
+        MeshProtos.ToRadio outbound = awaitToRadio(
+                transport,
                 tr -> tr.hasPacket()
                         && tr.getPacket().getTo() == 0x22222222
                         && tr.getPacket().getDecoded().getPortnum() == Portnums.PortNum.NODEINFO_APP,
@@ -301,7 +328,8 @@ class MeshtasticClientFlowTest {
         int requestId = outbound.getPacket().getId();
         transport.emitParsedPacket(MeshProtos.FromRadio.newBuilder()
                 .setPacket(buildRoutingAck(client.getSelfNodeId(), requestId, 901050))
-                .build().toByteArray());
+                .build()
+                .toByteArray());
         assertEquals(requestId, fresh.get(2, TimeUnit.SECONDS).getDecoded().getRequestId());
     }
 
@@ -316,7 +344,8 @@ class MeshtasticClientFlowTest {
         completeStartupSync(transport, 9999);
 
         CompletableFuture<MeshProtos.MeshPacket> future = client.requestNodeInfo(1337);
-        assertNotNull(awaitToRadio(transport,
+        assertNotNull(awaitToRadio(
+                transport,
                 tr -> tr.hasPacket() && tr.getPacket().getDecoded().getPortnum() == Portnums.PortNum.NODEINFO_APP,
                 Duration.ofSeconds(2)));
 
@@ -334,23 +363,28 @@ class MeshtasticClientFlowTest {
         client = new MeshtasticClient(new InMemoryNodeDatabase());
         client.connect(transport);
 
-        assertNotNull(awaitToRadio(transport,
-                tr -> tr.hasWantConfigId() && tr.getWantConfigId() == 69420,
-                Duration.ofSeconds(2)));
+        assertNotNull(awaitToRadio(
+                transport, tr -> tr.hasWantConfigId() && tr.getWantConfigId() == 69420, Duration.ofSeconds(2)));
 
         // Wrong completion nonce should not advance to phase 2.
-        transport.emitParsedPacket(MeshProtos.FromRadio.newBuilder().setConfigCompleteId(11111).build().toByteArray());
+        transport.emitParsedPacket(MeshProtos.FromRadio.newBuilder()
+                .setConfigCompleteId(11111)
+                .build()
+                .toByteArray());
         assertNoToRadio(transport, tr -> tr.hasWantConfigId() && tr.getWantConfigId() == 69421, Duration.ofMillis(250));
 
         // Correct phase-1 prerequisites.
         transport.emitParsedPacket(MeshProtos.FromRadio.newBuilder()
                 .setMyInfo(MeshProtos.MyNodeInfo.newBuilder().setMyNodeNum(5151).build())
-                .build().toByteArray());
-        transport.emitParsedPacket(MeshProtos.FromRadio.newBuilder().setConfigCompleteId(69420).build().toByteArray());
+                .build()
+                .toByteArray());
+        transport.emitParsedPacket(MeshProtos.FromRadio.newBuilder()
+                .setConfigCompleteId(69420)
+                .build()
+                .toByteArray());
 
-        assertNotNull(awaitToRadio(transport,
-                tr -> tr.hasWantConfigId() && tr.getWantConfigId() == 69421,
-                Duration.ofSeconds(2)));
+        assertNotNull(awaitToRadio(
+                transport, tr -> tr.hasWantConfigId() && tr.getWantConfigId() == 69421, Duration.ofSeconds(2)));
     }
 
     /**
@@ -372,11 +406,13 @@ class MeshtasticClientFlowTest {
         completeStartupSync(newTransport, 6002);
 
         CompletableFuture<MeshProtos.MeshPacket> future = client.requestNodeInfo(12345);
-        MeshProtos.ToRadio writeOnNew = awaitToRadio(newTransport,
+        MeshProtos.ToRadio writeOnNew = awaitToRadio(
+                newTransport,
                 tr -> tr.hasPacket() && tr.getPacket().getDecoded().getPortnum() == Portnums.PortNum.NODEINFO_APP,
                 Duration.ofSeconds(2));
         assertNotNull(writeOnNew);
-        assertNoToRadio(oldTransport,
+        assertNoToRadio(
+                oldTransport,
                 tr -> tr.hasPacket() && tr.getPacket().getDecoded().getPortnum() == Portnums.PortNum.NODEINFO_APP,
                 Duration.ofMillis(250));
 
@@ -388,11 +424,12 @@ class MeshtasticClientFlowTest {
                 .setDecoded(MeshProtos.Data.newBuilder()
                         .setPortnum(Portnums.PortNum.ROUTING_APP)
                         .setRequestId(requestId)
-                        .setPayload(ByteString.copyFrom(new byte[]{0x18, 0x00}))
+                        .setPayload(ByteString.copyFrom(new byte[] {0x18, 0x00}))
                         .build())
                 .setId(900010)
                 .build();
-        newTransport.emitParsedPacket(MeshProtos.FromRadio.newBuilder().setPacket(routingAck).build().toByteArray());
+        newTransport.emitParsedPacket(
+                MeshProtos.FromRadio.newBuilder().setPacket(routingAck).build().toByteArray());
         assertEquals(requestId, future.get(2, TimeUnit.SECONDS).getDecoded().getRequestId());
     }
 
@@ -407,14 +444,17 @@ class MeshtasticClientFlowTest {
         completeStartupSync(transport, 6060);
         assertEquals(StartupState.READY, client.getStartupState());
 
-        int phase1Baseline = countToRadioMatches(transport, tr -> tr.hasWantConfigId() && tr.getWantConfigId() == 69420);
-        int phase2Baseline = countToRadioMatches(transport, tr -> tr.hasWantConfigId() && tr.getWantConfigId() == 69421);
+        int phase1Baseline =
+                countToRadioMatches(transport, tr -> tr.hasWantConfigId() && tr.getWantConfigId() == 69420);
+        int phase2Baseline =
+                countToRadioMatches(transport, tr -> tr.hasWantConfigId() && tr.getWantConfigId() == 69421);
 
         transport.stop();
         assertEquals(StartupState.DISCONNECTED, client.getStartupState());
 
         transport.start();
-        waitForMatchingCount(transport,
+        waitForMatchingCount(
+                transport,
                 tr -> tr.hasWantConfigId() && tr.getWantConfigId() == 69420,
                 phase1Baseline + 1,
                 Duration.ofSeconds(2));
@@ -422,16 +462,24 @@ class MeshtasticClientFlowTest {
 
         transport.emitParsedPacket(MeshProtos.FromRadio.newBuilder()
                 .setMyInfo(MeshProtos.MyNodeInfo.newBuilder().setMyNodeNum(6061).build())
-                .build().toByteArray());
-        transport.emitParsedPacket(MeshProtos.FromRadio.newBuilder().setConfigCompleteId(69420).build().toByteArray());
+                .build()
+                .toByteArray());
+        transport.emitParsedPacket(MeshProtos.FromRadio.newBuilder()
+                .setConfigCompleteId(69420)
+                .build()
+                .toByteArray());
 
-        waitForMatchingCount(transport,
+        waitForMatchingCount(
+                transport,
                 tr -> tr.hasWantConfigId() && tr.getWantConfigId() == 69421,
                 phase2Baseline + 1,
                 Duration.ofSeconds(2));
         assertEquals(StartupState.SYNC_MESH_CONFIG, client.getStartupState());
 
-        transport.emitParsedPacket(MeshProtos.FromRadio.newBuilder().setConfigCompleteId(69421).build().toByteArray());
+        transport.emitParsedPacket(MeshProtos.FromRadio.newBuilder()
+                .setConfigCompleteId(69421)
+                .build()
+                .toByteArray());
         assertEquals(StartupState.READY, client.getStartupState());
     }
 
@@ -444,9 +492,8 @@ class MeshtasticClientFlowTest {
         client = new MeshtasticClient(new InMemoryNodeDatabase());
         client.connect(transport);
 
-        assertNotNull(awaitToRadio(transport,
-                tr -> tr.hasWantConfigId() && tr.getWantConfigId() == 69420,
-                Duration.ofSeconds(2)));
+        assertNotNull(awaitToRadio(
+                transport, tr -> tr.hasWantConfigId() && tr.getWantConfigId() == 69420, Duration.ofSeconds(2)));
         assertEquals(StartupState.SYNC_LOCAL_CONFIG, client.getStartupState());
 
         // Drop link before phase 1 completes.
@@ -455,9 +502,8 @@ class MeshtasticClientFlowTest {
 
         // Reconnect should restart phase 1 handshake.
         transport.start();
-        assertNotNull(awaitToRadio(transport,
-                tr -> tr.hasWantConfigId() && tr.getWantConfigId() == 69420,
-                Duration.ofSeconds(2)));
+        assertNotNull(awaitToRadio(
+                transport, tr -> tr.hasWantConfigId() && tr.getWantConfigId() == 69420, Duration.ofSeconds(2)));
         assertEquals(StartupState.SYNC_LOCAL_CONFIG, client.getStartupState());
 
         completeStartupSync(transport, 6161);
@@ -475,8 +521,10 @@ class MeshtasticClientFlowTest {
         completeStartupSync(transport, 7070);
         assertEquals(StartupState.READY, client.getStartupState());
 
-        int phase1Baseline = countToRadioMatches(transport, tr -> tr.hasWantConfigId() && tr.getWantConfigId() == 69420);
-        int phase2Baseline = countToRadioMatches(transport, tr -> tr.hasWantConfigId() && tr.getWantConfigId() == 69421);
+        int phase1Baseline =
+                countToRadioMatches(transport, tr -> tr.hasWantConfigId() && tr.getWantConfigId() == 69420);
+        int phase2Baseline =
+                countToRadioMatches(transport, tr -> tr.hasWantConfigId() && tr.getWantConfigId() == 69421);
 
         List<StartupState> states = new CopyOnWriteArrayList<>();
         CountDownLatch readyLatch = new CountDownLatch(1);
@@ -490,22 +538,32 @@ class MeshtasticClientFlowTest {
             }
         });
 
-        transport.emitParsedPacket(MeshProtos.FromRadio.newBuilder().setRebooted(true).build().toByteArray());
-        waitForMatchingCount(transport,
+        transport.emitParsedPacket(
+                MeshProtos.FromRadio.newBuilder().setRebooted(true).build().toByteArray());
+        waitForMatchingCount(
+                transport,
                 tr -> tr.hasWantConfigId() && tr.getWantConfigId() == 69420,
                 phase1Baseline + 1,
                 Duration.ofSeconds(2));
 
         transport.emitParsedPacket(MeshProtos.FromRadio.newBuilder()
                 .setMyInfo(MeshProtos.MyNodeInfo.newBuilder().setMyNodeNum(7071).build())
-                .build().toByteArray());
-        transport.emitParsedPacket(MeshProtos.FromRadio.newBuilder().setConfigCompleteId(69420).build().toByteArray());
+                .build()
+                .toByteArray());
+        transport.emitParsedPacket(MeshProtos.FromRadio.newBuilder()
+                .setConfigCompleteId(69420)
+                .build()
+                .toByteArray());
 
-        waitForMatchingCount(transport,
+        waitForMatchingCount(
+                transport,
                 tr -> tr.hasWantConfigId() && tr.getWantConfigId() == 69421,
                 phase2Baseline + 1,
                 Duration.ofSeconds(2));
-        transport.emitParsedPacket(MeshProtos.FromRadio.newBuilder().setConfigCompleteId(69421).build().toByteArray());
+        transport.emitParsedPacket(MeshProtos.FromRadio.newBuilder()
+                .setConfigCompleteId(69421)
+                .build()
+                .toByteArray());
 
         assertTrue(readyLatch.await(2, TimeUnit.SECONDS), "Expected READY after reboot-driven resync");
         assertTrue(states.contains(StartupState.SYNC_LOCAL_CONFIG));
@@ -523,7 +581,8 @@ class MeshtasticClientFlowTest {
         completeStartupSync(transport, 7111);
 
         CompletableFuture<MeshProtos.MeshPacket> pending = client.requestNodeInfo(0x699c5400);
-        MeshProtos.ToRadio outbound = awaitToRadio(transport,
+        MeshProtos.ToRadio outbound = awaitToRadio(
+                transport,
                 tr -> tr.hasPacket() && tr.getPacket().getDecoded().getPortnum() == Portnums.PortNum.NODEINFO_APP,
                 Duration.ofSeconds(2));
         int requestId = outbound.getPacket().getId();
@@ -531,14 +590,16 @@ class MeshtasticClientFlowTest {
         // Emit ACK with unrelated request id; pending request must remain incomplete.
         transport.emitParsedPacket(MeshProtos.FromRadio.newBuilder()
                 .setPacket(buildRoutingAck(client.getSelfNodeId(), requestId + 9999, 902000))
-                .build().toByteArray());
+                .build()
+                .toByteArray());
         Thread.sleep(150L);
         assertFalse(pending.isDone(), "Pending request should ignore stale correlation IDs");
 
         // Correct request id should complete request.
         transport.emitParsedPacket(MeshProtos.FromRadio.newBuilder()
                 .setPacket(buildRoutingAck(client.getSelfNodeId(), requestId, 902001))
-                .build().toByteArray());
+                .build()
+                .toByteArray());
         assertEquals(requestId, pending.get(2, TimeUnit.SECONDS).getDecoded().getRequestId());
     }
 
@@ -574,7 +635,8 @@ class MeshtasticClientFlowTest {
                 .setId(900020)
                 .build();
 
-        transport.emitParsedPacket(MeshProtos.FromRadio.newBuilder().setPacket(packet).build().toByteArray());
+        transport.emitParsedPacket(
+                MeshProtos.FromRadio.newBuilder().setPacket(packet).build().toByteArray());
         assertTrue(latch.await(2, TimeUnit.SECONDS), "Expected routing event to reach listener");
     }
 
@@ -599,18 +661,22 @@ class MeshtasticClientFlowTest {
                         .setShortName("snap")
                         .build())
                 .build();
-        transport.emitParsedPacket(MeshProtos.FromRadio.newBuilder().setNodeInfo(snapshot).build().toByteArray());
+        transport.emitParsedPacket(
+                MeshProtos.FromRadio.newBuilder().setNodeInfo(snapshot).build().toByteArray());
 
-        CompletableFuture<MeshNode> future = client.requestTelemetryAwaitPayloadOrSnapshot(nodeId, Duration.ofMillis(200));
+        CompletableFuture<MeshNode> future =
+                client.requestTelemetryAwaitPayloadOrSnapshot(nodeId, Duration.ofMillis(200));
 
-        MeshProtos.ToRadio outbound = awaitToRadio(transport,
+        MeshProtos.ToRadio outbound = awaitToRadio(
+                transport,
                 tr -> tr.hasPacket() && tr.getPacket().getDecoded().getPortnum() == Portnums.PortNum.TELEMETRY_APP,
                 Duration.ofSeconds(2));
         int requestId = outbound.getPacket().getId();
 
         transport.emitParsedPacket(MeshProtos.FromRadio.newBuilder()
                 .setPacket(buildRoutingAck(client.getSelfNodeId(), requestId, 901000))
-                .build().toByteArray());
+                .build()
+                .toByteArray());
 
         MeshNode node = future.get(2, TimeUnit.SECONDS);
         assertEquals(nodeId, node.getNodeId());
@@ -631,14 +697,16 @@ class MeshtasticClientFlowTest {
         int nodeId = 0x00ba0ddc;
         CompletableFuture<MeshNode> future = client.requestTelemetryAwaitPayload(nodeId, Duration.ofMillis(200));
 
-        MeshProtos.ToRadio outbound = awaitToRadio(transport,
+        MeshProtos.ToRadio outbound = awaitToRadio(
+                transport,
                 tr -> tr.hasPacket() && tr.getPacket().getDecoded().getPortnum() == Portnums.PortNum.TELEMETRY_APP,
                 Duration.ofSeconds(2));
         int requestId = outbound.getPacket().getId();
 
         transport.emitParsedPacket(MeshProtos.FromRadio.newBuilder()
                 .setPacket(buildRoutingAck(client.getSelfNodeId(), requestId, 901001))
-                .build().toByteArray());
+                .build()
+                .toByteArray());
 
         ExecutionException ex = assertThrows(ExecutionException.class, () -> future.get(2, TimeUnit.SECONDS));
         assertTrue(ex.getCause() instanceof TimeoutException);
@@ -656,8 +724,10 @@ class MeshtasticClientFlowTest {
 
         ExecutionException ex = assertThrows(ExecutionException.class, () -> future.get(2, TimeUnit.SECONDS));
         assertTrue(ex.getCause() instanceof IllegalStateException);
-        Throwable requestLayer = ex.getCause().getCause() != null ? ex.getCause().getCause() : ex.getCause();
-        assertTrue(requestLayer instanceof IllegalStateException,
+        Throwable requestLayer =
+                ex.getCause().getCause() != null ? ex.getCause().getCause() : ex.getCause();
+        assertTrue(
+                requestLayer instanceof IllegalStateException,
                 "Expected request-layer IllegalStateException but got: " + requestLayer);
         assertTrue(requestLayer.getMessage().contains("Transport disconnected before send"));
     }
@@ -676,7 +746,8 @@ class MeshtasticClientFlowTest {
         int nodeId = 0x699c5400;
         CompletableFuture<MeshNode> future = client.requestTelemetryAwaitPayload(nodeId, Duration.ofSeconds(5));
 
-        MeshProtos.ToRadio outbound = awaitToRadio(transport,
+        MeshProtos.ToRadio outbound = awaitToRadio(
+                transport,
                 tr -> tr.hasPacket() && tr.getPacket().getDecoded().getPortnum() == Portnums.PortNum.TELEMETRY_APP,
                 Duration.ofSeconds(2));
         int requestId = outbound.getPacket().getId();
@@ -684,7 +755,8 @@ class MeshtasticClientFlowTest {
         // First routing NONE correlates request acceptance.
         transport.emitParsedPacket(MeshProtos.FromRadio.newBuilder()
                 .setPacket(buildRoutingAck(client.getSelfNodeId(), requestId, 901100))
-                .build().toByteArray());
+                .build()
+                .toByteArray());
 
         // Then routing NO_RESPONSE should fail strict payload wait immediately.
         MeshProtos.Routing noResponse = MeshProtos.Routing.newBuilder()
@@ -700,7 +772,10 @@ class MeshtasticClientFlowTest {
                         .build())
                 .setId(901101)
                 .build();
-        transport.emitParsedPacket(MeshProtos.FromRadio.newBuilder().setPacket(routingError).build().toByteArray());
+        transport.emitParsedPacket(MeshProtos.FromRadio.newBuilder()
+                .setPacket(routingError)
+                .build()
+                .toByteArray());
 
         ExecutionException ex = assertThrows(ExecutionException.class, () -> future.get(2, TimeUnit.SECONDS));
         assertTrue(ex.getCause() instanceof IllegalStateException);
@@ -730,13 +805,15 @@ class MeshtasticClientFlowTest {
         });
 
         CompletableFuture<MeshProtos.MeshPacket> future = client.requestNodeInfo(0x12345678);
-        MeshProtos.ToRadio outbound = awaitToRadio(transport,
+        MeshProtos.ToRadio outbound = awaitToRadio(
+                transport,
                 tr -> tr.hasPacket() && tr.getPacket().getDecoded().getPortnum() == Portnums.PortNum.NODEINFO_APP,
                 Duration.ofSeconds(2));
         int requestId = outbound.getPacket().getId();
         transport.emitParsedPacket(MeshProtos.FromRadio.newBuilder()
                 .setPacket(buildRoutingAck(client.getSelfNodeId(), requestId, 902100))
-                .build().toByteArray());
+                .build()
+                .toByteArray());
 
         assertEquals(requestId, future.get(2, TimeUnit.SECONDS).getDecoded().getRequestId());
         assertTrue(acceptedLatch.await(2, TimeUnit.SECONDS), "Expected ACCEPTED lifecycle stage");
@@ -767,7 +844,8 @@ class MeshtasticClientFlowTest {
         });
 
         CompletableFuture<MeshProtos.MeshPacket> future = client.requestNodeInfo(0x12345678);
-        MeshProtos.ToRadio outbound = awaitToRadio(transport,
+        MeshProtos.ToRadio outbound = awaitToRadio(
+                transport,
                 tr -> tr.hasPacket() && tr.getPacket().getDecoded().getPortnum() == Portnums.PortNum.NODEINFO_APP,
                 Duration.ofSeconds(2));
         int requestId = outbound.getPacket().getId();
@@ -785,7 +863,10 @@ class MeshtasticClientFlowTest {
                         .build())
                 .setId(902101)
                 .build();
-        transport.emitParsedPacket(MeshProtos.FromRadio.newBuilder().setPacket(routingError).build().toByteArray());
+        transport.emitParsedPacket(MeshProtos.FromRadio.newBuilder()
+                .setPacket(routingError)
+                .build()
+                .toByteArray());
 
         assertThrows(ExecutionException.class, () -> future.get(2, TimeUnit.SECONDS));
         assertTrue(rejectedLatch.await(2, TimeUnit.SECONDS), "Expected REJECTED lifecycle stage");
@@ -804,7 +885,8 @@ class MeshtasticClientFlowTest {
         completeStartupSync(transport, 7444);
 
         CompletableFuture<Boolean> future = client.sendDirectText(0x00ba0dd0, "help");
-        MeshProtos.ToRadio outbound = awaitToRadio(transport,
+        MeshProtos.ToRadio outbound = awaitToRadio(
+                transport,
                 tr -> tr.hasPacket() && tr.getPacket().getDecoded().getPortnum() == Portnums.PortNum.TEXT_MESSAGE_APP,
                 Duration.ofSeconds(2));
         int requestId = outbound.getPacket().getId();
@@ -822,7 +904,10 @@ class MeshtasticClientFlowTest {
                         .build())
                 .setId(902200)
                 .build();
-        transport.emitParsedPacket(MeshProtos.FromRadio.newBuilder().setPacket(routingNoResponse).build().toByteArray());
+        transport.emitParsedPacket(MeshProtos.FromRadio.newBuilder()
+                .setPacket(routingNoResponse)
+                .build()
+                .toByteArray());
 
         assertTrue(future.get(2, TimeUnit.SECONDS));
     }
@@ -841,7 +926,8 @@ class MeshtasticClientFlowTest {
         int targetNodeId = 0x00ba0dd0;
         int channelIndex = 2;
         CompletableFuture<Boolean> future = client.sendDirectText(targetNodeId, channelIndex, "ops");
-        MeshProtos.ToRadio outbound = awaitToRadio(transport,
+        MeshProtos.ToRadio outbound = awaitToRadio(
+                transport,
                 tr -> tr.hasPacket() && tr.getPacket().getDecoded().getPortnum() == Portnums.PortNum.TEXT_MESSAGE_APP,
                 Duration.ofSeconds(2));
 
@@ -863,7 +949,10 @@ class MeshtasticClientFlowTest {
                         .build())
                 .setId(902201)
                 .build();
-        transport.emitParsedPacket(MeshProtos.FromRadio.newBuilder().setPacket(routingNoResponse).build().toByteArray());
+        transport.emitParsedPacket(MeshProtos.FromRadio.newBuilder()
+                .setPacket(routingNoResponse)
+                .build()
+                .toByteArray());
 
         assertTrue(future.get(2, TimeUnit.SECONDS));
     }
@@ -892,14 +981,16 @@ class MeshtasticClientFlowTest {
         });
 
         CompletableFuture<MeshNode> future = client.requestNodeInfoAwaitPayload(targetNodeId, Duration.ofSeconds(2));
-        MeshProtos.ToRadio outbound = awaitToRadio(transport,
+        MeshProtos.ToRadio outbound = awaitToRadio(
+                transport,
                 tr -> tr.hasPacket() && tr.getPacket().getDecoded().getPortnum() == Portnums.PortNum.NODEINFO_APP,
                 Duration.ofSeconds(2));
         int requestId = outbound.getPacket().getId();
 
         transport.emitParsedPacket(MeshProtos.FromRadio.newBuilder()
                 .setPacket(buildRoutingAck(client.getSelfNodeId(), requestId, 902102))
-                .build().toByteArray());
+                .build()
+                .toByteArray());
 
         MeshProtos.User userPayload = MeshProtos.User.newBuilder()
                 .setLongName("Payload Node")
@@ -914,7 +1005,10 @@ class MeshtasticClientFlowTest {
                         .build())
                 .setId(902103)
                 .build();
-        transport.emitParsedPacket(MeshProtos.FromRadio.newBuilder().setPacket(nodeInfoPacket).build().toByteArray());
+        transport.emitParsedPacket(MeshProtos.FromRadio.newBuilder()
+                .setPacket(nodeInfoPacket)
+                .build()
+                .toByteArray());
 
         assertEquals(targetNodeId, future.get(2, TimeUnit.SECONDS).getNodeId());
         assertTrue(payloadLatch.await(2, TimeUnit.SECONDS), "Expected PAYLOAD_RECEIVED lifecycle stage");
@@ -923,15 +1017,23 @@ class MeshtasticClientFlowTest {
 
     private void completeStartupSync(FakeTransport transport, int selfNodeId) {
         transport.emitParsedPacket(MeshProtos.FromRadio.newBuilder()
-                .setMyInfo(MeshProtos.MyNodeInfo.newBuilder().setMyNodeNum(selfNodeId).build())
-                .build().toByteArray());
-        transport.emitParsedPacket(MeshProtos.FromRadio.newBuilder().setConfigCompleteId(69420).build().toByteArray());
-        transport.emitParsedPacket(MeshProtos.FromRadio.newBuilder().setConfigCompleteId(69421).build().toByteArray());
+                .setMyInfo(MeshProtos.MyNodeInfo.newBuilder()
+                        .setMyNodeNum(selfNodeId)
+                        .build())
+                .build()
+                .toByteArray());
+        transport.emitParsedPacket(MeshProtos.FromRadio.newBuilder()
+                .setConfigCompleteId(69420)
+                .build()
+                .toByteArray());
+        transport.emitParsedPacket(MeshProtos.FromRadio.newBuilder()
+                .setConfigCompleteId(69421)
+                .build()
+                .toByteArray());
     }
 
-    private static MeshProtos.ToRadio awaitToRadio(FakeTransport transport,
-                                                    Predicate<MeshProtos.ToRadio> predicate,
-                                                    Duration timeout) throws Exception {
+    private static MeshProtos.ToRadio awaitToRadio(
+            FakeTransport transport, Predicate<MeshProtos.ToRadio> predicate, Duration timeout) throws Exception {
         long deadline = System.nanoTime() + timeout.toNanos();
         while (System.nanoTime() < deadline) {
             List<byte[]> writes = transport.getWritesSnapshot();
@@ -946,7 +1048,8 @@ class MeshtasticClientFlowTest {
         throw new TimeoutException("Timed out waiting for expected ToRadio frame");
     }
 
-    private static int countToRadioMatches(FakeTransport transport, Predicate<MeshProtos.ToRadio> predicate) throws Exception {
+    private static int countToRadioMatches(FakeTransport transport, Predicate<MeshProtos.ToRadio> predicate)
+            throws Exception {
         int matches = 0;
         List<byte[]> writes = transport.getWritesSnapshot();
         for (byte[] write : writes) {
@@ -958,10 +1061,9 @@ class MeshtasticClientFlowTest {
         return matches;
     }
 
-    private static void waitForMatchingCount(FakeTransport transport,
-                                             Predicate<MeshProtos.ToRadio> predicate,
-                                             int expectedCount,
-                                             Duration timeout) throws Exception {
+    private static void waitForMatchingCount(
+            FakeTransport transport, Predicate<MeshProtos.ToRadio> predicate, int expectedCount, Duration timeout)
+            throws Exception {
         long deadline = System.nanoTime() + timeout.toNanos();
         while (System.nanoTime() < deadline) {
             int current = countToRadioMatches(transport, predicate);
@@ -973,9 +1075,8 @@ class MeshtasticClientFlowTest {
         throw new TimeoutException("Timed out waiting for expected ToRadio count: " + expectedCount);
     }
 
-    private static void assertNoToRadio(FakeTransport transport,
-                                        Predicate<MeshProtos.ToRadio> predicate,
-                                        Duration timeout) throws Exception {
+    private static void assertNoToRadio(
+            FakeTransport transport, Predicate<MeshProtos.ToRadio> predicate, Duration timeout) throws Exception {
         long deadline = System.nanoTime() + timeout.toNanos();
         while (System.nanoTime() < deadline) {
             List<byte[]> writes = transport.getWritesSnapshot();
@@ -999,7 +1100,7 @@ class MeshtasticClientFlowTest {
                 .setDecoded(MeshProtos.Data.newBuilder()
                         .setPortnum(Portnums.PortNum.ROUTING_APP)
                         .setRequestId(requestId)
-                        .setPayload(ByteString.copyFrom(new byte[]{0x18, 0x00}))
+                        .setPayload(ByteString.copyFrom(new byte[] {0x18, 0x00}))
                         .build())
                 .setId(packetId)
                 .build();

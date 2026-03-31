@@ -45,7 +45,7 @@ public final class MeshConstants {
     public static final double DISTANCE_SELF = 0.0;
 
     // --- Timing & Freshness ---
-    
+
     /**
      * LIVE_THRESHOLD: How long a node stays "LIVE" after we hear an actual mesh packet from it.
      * Default: 15 minutes.
@@ -68,7 +68,7 @@ public final class MeshConstants {
     public static final Duration NON_LIVE_NODE_THRESHOLD = Duration.ofHours(24);
 
     /**
-     * PURGE_THRESHOLD: Absolute limit for keeping a node in memory. 
+     * PURGE_THRESHOLD: Absolute limit for keeping a node in memory.
      * If not seen in 7 days, it's gone.
      */
     public static final Duration PURGE_THRESHOLD = Duration.ofDays(7);

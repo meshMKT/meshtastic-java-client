@@ -5,8 +5,8 @@ import com.meshmkt.meshtastic.client.event.MeshEventDispatcher;
 import com.meshmkt.meshtastic.client.event.MessageStatusEvent;
 import com.meshmkt.meshtastic.client.storage.NodeDatabase;
 import com.meshmkt.meshtastic.client.storage.PacketContext;
-import org.meshtastic.proto.MeshProtos;
 import lombok.extern.slf4j.Slf4j;
+import org.meshtastic.proto.MeshProtos;
 import org.meshtastic.proto.Portnums.PortNum;
 
 /**
@@ -33,7 +33,8 @@ public class RoutingHandler extends BaseMeshHandler {
      */
     @Override
     public boolean canHandle(MeshProtos.FromRadio message) {
-        return message.hasPacket() && message.getPacket().hasDecoded()
+        return message.hasPacket()
+                && message.getPacket().hasDecoded()
                 && message.getPacket().getDecoded().getPortnum() == PortNum.ROUTING_APP;
     }
 
@@ -47,7 +48,8 @@ public class RoutingHandler extends BaseMeshHandler {
     @Override
     protected boolean handlePacket(MeshProtos.MeshPacket packet, PacketContext ctx) {
         try {
-            MeshProtos.Routing routing = MeshProtos.Routing.parseFrom(packet.getDecoded().getPayload());
+            MeshProtos.Routing routing =
+                    MeshProtos.Routing.parseFrom(packet.getDecoded().getPayload());
 
             // Signal liveness is already recorded centrally in BaseMeshHandler before per-port handling.
             MessageStatusEvent event = MessageStatusEvent.of(packet, ctx, nodeDb.getSelfNodeId(), routing);
@@ -59,17 +61,28 @@ public class RoutingHandler extends BaseMeshHandler {
 
             // Successful routing statuses are high-volume and best kept at DEBUG.
             if (status == MeshProtos.Routing.Error.NONE) {
-                log.debug("[ROUTING] from={} ({}) status={} packet_id={} request_id={}",
-                        fromId, fromName, status, packet.getId(), requestId);
+                log.debug(
+                        "[ROUTING] from={} ({}) status={} packet_id={} request_id={}",
+                        fromId,
+                        fromName,
+                        status,
+                        packet.getId(),
+                        requestId);
             } else {
-                log.warn("[ROUTING] from={} ({}) status={} packet_id={} request_id={}",
-                        fromId, fromName, status, packet.getId(), requestId);
+                log.warn(
+                        "[ROUTING] from={} ({}) status={} packet_id={} request_id={}",
+                        fromId,
+                        fromName,
+                        status,
+                        packet.getId(),
+                        requestId);
             }
 
             dispatcher.onMessageStatusUpdate(event);
             return true;
         } catch (Exception e) {
-            log.error("[ROUTING] Failed to parse packet from={} packet_id={}",
+            log.error(
+                    "[ROUTING] Failed to parse packet from={} packet_id={}",
                     MeshUtils.formatId(packet.getFrom()),
                     packet.getId(),
                     e);

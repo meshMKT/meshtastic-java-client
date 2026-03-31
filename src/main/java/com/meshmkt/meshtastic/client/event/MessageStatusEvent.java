@@ -41,17 +41,18 @@ public class MessageStatusEvent extends MeshEvent {
      * @param ctx
      * @param selfId
      * @param routing The routing payload containing the error code.
-     * @return 
+     * @return
      */
-    public static MessageStatusEvent of(MeshProtos.MeshPacket p, PacketContext ctx, int selfId, MeshProtos.Routing routing) {
+    public static MessageStatusEvent of(
+            MeshProtos.MeshPacket p, PacketContext ctx, int selfId, MeshProtos.Routing routing) {
         // Correlate with the original message ID stored in the decoded data
         int requestId = (p != null && p.hasDecoded()) ? p.getDecoded().getRequestId() : 0;
 
         return new MessageStatusEvent(
-                requestId,
-                routing.getErrorReason() == MeshProtos.Routing.Error.NONE,
-                routing.getErrorReason(),
-                routing
-        ).applyMetadata(p, ctx, selfId);
+                        requestId,
+                        routing.getErrorReason() == MeshProtos.Routing.Error.NONE,
+                        routing.getErrorReason(),
+                        routing)
+                .applyMetadata(p, ctx, selfId);
     }
 }

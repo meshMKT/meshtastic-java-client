@@ -1,5 +1,7 @@
 package com.meshmkt.meshtastic.client.handlers;
 
+import static org.meshtastic.proto.Portnums.PortNum.ADMIN_APP;
+
 import com.meshmkt.meshtastic.client.MeshUtils;
 import com.meshmkt.meshtastic.client.event.AdminModelUpdateEvent;
 import com.meshmkt.meshtastic.client.event.MeshEventDispatcher;
@@ -15,7 +17,6 @@ import org.meshtastic.proto.MeshProtos;
 import org.meshtastic.proto.MeshProtos.MeshPacket;
 import org.meshtastic.proto.ModuleConfigProtos.ModuleConfig;
 import org.meshtastic.proto.Portnums.PortNum;
-import static org.meshtastic.proto.Portnums.PortNum.ADMIN_APP;
 
 /**
  * Handles packet-based {@code ADMIN_APP} payloads and forwards decoded admin messages into {@link AdminService}.
@@ -57,7 +58,8 @@ public class AdminHandler extends BaseMeshHandler {
                 AdminMessage msg = AdminMessage.parseFrom(packet.getDecoded().getPayload());
 
                 // Admin payload flow is useful during integration but too noisy for INFO.
-                log.debug("[ADMIN-RX] from={} variant={} session_key_present={}",
+                log.debug(
+                        "[ADMIN-RX] from={} variant={} session_key_present={}",
                         MeshUtils.formatId(ctx.getFrom()),
                         msg.getPayloadVariantCase(),
                         !msg.getSessionPasskey().isEmpty());
@@ -69,7 +71,8 @@ public class AdminHandler extends BaseMeshHandler {
 
                 return true;
             } catch (Exception e) {
-                log.error("[ADMIN-RX] Failed to parse AdminMessage payload from={} packet_id={}",
+                log.error(
+                        "[ADMIN-RX] Failed to parse AdminMessage payload from={} packet_id={}",
                         MeshUtils.formatId(ctx.getFrom()),
                         packet.getId(),
                         e);

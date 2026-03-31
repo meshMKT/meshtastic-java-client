@@ -1,14 +1,13 @@
 package com.meshmkt.meshtastic.client;
 
 import com.google.protobuf.ByteString;
-import lombok.Value;
-import org.meshtastic.proto.ChannelProtos.Channel;
-import org.meshtastic.proto.ChannelProtos.ChannelSettings;
-
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
+import lombok.Value;
+import org.meshtastic.proto.ChannelProtos.Channel;
+import org.meshtastic.proto.ChannelProtos.ChannelSettings;
 
 /**
  * Central protocol-level validation rules derived from Meshtastic protobuf contracts.
@@ -33,8 +32,7 @@ public final class ProtocolConstraints {
      * Utility class; not intended to be instantiated.
      *
      */
-    private ProtocolConstraints() {
-    }
+    private ProtocolConstraints() {}
 
     /**
      * Validates a channel slot index.
@@ -43,8 +41,8 @@ public final class ProtocolConstraints {
      */
     public static void validateChannelIndex(int index) {
         if (index < 0 || index >= MAX_CHANNEL_SLOTS) {
-            throw new IllegalArgumentException("Channel index out of range (expected 0-"
-                    + (MAX_CHANNEL_SLOTS - 1) + "): " + index);
+            throw new IllegalArgumentException(
+                    "Channel index out of range (expected 0-" + (MAX_CHANNEL_SLOTS - 1) + "): " + index);
         }
     }
 
@@ -59,9 +57,8 @@ public final class ProtocolConstraints {
         }
         int nameBytes = name.getBytes(StandardCharsets.UTF_8).length;
         if (nameBytes > MAX_CHANNEL_NAME_UTF8_BYTES) {
-            throw new IllegalArgumentException(
-                    "Channel name must be <= " + MAX_CHANNEL_NAME_UTF8_BYTES
-                            + " UTF-8 bytes (got " + nameBytes + "): \"" + name + "\"");
+            throw new IllegalArgumentException("Channel name must be <= " + MAX_CHANNEL_NAME_UTF8_BYTES
+                    + " UTF-8 bytes (got " + nameBytes + "): \"" + name + "\"");
         }
     }
 
@@ -77,8 +74,7 @@ public final class ProtocolConstraints {
         Objects.requireNonNull(psk, "psk must not be null");
         int len = psk.size();
         if (!(len == 0 || len == 1 || len == 16 || len == 32)) {
-            throw new IllegalArgumentException(
-                    "Channel PSK must be 0, 1, 16, or 32 bytes (got " + len + ")");
+            throw new IllegalArgumentException("Channel PSK must be 0, 1, 16, or 32 bytes (got " + len + ")");
         }
     }
 
@@ -132,8 +128,8 @@ public final class ProtocolConstraints {
         }
 
         if (channel.getIndex() < 0 || channel.getIndex() >= MAX_CHANNEL_SLOTS) {
-            issues.add(new ValidationIssue("channel.index",
-                    "Channel index must be between 0 and " + (MAX_CHANNEL_SLOTS - 1) + "."));
+            issues.add(new ValidationIssue(
+                    "channel.index", "Channel index must be between 0 and " + (MAX_CHANNEL_SLOTS - 1) + "."));
         }
 
         if (channel.hasSettings()) {
@@ -158,16 +154,17 @@ public final class ProtocolConstraints {
         if (name != null && !name.isEmpty()) {
             int nameBytes = name.getBytes(StandardCharsets.UTF_8).length;
             if (nameBytes > MAX_CHANNEL_NAME_UTF8_BYTES) {
-                issues.add(new ValidationIssue("channel.settings.name",
-                        "Channel name is too long (" + nameBytes + " UTF-8 bytes, max "
-                                + MAX_CHANNEL_NAME_UTF8_BYTES + ")."));
+                issues.add(new ValidationIssue(
+                        "channel.settings.name",
+                        "Channel name is too long (" + nameBytes + " UTF-8 bytes, max " + MAX_CHANNEL_NAME_UTF8_BYTES
+                                + ")."));
             }
         }
 
         int pskLen = settings.getPsk().size();
         if (!(pskLen == 0 || pskLen == 1 || pskLen == 16 || pskLen == 32)) {
-            issues.add(new ValidationIssue("channel.settings.psk",
-                    "Channel PSK must be 0, 1, 16, or 32 bytes (got " + pskLen + ")."));
+            issues.add(new ValidationIssue(
+                    "channel.settings.psk", "Channel PSK must be 0, 1, 16, or 32 bytes (got " + pskLen + ")."));
         }
         return issues;
     }

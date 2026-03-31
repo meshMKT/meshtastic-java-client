@@ -22,14 +22,11 @@ public final class NodeStatusPolicy implements NodeStatusCalculator {
 
     @Builder
     private NodeStatusPolicy(Duration liveThreshold, Duration nonLiveThreshold) {
-        this.liveThreshold = requirePositive(
-                liveThreshold != null ? liveThreshold : MeshConstants.LIVE_THRESHOLD,
-                "liveThreshold"
-        );
+        this.liveThreshold =
+                requirePositive(liveThreshold != null ? liveThreshold : MeshConstants.LIVE_THRESHOLD, "liveThreshold");
         this.nonLiveThreshold = requirePositive(
                 nonLiveThreshold != null ? nonLiveThreshold : MeshConstants.NON_LIVE_NODE_THRESHOLD,
-                "nonLiveThreshold"
-        );
+                "nonLiveThreshold");
         if (this.liveThreshold.compareTo(this.nonLiveThreshold) > 0) {
             throw new IllegalArgumentException("liveThreshold must be less than or equal to nonLiveThreshold");
         }

@@ -44,11 +44,7 @@ public class NodeDiscoveryEvent extends MeshEvent {
      * @return A fully populated NodeDiscoveryEvent.
      */
     public static NodeDiscoveryEvent of(MeshProtos.MeshPacket p, PacketContext ctx, int selfId, MeshProtos.User user) {
-        return new NodeDiscoveryEvent(
-                user.getLongName(),
-                user.getShortName(),
-                user.getHwModel(),
-                user
-        ).applyMetadata(p, ctx, selfId);
+        return new NodeDiscoveryEvent(user.getLongName(), user.getShortName(), user.getHwModel(), user)
+                .applyMetadata(p, ctx, selfId);
     }
 }

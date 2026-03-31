@@ -8,8 +8,8 @@ import java.io.IOException;
 import java.util.Arrays;
 import java.util.Locale;
 import java.util.Optional;
-import java.util.stream.Collectors;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
 
 /**
@@ -27,6 +27,7 @@ public class SerialTransport extends StreamTransport {
      * Ensures only one reconnect loop can run at a time even if multiple error events arrive.
      */
     private final AtomicBoolean retryLoopActive = new AtomicBoolean(false);
+
     private SerialPort port;
     /**
      * Tracks the most recently successful descriptor to prefer stable reconnect behavior.
@@ -87,8 +88,7 @@ public class SerialTransport extends StreamTransport {
              */
             @Override
             public int getListeningEvents() {
-                return SerialPort.LISTENING_EVENT_DATA_AVAILABLE
-                        | SerialPort.LISTENING_EVENT_PORT_DISCONNECTED;
+                return SerialPort.LISTENING_EVENT_DATA_AVAILABLE | SerialPort.LISTENING_EVENT_PORT_DISCONNECTED;
             }
 
             /**
@@ -117,7 +117,7 @@ public class SerialTransport extends StreamTransport {
             }
         });
     }
-    
+
     /**
      * Physical implementation of the framed write. Magic bytes and length are
      * already applied by the StreamTransport layer.
@@ -166,28 +166,30 @@ public class SerialTransport extends StreamTransport {
             return;
         }
 
-        Thread retryThread = new Thread(() -> {
-            try {
-                log.trace(">>> Serial link lost. Searching for radio (preferred: {})...", activePortDescriptor);
-                while (running && !isConnected()) {
+        Thread retryThread = new Thread(
+                () -> {
                     try {
-                        Thread.sleep(5000);
-                        log.trace("Serial reconnect attempt (preferred: {})", activePortDescriptor);
-                        connect();
-                        if (isConnected()) {
-                            log.trace(">>> Radio Found! Link Restored on {}.", activePortDescriptor);
-                            notifyConnected();
-                            break;
+                        log.trace(">>> Serial link lost. Searching for radio (preferred: {})...", activePortDescriptor);
+                        while (running && !isConnected()) {
+                            try {
+                                Thread.sleep(5000);
+                                log.trace("Serial reconnect attempt (preferred: {})", activePortDescriptor);
+                                connect();
+                                if (isConnected()) {
+                                    log.trace(">>> Radio Found! Link Restored on {}.", activePortDescriptor);
+                                    notifyConnected();
+                                    break;
+                                }
+                            } catch (Exception e) {
+                                // Keep retrying and emit reason to simplify field debugging for descriptor churn cases.
+                                log.trace("Serial reconnect attempt failed: {}", e.getMessage());
+                            }
                         }
-                    } catch (Exception e) {
-                        // Keep retrying and emit reason to simplify field debugging for descriptor churn cases.
-                        log.trace("Serial reconnect attempt failed: {}", e.getMessage());
+                    } finally {
+                        retryLoopActive.set(false);
                     }
-                }
-            } finally {
-                retryLoopActive.set(false);
-            }
-        }, "SerialRetryThread");
+                },
+                "SerialRetryThread");
         retryThread.setDaemon(true);
         retryThread.start();
     }
@@ -236,25 +238,20 @@ public class SerialTransport extends StreamTransport {
 
         var candidates = Arrays.stream(ports)
                 .map(p -> new SerialPortSelector.Candidate<>(
-                descriptorFor(p),
-                p.getPortDescription(),
-                p.getDescriptivePortName(),
-                p))
+                        descriptorFor(p), p.getPortDescription(), p.getDescriptivePortName(), p))
                 .toList();
 
         Optional<SerialPortSelector.Candidate<SerialPort>> selected = SerialPortSelector.select(
-                activePortDescriptor,
-                activePortDescription,
-                activeDescriptiveName,
-                candidates
-        );
+                activePortDescriptor, activePortDescription, activeDescriptiveName, candidates);
         if (selected.isPresent()) {
             SerialPort chosen = selected.get().getPayload();
             String chosenDescriptor = descriptorFor(chosen);
             if (!SerialPortSelector.canonicalDescriptor(chosenDescriptor)
                     .equals(SerialPortSelector.canonicalDescriptor(activePortDescriptor))) {
-                log.warn("Configured serial descriptor {} unavailable, switching to {}",
-                        activePortDescriptor, chosenDescriptor);
+                log.warn(
+                        "Configured serial descriptor {} unavailable, switching to {}",
+                        activePortDescriptor,
+                        chosenDescriptor);
             }
             return chosen;
         }
@@ -262,7 +259,8 @@ public class SerialTransport extends StreamTransport {
         String available = Arrays.stream(ports)
                 .map(p -> descriptorFor(p) + " [" + p.getPortDescription() + "]")
                 .collect(Collectors.joining(", "));
-        throw new IOException("Serial descriptor not found. Preferred: " + activePortDescriptor + " | Available: " + available);
+        throw new IOException(
+                "Serial descriptor not found. Preferred: " + activePortDescriptor + " | Available: " + available);
     }
 
     /**

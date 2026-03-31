@@ -1,12 +1,11 @@
 package com.meshmkt.meshtastic.client.storage;
 
-import com.meshmkt.meshtastic.client.MeshConstants;
-import org.junit.jupiter.api.Test;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
+import com.meshmkt.meshtastic.client.MeshConstants;
 import java.time.Duration;
 import java.time.Instant;
-
-import static org.junit.jupiter.api.Assertions.assertEquals;
+import org.junit.jupiter.api.Test;
 
 /**
  * Verifies node status semantics for live, idle, cached, and offline states.
@@ -22,9 +21,7 @@ class MeshNodeStatusTest {
 
     @Test
     void returnsSelfForSelfNode() {
-        MeshNode node = baseNodeBuilder()
-                .self(true)
-                .build();
+        MeshNode node = baseNodeBuilder().self(true).build();
 
         assertEquals(MeshNode.NodeStatus.SELF, node.getCalculatedStatus());
     }
@@ -46,7 +43,8 @@ class MeshNodeStatusTest {
         long justOutsideLiveMs = MeshConstants.LIVE_THRESHOLD.toMillis() + 5_000L;
         MeshNode node = baseNodeBuilder()
                 .lastSeenLocal(nowMs - justOutsideLiveMs)
-                .lastSeen((nowMs / 1000L) - MeshConstants.LIVE_THRESHOLD.plusSeconds(10).toSeconds())
+                .lastSeen((nowMs / 1000L)
+                        - MeshConstants.LIVE_THRESHOLD.plusSeconds(10).toSeconds())
                 .build();
 
         assertEquals(MeshNode.NodeStatus.IDLE, node.getCalculatedStatus());
@@ -55,10 +53,8 @@ class MeshNodeStatusTest {
     @Test
     void returnsCachedWhenOnlySnapshotDataExistsAndIsFreshEnough() {
         long nowSec = System.currentTimeMillis() / 1000L;
-        MeshNode node = baseNodeBuilder()
-                .lastSeenLocal(0L)
-                .lastSeen(nowSec - 600L)
-                .build();
+        MeshNode node =
+                baseNodeBuilder().lastSeenLocal(0L).lastSeen(nowSec - 600L).build();
 
         assertEquals(MeshNode.NodeStatus.CACHED, node.getCalculatedStatus());
     }
@@ -68,7 +64,8 @@ class MeshNodeStatusTest {
         long nowSec = System.currentTimeMillis() / 1000L;
         MeshNode node = baseNodeBuilder()
                 .lastSeenLocal(0L)
-                .lastSeen(nowSec - MeshConstants.NON_LIVE_NODE_THRESHOLD.plusSeconds(60).toSeconds())
+                .lastSeen(nowSec
+                        - MeshConstants.NON_LIVE_NODE_THRESHOLD.plusSeconds(60).toSeconds())
                 .build();
 
         assertEquals(MeshNode.NodeStatus.OFFLINE, node.getCalculatedStatus());
@@ -81,7 +78,8 @@ class MeshNodeStatusTest {
         long staleMs = MeshConstants.NON_LIVE_NODE_THRESHOLD.toMillis() + 5_000L;
         MeshNode node = baseNodeBuilder()
                 .lastSeenLocal(nowMs - staleMs)
-                .lastSeen(nowSec - MeshConstants.NON_LIVE_NODE_THRESHOLD.plusSeconds(10).toSeconds())
+                .lastSeen(nowSec
+                        - MeshConstants.NON_LIVE_NODE_THRESHOLD.plusSeconds(10).toSeconds())
                 .build();
 
         assertEquals(MeshNode.NodeStatus.OFFLINE, node.getCalculatedStatus());

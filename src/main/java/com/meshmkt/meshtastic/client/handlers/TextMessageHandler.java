@@ -5,9 +5,9 @@ import com.meshmkt.meshtastic.client.event.ChatMessageEvent;
 import com.meshmkt.meshtastic.client.event.MeshEventDispatcher;
 import com.meshmkt.meshtastic.client.storage.NodeDatabase;
 import com.meshmkt.meshtastic.client.storage.PacketContext;
-import org.meshtastic.proto.MeshProtos;
-import lombok.extern.slf4j.Slf4j;
 import java.nio.charset.StandardCharsets;
+import lombok.extern.slf4j.Slf4j;
+import org.meshtastic.proto.MeshProtos;
 import org.meshtastic.proto.Portnums.PortNum;
 
 /**
@@ -33,7 +33,8 @@ public class TextMessageHandler extends BaseMeshHandler {
      */
     @Override
     public boolean canHandle(MeshProtos.FromRadio message) {
-        return message.hasPacket() && message.getPacket().hasDecoded()
+        return message.hasPacket()
+                && message.getPacket().hasDecoded()
                 && message.getPacket().getDecoded().getPortnum() == PortNum.TEXT_MESSAGE_APP;
     }
 
@@ -52,7 +53,8 @@ public class TextMessageHandler extends BaseMeshHandler {
         String toDisplay = packet.getTo() == 0xFFFFFFFF ? "BROADCAST" : MeshUtils.formatId(packet.getTo());
 
         ChatMessageEvent event = ChatMessageEvent.of(packet, ctx, nodeDb.getSelfNodeId(), text);
-        log.info("[CHAT] from={} ({}) to={} snr={}dB text=\"{}\"",
+        log.info(
+                "[CHAT] from={} ({}) to={} snr={}dB text=\"{}\"",
                 MeshUtils.formatId(fromId),
                 fromName,
                 toDisplay,

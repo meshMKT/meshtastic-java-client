@@ -1,11 +1,10 @@
 package com.meshmkt.meshtastic.client.service;
 
 import com.meshmkt.meshtastic.client.storage.MeshNode;
-import org.meshtastic.proto.AdminProtos.AdminMessage;
-import org.meshtastic.proto.MeshProtos.MeshPacket;
-
 import java.time.Duration;
 import java.util.concurrent.CompletableFuture;
+import org.meshtastic.proto.AdminProtos.AdminMessage;
+import org.meshtastic.proto.MeshProtos.MeshPacket;
 
 /**
  * Interface used by {@link AdminService} for the few client operations it needs.
@@ -32,9 +31,8 @@ public interface AdminClientAccess {
      * @param expectAdminAppResponse when {@code true}, completion waits for correlated ADMIN_APP response payload.
      * @return future for the correlated terminal response packet.
      */
-    CompletableFuture<MeshPacket> executeAdminRequest(int destinationId,
-                                                      AdminMessage adminMsg,
-                                                      boolean expectAdminAppResponse);
+    CompletableFuture<MeshPacket> executeAdminRequest(
+            int destinationId, AdminMessage adminMsg, boolean expectAdminAppResponse);
 
     /**
      * Requests node-info from a target node and waits for live payload, falling back to latest snapshot on timeout.

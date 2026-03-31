@@ -3,8 +3,8 @@ package com.meshmkt.meshtastic.client;
 import com.google.protobuf.ByteString;
 import com.google.protobuf.InvalidProtocolBufferException;
 import com.google.protobuf.Message;
-import com.meshmkt.meshtastic.client.event.ChatMessageEvent;
 import com.meshmkt.meshtastic.client.event.AdminModelUpdateEvent;
+import com.meshmkt.meshtastic.client.event.ChatMessageEvent;
 import com.meshmkt.meshtastic.client.event.MeshEventDispatcher;
 import com.meshmkt.meshtastic.client.event.MeshtasticEventListener;
 import com.meshmkt.meshtastic.client.event.MessageStatusEvent;
@@ -26,22 +26,21 @@ import com.meshmkt.meshtastic.client.storage.MeshNode;
 import com.meshmkt.meshtastic.client.storage.NodeDatabase;
 import com.meshmkt.meshtastic.client.transport.MeshtasticTransport;
 import com.meshmkt.meshtastic.client.transport.TransportConnectionListener;
-import lombok.Value;
-import lombok.extern.slf4j.Slf4j;
-import org.meshtastic.proto.MeshProtos.*;
-import org.meshtastic.proto.Portnums.PortNum;
-
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.*;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.Supplier;
+import lombok.Value;
+import lombok.extern.slf4j.Slf4j;
 import org.meshtastic.proto.AdminProtos.AdminMessage;
+import org.meshtastic.proto.MeshProtos.*;
+import org.meshtastic.proto.Portnums.PortNum;
 
 /**
  * Orchestrates transport lifecycle, request correlation, startup synchronization, and event fan-out.
@@ -71,9 +70,10 @@ public class MeshtasticClient implements AdminClientAccess {
      * Prevents overlapping cleanup/reprime when duplicate reboot signals are received.
      */
     private final AtomicBoolean rebootResyncInProgress = new AtomicBoolean(false);
+
     private final RequestCoordinator requestCoordinator;
     private final StartupSynchronizer startupSynchronizer;
-    
+
     private AdminService adminService;
     private final MeshEventDispatcher internalDispatcher = new InternalDispatcher();
 
@@ -124,10 +124,7 @@ public class MeshtasticClient implements AdminClientAccess {
 
         adminService = new AdminService(this);
         requestCoordinator = new RequestCoordinator(
-                scheduler,
-                this::getRequestLockReleaseCooldownMs,
-                this::getRequestCorrelationTimeout
-        );
+                scheduler, this::getRequestLockReleaseCooldownMs, this::getRequestCorrelationTimeout);
         startupSynchronizer = new StartupSynchronizer(
                 scheduler,
                 STARTUP_SYNC_TIMEOUT_SECONDS,
@@ -136,12 +133,12 @@ public class MeshtasticClient implements AdminClientAccess {
                 selfId -> {
                     nodeDb.setSelfNodeId(selfId);
                     adminService.ingestMyInfo(selfId);
-                    log.debug("[SYNC] Self node id established from my_info during startup sync: {}",
+                    log.debug(
+                            "[SYNC] Self node id established from my_info during startup sync: {}",
                             MeshUtils.formatId(selfId));
                 },
-                this::startHeartbeatTask
-        );
-        
+                this::startHeartbeatTask);
+
         initializeHandlers();
     }
 
@@ -216,7 +213,7 @@ public class MeshtasticClient implements AdminClientAccess {
     public boolean isReady() {
         return startupState == StartupState.READY;
     }
-    
+
     /**
      * Returns the current local node id from the node database.
      *
@@ -319,14 +316,23 @@ public class MeshtasticClient implements AdminClientAccess {
     /**
      * The recursive worker.
      */
-    private void sendNextChunk(int destinationId, int channelIndex, List<String> chunks, int index, CompletableFuture<Boolean> finalStatus) {
+    private void sendNextChunk(
+            int destinationId,
+            int channelIndex,
+            List<String> chunks,
+            int index,
+            CompletableFuture<Boolean> finalStatus) {
         if (index >= chunks.size()) {
             finalStatus.complete(true);
             return;
         }
 
-        log.debug("[CHUNKER] Sending chunk {}/{} to {} on channel index {}",
-                index + 1, chunks.size(), Integer.toHexString(destinationId), channelIndex);
+        log.debug(
+                "[CHUNKER] Sending chunk {}/{} to {} on channel index {}",
+                index + 1,
+                chunks.size(),
+                Integer.toHexString(destinationId),
+                channelIndex);
 
         byte[] chunkBytes = chunks.get(index).getBytes(StandardCharsets.UTF_8);
 
@@ -338,17 +344,19 @@ public class MeshtasticClient implements AdminClientAccess {
                 channelIndex, // Used by executeRequest to set .setChannel()
                 true, // Want ACK to clear the radioLock
                 false // Text messages use routing-level correlation.
-        );
+                );
 
-        executeRequest(request).thenAccept(packet -> {
-            // executeRequest only completes after the 200ms cooldown, 
-            // so we can loop immediately to the next chunk safely.
-            sendNextChunk(destinationId, channelIndex, chunks, index + 1, finalStatus);
-        }).exceptionally(ex -> {
-            log.error("[CHUNKER] Chunk {} failed: {}", index + 1, ex.getMessage());
-            finalStatus.completeExceptionally(ex);
-            return null;
-        });
+        executeRequest(request)
+                .thenAccept(packet -> {
+                    // executeRequest only completes after the 200ms cooldown,
+                    // so we can loop immediately to the next chunk safely.
+                    sendNextChunk(destinationId, channelIndex, chunks, index + 1, finalStatus);
+                })
+                .exceptionally(ex -> {
+                    log.error("[CHUNKER] Chunk {} failed: {}", index + 1, ex.getMessage());
+                    finalStatus.completeExceptionally(ex);
+                    return null;
+                });
     }
 
     // -------------------------------------------------------------------------
@@ -374,9 +382,8 @@ public class MeshtasticClient implements AdminClientAccess {
      * @return future for correlated terminal response.
      */
     @Override
-    public CompletableFuture<MeshPacket> executeAdminRequest(int destinationId,
-                                                             AdminMessage adminMsg,
-                                                             boolean expectAdminAppResponse) {
+    public CompletableFuture<MeshPacket> executeAdminRequest(
+            int destinationId, AdminMessage adminMsg, boolean expectAdminAppResponse) {
         return executeRequest(new MeshRequest(
                 destinationId, // Target Node
                 PortNum.ADMIN_APP, // Port 100
@@ -384,8 +391,7 @@ public class MeshtasticClient implements AdminClientAccess {
                 null, // No destination app needed
                 0, // Admin usually happens on Primary channel
                 false, // Admin requests do not use link-level ACK for completion.
-                expectAdminAppResponse
-        ));
+                expectAdminAppResponse));
     }
 
     /**
@@ -419,8 +425,12 @@ public class MeshtasticClient implements AdminClientAccess {
                 if (log.isTraceEnabled()) {
                     long queueDelayMs = TimeUnit.NANOSECONDS.toMillis(executorStartNanos - submittedAtNanos);
                     long lockWaitMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - executorStartNanos);
-                    log.trace("[TX] Request queue delay={}ms lock_wait={}ms port={} dst={}",
-                            queueDelayMs, lockWaitMs, request.getPort(), MeshUtils.formatId(request.getDestinationId()));
+                    log.trace(
+                            "[TX] Request queue delay={}ms lock_wait={}ms port={} dst={}",
+                            queueDelayMs,
+                            lockWaitMs,
+                            request.getPort(),
+                            MeshUtils.formatId(request.getDestinationId()));
                 }
 
                 if (!isConnected()) {
@@ -433,8 +443,8 @@ public class MeshtasticClient implements AdminClientAccess {
                 if (request.getPort() == PortNum.ADMIN_APP && !isKnownSelfNodeId(request.getDestinationId())) {
                     requestCoordinator.releaseRadioLock();
                     lockAcquired = false;
-                    future.completeExceptionally(new IllegalStateException(
-                            "Cannot send ADMIN_APP request without known local node id"));
+                    future.completeExceptionally(
+                            new IllegalStateException("Cannot send ADMIN_APP request without known local node id"));
                     return;
                 }
 
@@ -475,29 +485,26 @@ public class MeshtasticClient implements AdminClientAccess {
                             myPacketId,
                             future,
                             request.getPort() == PortNum.ADMIN_APP && request.isExpectAdminAppResponse(),
-                            request.getPort() == PortNum.TEXT_MESSAGE_APP
-                    );
+                            request.getPort() == PortNum.TEXT_MESSAGE_APP);
                 }
 
                 log.debug("[TX] Lock Acquired. Sending ID: {} | Port: {}", myPacketId, request.getPort());
                 sendToRadio(ToRadio.newBuilder().setPacket(packet).build());
-                emitRequestLifecycle(myPacketId,
+                emitRequestLifecycle(
+                        myPacketId,
                         request.getDestinationId(),
                         request.getPort(),
                         RequestLifecycleEvent.Stage.SENT,
                         "Request sent to transport",
                         null);
 
-                future.whenComplete((result, error) -> emitRequestTerminalLifecycle(
-                        myPacketId,
-                        request.getDestinationId(),
-                        request.getPort(),
-                        error
-                ));
+                future.whenComplete((result, error) ->
+                        emitRequestTerminalLifecycle(myPacketId, request.getDestinationId(), request.getPort(), error));
                 future.whenComplete((result, error) -> {
                     if (log.isTraceEnabled()) {
                         long totalMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - submittedAtNanos);
-                        log.trace("[TX] Request {} completed in {}ms (port={} dst={} success={})",
+                        log.trace(
+                                "[TX] Request {} completed in {}ms (port={} dst={} success={})",
                                 myPacketId,
                                 totalMs,
                                 request.getPort(),
@@ -703,7 +710,8 @@ public class MeshtasticClient implements AdminClientAccess {
         // If startup sync is already running, this reboot marker is redundant.
         // We avoid interrupting an active phase handshake with another reset/reprime cycle.
         if (startupSynchronizer.isActive()) {
-            log.debug("[SYNC] Reboot signal received during active startup sync phase {}. Ignoring duplicate resync trigger.",
+            log.debug(
+                    "[SYNC] Reboot signal received during active startup sync phase {}. Ignoring duplicate resync trigger.",
                     startupSynchronizer.getPhase());
             return;
         }
@@ -786,8 +794,7 @@ public class MeshtasticClient implements AdminClientAccess {
                 new byte[0],
                 0,
                 true,
-                false
-        ));
+                false));
     }
 
     /**
@@ -831,8 +838,7 @@ public class MeshtasticClient implements AdminClientAccess {
                             completeWithNodeSnapshot(completion, nodeId, "NODEINFO_APP");
                         }
                     }
-                }
-        );
+                });
     }
 
     /**
@@ -873,8 +879,7 @@ public class MeshtasticClient implements AdminClientAccess {
                             completeWithNodeSnapshot(completion, nodeId, "NODEINFO_APP");
                         }
                     }
-                }
-        );
+                });
     }
 
     /**
@@ -889,15 +894,7 @@ public class MeshtasticClient implements AdminClientAccess {
      */
     public CompletableFuture<MeshPacket> requestPosition(int nodeId) {
         log.debug("[UTIL] Requesting Position from {}", MeshUtils.formatId(nodeId));
-        return executeRequest(new MeshRequest(
-                nodeId,
-                PortNum.POSITION_APP,
-                null,
-                new byte[0],
-                0,
-                true,
-                false
-        ));
+        return executeRequest(new MeshRequest(nodeId, PortNum.POSITION_APP, null, new byte[0], 0, true, false));
     }
 
     /**
@@ -937,8 +934,7 @@ public class MeshtasticClient implements AdminClientAccess {
                             completeWithNodeSnapshot(completion, nodeId, "POSITION_APP");
                         }
                     }
-                }
-        );
+                });
     }
 
     /**
@@ -978,8 +974,7 @@ public class MeshtasticClient implements AdminClientAccess {
                             completeWithNodeSnapshot(completion, nodeId, "POSITION_APP");
                         }
                     }
-                }
-        );
+                });
     }
 
     /**
@@ -994,15 +989,7 @@ public class MeshtasticClient implements AdminClientAccess {
      */
     public CompletableFuture<MeshPacket> requestTelemetry(int nodeId) {
         log.debug("[UTIL] Requesting Telemetry from {}", MeshUtils.formatId(nodeId));
-        return executeRequest(new MeshRequest(
-                nodeId,
-                PortNum.TELEMETRY_APP,
-                null,
-                new byte[0],
-                0,
-                true,
-                false
-        ));
+        return executeRequest(new MeshRequest(nodeId, PortNum.TELEMETRY_APP, null, new byte[0], 0, true, false));
     }
 
     /**
@@ -1042,8 +1029,7 @@ public class MeshtasticClient implements AdminClientAccess {
                             completeWithNodeSnapshot(completion, nodeId, "TELEMETRY_APP");
                         }
                     }
-                }
-        );
+                });
     }
 
     /**
@@ -1083,8 +1069,7 @@ public class MeshtasticClient implements AdminClientAccess {
                             completeWithNodeSnapshot(completion, nodeId, "TELEMETRY_APP");
                         }
                     }
-                }
-        );
+                });
     }
 
     /**
@@ -1108,8 +1093,8 @@ public class MeshtasticClient implements AdminClientAccess {
             Supplier<CompletableFuture<MeshPacket>> requestSupplier,
             Function<CompletableFuture<MeshNode>, MeshtasticEventListener> listenerFactory) {
         final long startedAtNanos = System.nanoTime();
-        Duration effectiveTimeout = (timeout == null || timeout.isZero() || timeout.isNegative())
-                ? DEFAULT_PAYLOAD_WAIT_TIMEOUT : timeout;
+        Duration effectiveTimeout =
+                (timeout == null || timeout.isZero() || timeout.isNegative()) ? DEFAULT_PAYLOAD_WAIT_TIMEOUT : timeout;
 
         CompletableFuture<MeshNode> payloadFuture = new CompletableFuture<>();
         AtomicBoolean requestAccepted = new AtomicBoolean(false);
@@ -1169,40 +1154,47 @@ public class MeshtasticClient implements AdminClientAccess {
                         && event.getPacketId() == trackedRequestId
                         && !event.isSuccess()
                         && !payloadFuture.isDone()) {
-                    payloadFuture.completeExceptionally(new IllegalStateException(
-                            payloadName + " request failed for " + MeshUtils.formatId(nodeId)
-                                    + " with routing status " + event.getError()));
+                    payloadFuture.completeExceptionally(new IllegalStateException(payloadName + " request failed for "
+                            + MeshUtils.formatId(nodeId) + " with routing status " + event.getError()));
                 }
             }
         };
         addEventListener(listener);
 
-        ScheduledFuture<?> timeoutFuture = scheduler.schedule(() -> {
-            if (payloadFuture.isDone()) {
-                return;
-            }
+        ScheduledFuture<?> timeoutFuture = scheduler.schedule(
+                () -> {
+                    if (payloadFuture.isDone()) {
+                        return;
+                    }
 
-            if (requestAccepted.get() && allowSnapshotFallbackOnTimeout) {
-                // Request succeeded at protocol layer, but target did not emit the expected payload in time.
-                // Return best-known snapshot so callers can continue with stale-but-usable state.
-                nodeDb.getNode(nodeId).ifPresentOrElse(
-                        payloadFuture::complete,
-                        () -> payloadFuture.completeExceptionally(new TimeoutException(
-                                "Timed out waiting for " + payloadName + " from " + MeshUtils.formatId(nodeId)))
-                );
-            } else {
-                payloadFuture.completeExceptionally(new TimeoutException(
-                        "Timed out waiting for " + payloadName + " from " + MeshUtils.formatId(nodeId)));
-            }
-        }, effectiveTimeout.toMillis(), TimeUnit.MILLISECONDS);
+                    if (requestAccepted.get() && allowSnapshotFallbackOnTimeout) {
+                        // Request succeeded at protocol layer, but target did not emit the expected payload in time.
+                        // Return best-known snapshot so callers can continue with stale-but-usable state.
+                        nodeDb.getNode(nodeId)
+                                .ifPresentOrElse(
+                                        payloadFuture::complete,
+                                        () -> payloadFuture.completeExceptionally(
+                                                new TimeoutException("Timed out waiting for " + payloadName + " from "
+                                                        + MeshUtils.formatId(nodeId))));
+                    } else {
+                        payloadFuture.completeExceptionally(new TimeoutException(
+                                "Timed out waiting for " + payloadName + " from " + MeshUtils.formatId(nodeId)));
+                    }
+                },
+                effectiveTimeout.toMillis(),
+                TimeUnit.MILLISECONDS);
 
         payloadFuture.whenComplete((node, err) -> {
             timeoutFuture.cancel(false);
             removeEventListener(listener);
             if (log.isTraceEnabled()) {
                 long totalMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedAtNanos);
-                log.trace("[UTIL] Await {} for {} completed in {}ms (success={})",
-                        payloadName, MeshUtils.formatId(nodeId), totalMs, err == null);
+                log.trace(
+                        "[UTIL] Await {} for {} completed in {}ms (success={})",
+                        payloadName,
+                        MeshUtils.formatId(nodeId),
+                        totalMs,
+                        err == null);
             }
         });
 
@@ -1235,8 +1227,7 @@ public class MeshtasticClient implements AdminClientAccess {
                             requestPort,
                             RequestLifecycleEvent.Stage.PAYLOAD_RECEIVED,
                             payloadName + " payload observed",
-                            null
-                    );
+                            null);
                 }
             });
         });
@@ -1250,11 +1241,11 @@ public class MeshtasticClient implements AdminClientAccess {
      * @param payloadName payload label for error reporting.
      */
     private void completeWithNodeSnapshot(CompletableFuture<MeshNode> completion, int nodeId, String payloadName) {
-        nodeDb.getNode(nodeId).ifPresentOrElse(
-                completion::complete,
-                () -> completion.completeExceptionally(new IllegalStateException(
-                        payloadName + " event observed but node snapshot was missing for " + MeshUtils.formatId(nodeId)))
-        );
+        nodeDb.getNode(nodeId)
+                .ifPresentOrElse(
+                        completion::complete,
+                        () -> completion.completeExceptionally(new IllegalStateException(payloadName
+                                + " event observed but node snapshot was missing for " + MeshUtils.formatId(nodeId))));
     }
 
     /**
@@ -1293,7 +1284,9 @@ public class MeshtasticClient implements AdminClientAccess {
         if (requestCoordinator.tryAcquireRadioLock() != null) {
             try {
                 log.trace("[TX] Sending Heartbeat");
-                sendToRadio(ToRadio.newBuilder().setHeartbeat(Heartbeat.newBuilder().build()).build());
+                sendToRadio(ToRadio.newBuilder()
+                        .setHeartbeat(Heartbeat.newBuilder().build())
+                        .build());
             } finally {
                 // Heartbeats are instant, no ACK needed, release immediately
                 requestCoordinator.releaseRadioLock();
@@ -1437,87 +1430,49 @@ public class MeshtasticClient implements AdminClientAccess {
     /**
      * Emits one request lifecycle event to listeners.
      */
-    private void emitRequestLifecycle(int requestId,
-                                      int destinationNodeId,
-                                      PortNum port,
-                                      RequestLifecycleEvent.Stage stage,
-                                      String message,
-                                      Throwable error) {
-        RequestLifecycleEvent event = RequestLifecycleEvent.of(
-                requestId,
-                destinationNodeId,
-                port,
-                stage,
-                message,
-                error
-        );
+    private void emitRequestLifecycle(
+            int requestId,
+            int destinationNodeId,
+            PortNum port,
+            RequestLifecycleEvent.Stage stage,
+            String message,
+            Throwable error) {
+        RequestLifecycleEvent event =
+                RequestLifecycleEvent.of(requestId, destinationNodeId, port, stage, message, error);
         notifyListeners(l -> l.onRequestLifecycleUpdate(event));
     }
 
     /**
      * Maps terminal request completion state to stable lifecycle stage and emits it.
      */
-    private void emitRequestTerminalLifecycle(int requestId,
-                                              int destinationNodeId,
-                                              PortNum port,
-                                              Throwable completionError) {
+    private void emitRequestTerminalLifecycle(
+            int requestId, int destinationNodeId, PortNum port, Throwable completionError) {
         if (completionError == null) {
             emitRequestLifecycle(
-                    requestId,
-                    destinationNodeId,
-                    port,
-                    RequestLifecycleEvent.Stage.ACCEPTED,
-                    "Request accepted",
-                    null
-            );
+                    requestId, destinationNodeId, port, RequestLifecycleEvent.Stage.ACCEPTED, "Request accepted", null);
             return;
         }
 
         Throwable root = unwrapCompletionThrowable(completionError);
         if (root instanceof TimeoutException) {
             emitRequestLifecycle(
-                    requestId,
-                    destinationNodeId,
-                    port,
-                    RequestLifecycleEvent.Stage.TIMED_OUT,
-                    root.getMessage(),
-                    root
-            );
+                    requestId, destinationNodeId, port, RequestLifecycleEvent.Stage.TIMED_OUT, root.getMessage(), root);
             return;
         }
         if (root instanceof CancellationException) {
             emitRequestLifecycle(
-                    requestId,
-                    destinationNodeId,
-                    port,
-                    RequestLifecycleEvent.Stage.CANCELLED,
-                    root.getMessage(),
-                    root
-            );
+                    requestId, destinationNodeId, port, RequestLifecycleEvent.Stage.CANCELLED, root.getMessage(), root);
             return;
         }
 
         String message = root.getMessage() == null ? "" : root.getMessage();
         if (message.startsWith("Routing rejected request")) {
             emitRequestLifecycle(
-                    requestId,
-                    destinationNodeId,
-                    port,
-                    RequestLifecycleEvent.Stage.REJECTED,
-                    message,
-                    root
-            );
+                    requestId, destinationNodeId, port, RequestLifecycleEvent.Stage.REJECTED, message, root);
             return;
         }
 
-        emitRequestLifecycle(
-                requestId,
-                destinationNodeId,
-                port,
-                RequestLifecycleEvent.Stage.FAILED,
-                message,
-                root
-        );
+        emitRequestLifecycle(requestId, destinationNodeId, port, RequestLifecycleEvent.Stage.FAILED, message, root);
     }
 
     /**

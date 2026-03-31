@@ -1,9 +1,9 @@
 package com.meshmkt.meshtastic.client.event;
 
 import com.meshmkt.meshtastic.client.storage.PacketContext;
+import java.time.Instant;
 import lombok.Getter;
 import org.meshtastic.proto.MeshProtos;
-import java.time.Instant;
 
 /**
  * The "Smart Envelope" for all mesh traffic. Centralizes the extraction of
