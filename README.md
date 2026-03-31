@@ -48,6 +48,7 @@ To use this library, you will need:
 The library is available on Maven Central.
 
 **Apache Maven**
+
 ```xml
 <dependency>
     <groupId>com.meshmkt.meshtastic</groupId>
@@ -57,6 +58,7 @@ The library is available on Maven Central.
 ```
 
 **Gradle**
+
 ```groovy
 implementation group: 'com.meshmkt.meshtastic', name: 'meshtastic-java-client', version: '${version}'
 ```
@@ -124,6 +126,8 @@ See the user guide for the full hardware test configuration and optional write/r
 ## Contributing
 
 Contributions, bug reports, and design feedback are welcome.
+
+Code formatting is enforced with Spotless for Java sources and `pom.xml`. See `CONTRIBUTING.md` for the formatter commands and optional git hook setup.
 
 For project conventions, development notes, and contribution guidance, see:
 

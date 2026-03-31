@@ -93,6 +93,39 @@ Common types:
 - `build` for Maven, CI, or release workflow changes
 - `chore` for maintenance and cleanup
 
+## Code Formatting
+
+The repository uses Spotless with Palantir Java Format as the source of truth for formatting.
+
+Useful commands:
+
+- `mvn spotless:apply`
+- `mvn spotless:check`
+
+The normal build already enforces formatting during `verify`, so CI will fail if formatting drifts.
+
+If your Maven mirror does not resolve the short `spotless:` prefix, use the full plugin coordinates instead:
+
+- `mvn com.diffplug.spotless:spotless-maven-plugin:3.0.0:apply`
+- `mvn com.diffplug.spotless:spotless-maven-plugin:3.0.0:check`
+
+Recommended local workflow:
+
+- let your IDE help with editing, but do not rely on arbitrary IDE formatting rules as the final source of truth
+- run `mvn spotless:apply` before committing if you made Java or `pom.xml` changes
+- if Spotless rewrites files, review the diff and commit the formatting changes with the rest of your work
+
+Optional pre-commit hook:
+
+```bash
+./scripts/install-git-hooks.sh
+```
+
+Run that once after cloning if you want the formatting hook installed locally.
+
+That hook runs Spotless using the full Maven plugin coordinates before the commit is created.
+It checks the repository's Java sources and `pom.xml` and blocks the commit if formatting is off.
+
 ## Logging Conventions
 
 Logging is part of the public developer experience. Keep it intentional.
@@ -102,26 +135,22 @@ Logging is part of the public developer experience. Keep it intentional.
   - framed IO details
   - verbose timing/correlation diagnostics
   - full payload dumps or very noisy protocol internals
-
 - `DEBUG`
   - protocol decode summaries
   - admin snapshot/model update churn
   - request correlation completions
   - verification attempts and retry details
   - request intent logs that are useful during development but too noisy for normal runs
-
 - `INFO`
   - meaningful lifecycle/state changes
   - startup sync phase transitions
   - reconnect/restored events
   - successful high-level operations a user/operator is likely to care about
-
 - `WARN`
   - rejected requests
   - inconsistent or delayed firmware behavior
   - recoverable reconnect issues
   - fallback paths that may indicate degraded behavior
-
 - `ERROR`
   - parse failures
   - unrecoverable request/transport failures
@@ -139,7 +168,6 @@ The project intentionally splits resilience behavior across two layers:
   - radio lock sequencing
   - admin verification retries
   - startup resync orchestration after reconnect
-
 - transport layer:
   - physical connection setup/teardown
   - disconnect detection
