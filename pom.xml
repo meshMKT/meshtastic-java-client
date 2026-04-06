@@ -45,7 +45,7 @@
     <maven.compiler.encoding>${project.build.sourceEncoding}</maven.compiler.encoding>
     <maven.compiler.source>21</maven.compiler.source>
     <maven.compiler.target>21</maven.compiler.target>
-    <protobuf.version>3.25.8</protobuf.version>
+    <protobuf.version>4.34.1</protobuf.version>
     <lombok.version>1.18.44</lombok.version>
     <jserialcomm.version>2.11.4</jserialcomm.version>
     <slf4j.version>2.0.17</slf4j.version>
