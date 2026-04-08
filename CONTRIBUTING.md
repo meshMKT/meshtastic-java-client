@@ -95,7 +95,7 @@ Common types:
 
 ## Code Formatting
 
-The repository uses Spotless with Palantir Java Format as the source of truth for formatting.
+The repository uses Spotless with Palantir Java Format to keep the codebase in a consistent look and feel.
 
 Useful commands:
 
@@ -111,7 +111,7 @@ If your Maven mirror does not resolve the short `spotless:` prefix, use the full
 
 Recommended local workflow:
 
-- let your IDE help with editing, but do not rely on arbitrary IDE formatting rules as the final source of truth
+- let your IDE help with editing, but do not rely on arbitrary IDE formatting rules as the final format
 - run `mvn spotless:apply` before committing if you made Java or `pom.xml` changes
 - if Spotless rewrites files, review the diff and commit the formatting changes with the rest of your work
 
@@ -201,7 +201,7 @@ then add or update tests in the relevant unit suite, and use hardware IT when th
 
 ## Documentation Expectations
 
-Documentation is a core deliverable of this project.
+Documentation is a deliverable of this project.
 
 When adding or changing public behavior:
 
@@ -209,4 +209,4 @@ When adding or changing public behavior:
 - update `README.md` if the onboarding/build/test story changes
 - update `src/docs/asciidoc/index.adoc` for end-user usage flows and examples
 
-The generated HTML/PDF docs are intended to function as the practical user manual for the library.
+The generated HTML docs are intended to function as a user manual for the library.
