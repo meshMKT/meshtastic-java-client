@@ -1,5 +1,6 @@
 package com.meshmkt.meshtastic.client.handlers;
 
+import build.buf.gen.meshtastic.*;
 import com.meshmkt.meshtastic.client.storage.NodeDatabase;
 import com.meshmkt.meshtastic.client.storage.PacketContext;
 import java.nio.charset.StandardCharsets;
@@ -7,8 +8,6 @@ import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import lombok.extern.slf4j.Slf4j;
-import org.meshtastic.proto.MeshProtos;
-import org.meshtastic.proto.Portnums.PortNum;
 
 /**
  * Diagnostic logger that provides a deep-dive into mesh traffic. Standardized
@@ -35,7 +34,7 @@ public class MeshEventLogger extends BaseMeshHandler {
      * @return {@code true} when this logger should inspect the message.
      */
     @Override
-    public boolean canHandle(MeshProtos.FromRadio message) {
+    public boolean canHandle(FromRadio message) {
         return message.hasPacket() || message.hasNodeInfo() || message.hasMyInfo();
     }
 
@@ -45,7 +44,7 @@ public class MeshEventLogger extends BaseMeshHandler {
      * @return
      */
     @Override
-    protected boolean handleNonPacketMessage(MeshProtos.FromRadio message) {
+    protected boolean handleNonPacketMessage(FromRadio message) {
         String pcTime = TIME_FORMAT.format(Instant.now());
 
         if (message.hasMyInfo()) {
@@ -56,7 +55,7 @@ public class MeshEventLogger extends BaseMeshHandler {
                     Integer.toHexString(message.getMyInfo().getMyNodeNum()));
         } else if (message.hasNodeInfo()) {
             // Part of the initial node-list download
-            MeshProtos.NodeInfo info = message.getNodeInfo();
+            NodeInfo info = message.getNodeInfo();
             log.debug(
                     "[{}] [LOCAL] node_info from={} ({})",
                     pcTime,
@@ -73,7 +72,7 @@ public class MeshEventLogger extends BaseMeshHandler {
      * @return
      */
     @Override
-    protected boolean handlePacket(MeshProtos.MeshPacket packet, PacketContext ctx) {
+    protected boolean handlePacket(MeshPacket packet, PacketContext ctx) {
         String pcTime = TIME_FORMAT.format(Instant.now());
         String senderName = resolveName(packet.getFrom());
         String destName = (packet.getTo() == 0xFFFFFFFF) ? "BROADCAST" : resolveName(packet.getTo());
@@ -105,7 +104,7 @@ public class MeshEventLogger extends BaseMeshHandler {
     /**
      * Provides a human-readable summary of the payload based on the App Port.
      */
-    private String decodePayload(MeshProtos.MeshPacket packet) {
+    private String decodePayload(MeshPacket packet) {
         try {
             PortNum port = packet.getDecoded().getPortnum();
             byte[] data = packet.getDecoded().getPayload().toByteArray();
@@ -115,14 +114,14 @@ public class MeshEventLogger extends BaseMeshHandler {
                     return "Text: \"" + new String(data, StandardCharsets.UTF_8) + "\"";
 
                 case POSITION_APP:
-                    var pos = MeshProtos.Position.parseFrom(data);
+                    var pos = Position.parseFrom(data);
                     // Standard 1e7 conversion for logging
                     return String.format(
                             "GPS: %.6f, %.6f | Alt: %dm",
                             pos.getLatitudeI() / 1e7, pos.getLongitudeI() / 1e7, pos.getAltitude());
 
                 case NODEINFO_APP:
-                    var user = MeshProtos.User.parseFrom(data);
+                    var user = User.parseFrom(data);
                     return String.format(
                             "Identity: %s (%s) | HW: %s", user.getLongName(), user.getShortName(), user.getHwModel());
 
@@ -132,7 +131,7 @@ public class MeshEventLogger extends BaseMeshHandler {
                     return "Telemetry Data Packet";
 
                 case ROUTING_APP:
-                    var routing = MeshProtos.Routing.parseFrom(data);
+                    var routing = Routing.parseFrom(data);
                     return "Routing Status: " + routing.getErrorReason();
 
                 default:

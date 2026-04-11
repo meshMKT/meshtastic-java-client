@@ -52,7 +52,6 @@
     <junit.jupiter.version>6.0.3</junit.jupiter.version>
     <os.maven.plugin.version>1.7.1</os.maven.plugin.version>
     <maven.compiler.plugin.version>3.15.0</maven.compiler.plugin.version>
-    <protobuf.maven.plugin.version>0.6.1</protobuf.maven.plugin.version>
     <maven.surefire.plugin.version>3.5.5</maven.surefire.plugin.version>
     <maven.failsafe.plugin.version>3.5.5</maven.failsafe.plugin.version>
     <maven.source.plugin.version>3.4.0</maven.source.plugin.version>
@@ -67,6 +66,13 @@
   </properties>
 
   <dependencies>
+
+    <!-- Meshtastic generated protobuf Java classes from Buf Schema Registry -->
+    <dependency>
+      <groupId>build.buf.gen</groupId>
+      <artifactId>meshtastic_protobufs_protocolbuffers_java</artifactId>
+      <version>34.1.0.1.20260410112702.806a62096ca3</version>
+    </dependency>
 
     <!-- Lombok -->
     <dependency>
@@ -90,16 +96,10 @@
       <version>${slf4j.version}</version>
     </dependency>
 
-    <!-- Protobuf Java runtime -->
+    <!-- Explicit protobuf runtime for published library clarity and version control -->
     <dependency>
       <groupId>com.google.protobuf</groupId>
       <artifactId>protobuf-java</artifactId>
-      <version>${protobuf.version}</version>
-    </dependency>
-
-    <dependency>
-      <groupId>com.google.protobuf</groupId>
-      <artifactId>protobuf-java-util</artifactId>
       <version>${protobuf.version}</version>
     </dependency>
 
@@ -117,6 +117,19 @@
       <scope>test</scope>
     </dependency>
   </dependencies>
+  <repositories>
+    <repository>
+      <releases>
+        <enabled>true</enabled>
+      </releases>
+      <snapshots>
+        <enabled>false</enabled>
+      </snapshots>
+      <id>buf</id>
+      <name>Buf Maven Repository</name>
+      <url>https://buf.build/gen/maven</url>
+    </repository>
+  </repositories>
 
   <build>
 
@@ -165,24 +178,6 @@
             </path>
           </annotationProcessorPaths>
         </configuration>
-      </plugin>
-
-      <!-- Protobuf plugin -->
-      <plugin>
-        <groupId>org.xolstice.maven.plugins</groupId>
-        <artifactId>protobuf-maven-plugin</artifactId>
-        <version>${protobuf.maven.plugin.version}</version>
-        <configuration>
-          <protocArtifact>com.google.protobuf:protoc:${protobuf.version}:exe:${os.detected.classifier}</protocArtifact>
-          <pluginId>java</pluginId>
-        </configuration>
-        <executions>
-          <execution>
-            <goals>
-              <goal>compile</goal>
-            </goals>
-          </execution>
-        </executions>
       </plugin>
 
       <plugin>

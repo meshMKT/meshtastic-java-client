@@ -1,17 +1,13 @@
 package com.meshmkt.meshtastic.client;
 
+import build.buf.gen.meshtastic.FromRadio;
 import com.meshmkt.meshtastic.client.event.StartupState;
-import java.util.concurrent.CancellationException;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
+import java.util.concurrent.*;
 import java.util.function.Consumer;
 import java.util.function.IntConsumer;
 import java.util.function.IntPredicate;
 import java.util.function.IntSupplier;
 import lombok.extern.slf4j.Slf4j;
-import org.meshtastic.proto.MeshProtos.FromRadio;
 
 /**
  * Manages startup synchronization phase state, barrier handling, and want-config sequencing.

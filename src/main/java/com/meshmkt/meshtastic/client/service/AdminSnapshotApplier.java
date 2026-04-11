@@ -1,21 +1,12 @@
 package com.meshmkt.meshtastic.client.service;
 
+import build.buf.gen.meshtastic.*;
 import com.google.protobuf.ByteString;
 import com.meshmkt.meshtastic.client.MeshConstants;
 import com.meshmkt.meshtastic.client.MeshUtils;
 import com.meshmkt.meshtastic.client.model.RadioModel;
 import java.util.List;
 import lombok.extern.slf4j.Slf4j;
-import org.meshtastic.proto.AdminProtos.AdminMessage;
-import org.meshtastic.proto.AdminProtos.AdminMessage.ConfigType;
-import org.meshtastic.proto.AdminProtos.AdminMessage.ModuleConfigType;
-import org.meshtastic.proto.ChannelProtos.Channel;
-import org.meshtastic.proto.ConfigProtos.Config;
-import org.meshtastic.proto.MeshProtos.DeviceMetadata;
-import org.meshtastic.proto.MeshProtos.FromRadio;
-import org.meshtastic.proto.MeshProtos.NodeInfo;
-import org.meshtastic.proto.MeshProtos.User;
-import org.meshtastic.proto.ModuleConfigProtos.ModuleConfig;
 
 /**
  * Applies inbound admin/local snapshot payloads to the shared {@link RadioModel}.
@@ -177,7 +168,7 @@ final class AdminSnapshotApplier {
         if (cfg == null) {
             return;
         }
-        for (ConfigType type : extractConfigTypes(cfg)) {
+        for (AdminMessage.ConfigType type : extractConfigTypes(cfg)) {
             radioModel.putConfig(type, cfg);
         }
         if (cfg.hasLora()) {
@@ -211,7 +202,7 @@ final class AdminSnapshotApplier {
      * @param moduleConfig module-config payload.
      */
     void applyModuleConfig(ModuleConfig moduleConfig) {
-        ModuleConfigType type = toModuleConfigType(moduleConfig);
+        AdminMessage.ModuleConfigType type = toModuleConfigType(moduleConfig);
         if (type != null) {
             radioModel.putModuleConfig(type, moduleConfig);
         }
@@ -234,23 +225,23 @@ final class AdminSnapshotApplier {
      * @param cfg config payload.
      * @return affected config types, or empty when no variant is set.
      */
-    List<ConfigType> extractConfigTypes(Config cfg) {
+    List<AdminMessage.ConfigType> extractConfigTypes(Config cfg) {
         if (cfg == null) {
             return List.of();
         }
 
-        ConfigType type =
+        AdminMessage.ConfigType type =
                 switch (cfg.getPayloadVariantCase()) {
-                    case DEVICE -> ConfigType.DEVICE_CONFIG;
-                    case POSITION -> ConfigType.POSITION_CONFIG;
-                    case POWER -> ConfigType.POWER_CONFIG;
-                    case NETWORK -> ConfigType.NETWORK_CONFIG;
-                    case DISPLAY -> ConfigType.DISPLAY_CONFIG;
-                    case LORA -> ConfigType.LORA_CONFIG;
-                    case BLUETOOTH -> ConfigType.BLUETOOTH_CONFIG;
-                    case SECURITY -> ConfigType.SECURITY_CONFIG;
-                    case SESSIONKEY -> ConfigType.SESSIONKEY_CONFIG;
-                    case DEVICE_UI -> ConfigType.DEVICEUI_CONFIG;
+                    case DEVICE -> AdminMessage.ConfigType.DEVICE_CONFIG;
+                    case POSITION -> AdminMessage.ConfigType.POSITION_CONFIG;
+                    case POWER -> AdminMessage.ConfigType.POWER_CONFIG;
+                    case NETWORK -> AdminMessage.ConfigType.NETWORK_CONFIG;
+                    case DISPLAY -> AdminMessage.ConfigType.DISPLAY_CONFIG;
+                    case LORA -> AdminMessage.ConfigType.LORA_CONFIG;
+                    case BLUETOOTH -> AdminMessage.ConfigType.BLUETOOTH_CONFIG;
+                    case SECURITY -> AdminMessage.ConfigType.SECURITY_CONFIG;
+                    case SESSIONKEY -> AdminMessage.ConfigType.SESSIONKEY_CONFIG;
+                    case DEVICE_UI -> AdminMessage.ConfigType.DEVICEUI_CONFIG;
                     case PAYLOADVARIANT_NOT_SET -> null;
                 };
         return type == null ? List.of() : List.of(type);
@@ -262,26 +253,28 @@ final class AdminSnapshotApplier {
      * @param moduleConfig module-config payload.
      * @return corresponding module config type, or {@code null} when unset.
      */
-    ModuleConfigType toModuleConfigType(ModuleConfig moduleConfig) {
+    AdminMessage.ModuleConfigType toModuleConfigType(ModuleConfig moduleConfig) {
         if (moduleConfig == null) {
             return null;
         }
 
         return switch (moduleConfig.getPayloadVariantCase()) {
-            case MQTT -> ModuleConfigType.MQTT_CONFIG;
-            case SERIAL -> ModuleConfigType.SERIAL_CONFIG;
-            case EXTERNAL_NOTIFICATION -> ModuleConfigType.EXTNOTIF_CONFIG;
-            case STORE_FORWARD -> ModuleConfigType.STOREFORWARD_CONFIG;
-            case RANGE_TEST -> ModuleConfigType.RANGETEST_CONFIG;
-            case TELEMETRY -> ModuleConfigType.TELEMETRY_CONFIG;
-            case CANNED_MESSAGE -> ModuleConfigType.CANNEDMSG_CONFIG;
-            case AUDIO -> ModuleConfigType.AUDIO_CONFIG;
-            case REMOTE_HARDWARE -> ModuleConfigType.REMOTEHARDWARE_CONFIG;
-            case NEIGHBOR_INFO -> ModuleConfigType.NEIGHBORINFO_CONFIG;
-            case AMBIENT_LIGHTING -> ModuleConfigType.AMBIENTLIGHTING_CONFIG;
-            case DETECTION_SENSOR -> ModuleConfigType.DETECTIONSENSOR_CONFIG;
-            case PAXCOUNTER -> ModuleConfigType.PAXCOUNTER_CONFIG;
-            case STATUSMESSAGE -> ModuleConfigType.STATUSMESSAGE_CONFIG;
+            case MQTT -> AdminMessage.ModuleConfigType.MQTT_CONFIG;
+            case SERIAL -> AdminMessage.ModuleConfigType.SERIAL_CONFIG;
+            case EXTERNAL_NOTIFICATION -> AdminMessage.ModuleConfigType.EXTNOTIF_CONFIG;
+            case STORE_FORWARD -> AdminMessage.ModuleConfigType.STOREFORWARD_CONFIG;
+            case RANGE_TEST -> AdminMessage.ModuleConfigType.RANGETEST_CONFIG;
+            case TELEMETRY -> AdminMessage.ModuleConfigType.TELEMETRY_CONFIG;
+            case CANNED_MESSAGE -> AdminMessage.ModuleConfigType.CANNEDMSG_CONFIG;
+            case AUDIO -> AdminMessage.ModuleConfigType.AUDIO_CONFIG;
+            case REMOTE_HARDWARE -> AdminMessage.ModuleConfigType.REMOTEHARDWARE_CONFIG;
+            case NEIGHBOR_INFO -> AdminMessage.ModuleConfigType.NEIGHBORINFO_CONFIG;
+            case AMBIENT_LIGHTING -> AdminMessage.ModuleConfigType.AMBIENTLIGHTING_CONFIG;
+            case DETECTION_SENSOR -> AdminMessage.ModuleConfigType.DETECTIONSENSOR_CONFIG;
+            case PAXCOUNTER -> AdminMessage.ModuleConfigType.PAXCOUNTER_CONFIG;
+            case STATUSMESSAGE -> AdminMessage.ModuleConfigType.STATUSMESSAGE_CONFIG;
+            case TRAFFIC_MANAGEMENT -> AdminMessage.ModuleConfigType.TRAFFICMANAGEMENT_CONFIG;
+            case TAK -> AdminMessage.ModuleConfigType.TAK_CONFIG;
             case PAYLOADVARIANT_NOT_SET -> null;
         };
     }

@@ -1,7 +1,7 @@
 package com.meshmkt.meshtastic.client.handlers;
 
-import static org.meshtastic.proto.Portnums.PortNum.ADMIN_APP;
-
+import build.buf.gen.meshtastic.*;
+import build.buf.gen.meshtastic.AdminMessage.ModuleConfigType;
 import com.meshmkt.meshtastic.client.MeshUtils;
 import com.meshmkt.meshtastic.client.event.AdminModelUpdateEvent;
 import com.meshmkt.meshtastic.client.event.MeshEventDispatcher;
@@ -9,14 +9,6 @@ import com.meshmkt.meshtastic.client.service.AdminService;
 import com.meshmkt.meshtastic.client.storage.NodeDatabase;
 import com.meshmkt.meshtastic.client.storage.PacketContext;
 import lombok.extern.slf4j.Slf4j;
-import org.meshtastic.proto.AdminProtos.AdminMessage;
-import org.meshtastic.proto.AdminProtos.AdminMessage.ConfigType;
-import org.meshtastic.proto.AdminProtos.AdminMessage.ModuleConfigType;
-import org.meshtastic.proto.ConfigProtos.Config;
-import org.meshtastic.proto.MeshProtos;
-import org.meshtastic.proto.MeshProtos.MeshPacket;
-import org.meshtastic.proto.ModuleConfigProtos.ModuleConfig;
-import org.meshtastic.proto.Portnums.PortNum;
 
 /**
  * Handles packet-based {@code ADMIN_APP} payloads and forwards decoded admin messages into {@link AdminService}.
@@ -88,8 +80,8 @@ public class AdminHandler extends BaseMeshHandler {
      * @return {@code true} when this handler should process the message.
      */
     @Override
-    public boolean canHandle(MeshProtos.FromRadio message) {
-        return message.hasPacket() && message.getPacket().getDecoded().getPortnum() == ADMIN_APP;
+    public boolean canHandle(FromRadio message) {
+        return message.hasPacket() && message.getPacket().getDecoded().getPortnum() == PortNum.ADMIN_APP;
     }
 
     /**
@@ -136,21 +128,21 @@ public class AdminHandler extends BaseMeshHandler {
     /**
      * Maps config payload oneof variant to admin config type key.
      */
-    private static ConfigType toConfigType(Config config) {
+    private static AdminMessage.ConfigType toConfigType(Config config) {
         if (config == null) {
             return null;
         }
         return switch (config.getPayloadVariantCase()) {
-            case DEVICE -> ConfigType.DEVICE_CONFIG;
-            case POSITION -> ConfigType.POSITION_CONFIG;
-            case POWER -> ConfigType.POWER_CONFIG;
-            case NETWORK -> ConfigType.NETWORK_CONFIG;
-            case DISPLAY -> ConfigType.DISPLAY_CONFIG;
-            case LORA -> ConfigType.LORA_CONFIG;
-            case BLUETOOTH -> ConfigType.BLUETOOTH_CONFIG;
-            case SECURITY -> ConfigType.SECURITY_CONFIG;
-            case SESSIONKEY -> ConfigType.SESSIONKEY_CONFIG;
-            case DEVICE_UI -> ConfigType.DEVICEUI_CONFIG;
+            case DEVICE -> AdminMessage.ConfigType.DEVICE_CONFIG;
+            case POSITION -> AdminMessage.ConfigType.POSITION_CONFIG;
+            case POWER -> AdminMessage.ConfigType.POWER_CONFIG;
+            case NETWORK -> AdminMessage.ConfigType.NETWORK_CONFIG;
+            case DISPLAY -> AdminMessage.ConfigType.DISPLAY_CONFIG;
+            case LORA -> AdminMessage.ConfigType.LORA_CONFIG;
+            case BLUETOOTH -> AdminMessage.ConfigType.BLUETOOTH_CONFIG;
+            case SECURITY -> AdminMessage.ConfigType.SECURITY_CONFIG;
+            case SESSIONKEY -> AdminMessage.ConfigType.SESSIONKEY_CONFIG;
+            case DEVICE_UI -> AdminMessage.ConfigType.DEVICEUI_CONFIG;
             case PAYLOADVARIANT_NOT_SET -> null;
         };
     }
@@ -177,6 +169,8 @@ public class AdminHandler extends BaseMeshHandler {
             case DETECTION_SENSOR -> ModuleConfigType.DETECTIONSENSOR_CONFIG;
             case PAXCOUNTER -> ModuleConfigType.PAXCOUNTER_CONFIG;
             case STATUSMESSAGE -> ModuleConfigType.STATUSMESSAGE_CONFIG;
+            case TRAFFIC_MANAGEMENT -> ModuleConfigType.TRAFFICMANAGEMENT_CONFIG;
+            case TAK -> ModuleConfigType.TAK_CONFIG;
             case PAYLOADVARIANT_NOT_SET -> null;
         };
     }

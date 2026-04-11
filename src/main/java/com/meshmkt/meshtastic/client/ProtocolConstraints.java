@@ -1,13 +1,13 @@
 package com.meshmkt.meshtastic.client;
 
+import build.buf.gen.meshtastic.Channel;
+import build.buf.gen.meshtastic.ChannelSettings;
 import com.google.protobuf.ByteString;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import lombok.Value;
-import org.meshtastic.proto.ChannelProtos.Channel;
-import org.meshtastic.proto.ChannelProtos.ChannelSettings;
 
 /**
  * Central protocol-level validation rules derived from Meshtastic protobuf contracts.

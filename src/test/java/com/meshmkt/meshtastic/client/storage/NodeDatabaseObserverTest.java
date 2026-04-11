@@ -1,17 +1,15 @@
 package com.meshmkt.meshtastic.client.storage;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.*;
 
+import build.buf.gen.meshtastic.Position;
+import build.buf.gen.meshtastic.User;
 import com.meshmkt.meshtastic.client.MeshConstants;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
-import org.meshtastic.proto.MeshProtos;
 
 /**
  * Tests observer notification semantics for {@link InMemoryNodeDatabase}.
@@ -28,10 +26,7 @@ class NodeDatabaseObserverTest {
         db.addObserver(new RecordingObserver(updates, new AtomicInteger()));
 
         db.updateUser(
-                MeshProtos.User.newBuilder()
-                        .setLongName("Alpha")
-                        .setShortName("a")
-                        .build(),
+                User.newBuilder().setLongName("Alpha").setShortName("a").build(),
                 PacketContext.builder().from(0x1234).live(true).build());
 
         assertEquals(1, updates.size());
@@ -51,19 +46,13 @@ class NodeDatabaseObserverTest {
         db.addObserver(observer);
 
         db.updateUser(
-                MeshProtos.User.newBuilder()
-                        .setLongName("Before")
-                        .setShortName("b")
-                        .build(),
+                User.newBuilder().setLongName("Before").setShortName("b").build(),
                 PacketContext.builder().from(1).live(true).build());
 
         db.removeObserver(observer);
 
         db.updateUser(
-                MeshProtos.User.newBuilder()
-                        .setLongName("After")
-                        .setShortName("a")
-                        .build(),
+                User.newBuilder().setLongName("After").setShortName("a").build(),
                 PacketContext.builder().from(2).live(true).build());
         db.clear();
 
@@ -82,18 +71,12 @@ class NodeDatabaseObserverTest {
         db.addObserver(new RecordingObserver(updates, purges));
 
         db.updatePosition(
-                MeshProtos.Position.newBuilder()
-                        .setLatitudeI(0)
-                        .setLongitudeI(0)
-                        .build(),
+                Position.newBuilder().setLatitudeI(0).setLongitudeI(0).build(),
                 PacketContext.builder().from(9).live(true).build());
         assertTrue(updates.isEmpty(), "0,0 position should be ignored");
 
         db.updateUser(
-                MeshProtos.User.newBuilder()
-                        .setLongName("Node")
-                        .setShortName("n")
-                        .build(),
+                User.newBuilder().setLongName("Node").setShortName("n").build(),
                 PacketContext.builder().from(9).live(true).build());
         assertFalse(updates.isEmpty());
 
@@ -114,7 +97,7 @@ class NodeDatabaseObserverTest {
 
         // Seed remote node as MQTT-origin with a valid position.
         db.updatePosition(
-                MeshProtos.Position.newBuilder()
+                Position.newBuilder()
                         .setLatitudeI(407123456)
                         .setLongitudeI(-751234567)
                         .build(),
@@ -125,7 +108,7 @@ class NodeDatabaseObserverTest {
 
         // Move self node to trigger full distance refresh.
         db.updatePosition(
-                MeshProtos.Position.newBuilder()
+                Position.newBuilder()
                         .setLatitudeI(407223456)
                         .setLongitudeI(-751334567)
                         .build(),

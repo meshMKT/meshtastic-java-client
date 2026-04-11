@@ -1,16 +1,10 @@
 package com.meshmkt.meshtastic.client.model;
 
+import build.buf.gen.meshtastic.*;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import lombok.Data;
-import org.meshtastic.proto.AdminProtos.AdminMessage.ConfigType;
-import org.meshtastic.proto.AdminProtos.AdminMessage.ModuleConfigType;
-import org.meshtastic.proto.ChannelProtos.Channel;
-import org.meshtastic.proto.ConfigProtos.Config;
-import org.meshtastic.proto.MeshProtos.DeviceMetadata;
-import org.meshtastic.proto.MeshProtos.User;
-import org.meshtastic.proto.ModuleConfigProtos.ModuleConfig;
 
 /**
  * Mutable in-memory state holder for the currently connected local radio.
@@ -67,14 +61,14 @@ public class RadioModel {
     private final Map<Integer, Channel> channels = new ConcurrentHashMap<>();
 
     /**
-     * Config snapshots keyed by requested {@link ConfigType}.
+     * Config snapshots keyed by requested {@link AdminMessage.ConfigType}.
      */
-    private final Map<ConfigType, Config> configs = new ConcurrentHashMap<>();
+    private final Map<AdminMessage.ConfigType, Config> configs = new ConcurrentHashMap<>();
 
     /**
-     * Module config snapshots keyed by requested {@link ModuleConfigType}.
+     * Module config snapshots keyed by requested {@link AdminMessage.ModuleConfigType}.
      */
-    private final Map<ModuleConfigType, ModuleConfig> moduleConfigs = new ConcurrentHashMap<>();
+    private final Map<AdminMessage.ModuleConfigType, ModuleConfig> moduleConfigs = new ConcurrentHashMap<>();
 
     /**
      * Inserts or replaces one cached channel slot.
@@ -111,7 +105,7 @@ public class RadioModel {
      * @param type config type key.
      * @param config config payload.
      */
-    public void putConfig(ConfigType type, Config config) {
+    public void putConfig(AdminMessage.ConfigType type, Config config) {
         if (type != null && config != null) {
             configs.put(type, config);
         }
@@ -123,7 +117,7 @@ public class RadioModel {
      * @param type config type key.
      * @return optional config snapshot.
      */
-    public Optional<Config> getConfig(ConfigType type) {
+    public Optional<Config> getConfig(AdminMessage.ConfigType type) {
         return Optional.ofNullable(configs.get(type));
     }
 
@@ -132,7 +126,7 @@ public class RadioModel {
      *
      * @return immutable map of config snapshots.
      */
-    public Map<ConfigType, Config> getConfigs() {
+    public Map<AdminMessage.ConfigType, Config> getConfigs() {
         return Map.copyOf(configs);
     }
 
@@ -142,7 +136,7 @@ public class RadioModel {
      * @param type module config type key.
      * @param moduleConfig module config payload.
      */
-    public void putModuleConfig(ModuleConfigType type, ModuleConfig moduleConfig) {
+    public void putModuleConfig(AdminMessage.ModuleConfigType type, ModuleConfig moduleConfig) {
         if (type != null && moduleConfig != null) {
             moduleConfigs.put(type, moduleConfig);
         }
@@ -154,7 +148,7 @@ public class RadioModel {
      * @param type module config type key.
      * @return optional module config snapshot.
      */
-    public Optional<ModuleConfig> getModuleConfig(ModuleConfigType type) {
+    public Optional<ModuleConfig> getModuleConfig(AdminMessage.ModuleConfigType type) {
         return Optional.ofNullable(moduleConfigs.get(type));
     }
 
@@ -163,7 +157,7 @@ public class RadioModel {
      *
      * @return immutable map of module config snapshots.
      */
-    public Map<ModuleConfigType, ModuleConfig> getModuleConfigs() {
+    public Map<AdminMessage.ModuleConfigType, ModuleConfig> getModuleConfigs() {
         return Map.copyOf(moduleConfigs);
     }
 

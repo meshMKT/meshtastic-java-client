@@ -1,26 +1,15 @@
 package com.meshmkt.meshtastic.client.handlers;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.*;
 
+import build.buf.gen.meshtastic.*;
 import com.meshmkt.meshtastic.client.MeshtasticClient;
-import com.meshmkt.meshtastic.client.event.AdminModelUpdateEvent;
-import com.meshmkt.meshtastic.client.event.ChatMessageEvent;
-import com.meshmkt.meshtastic.client.event.MeshEventDispatcher;
-import com.meshmkt.meshtastic.client.event.MessageStatusEvent;
-import com.meshmkt.meshtastic.client.event.NodeDiscoveryEvent;
-import com.meshmkt.meshtastic.client.event.PositionUpdateEvent;
-import com.meshmkt.meshtastic.client.event.TelemetryUpdateEvent;
+import com.meshmkt.meshtastic.client.event.*;
 import com.meshmkt.meshtastic.client.service.AdminService;
 import com.meshmkt.meshtastic.client.storage.InMemoryNodeDatabase;
 import com.meshmkt.meshtastic.client.support.NoOpMeshEventDispatcher;
 import java.util.concurrent.CompletableFuture;
 import org.junit.jupiter.api.Test;
-import org.meshtastic.proto.AdminProtos.AdminMessage;
-import org.meshtastic.proto.ConfigProtos;
-import org.meshtastic.proto.MeshProtos;
-import org.meshtastic.proto.Portnums;
 
 /**
  * Focused routing tests for handler matching and local state ingest paths.
@@ -36,15 +25,13 @@ class HandlerRoutingTest {
         AdminService admin = new AdminService(new HandlerStubClient());
         LocalStateHandler handler = new LocalStateHandler(db, new NoOpMeshEventDispatcher(), admin);
 
-        MeshProtos.FromRadio myInfo = MeshProtos.FromRadio.newBuilder()
-                .setMyInfo(MeshProtos.MyNodeInfo.newBuilder().setMyNodeNum(4321).build())
+        FromRadio myInfo = FromRadio.newBuilder()
+                .setMyInfo(MyNodeInfo.newBuilder().setMyNodeNum(4321).build())
                 .build();
 
-        MeshProtos.FromRadio config = MeshProtos.FromRadio.newBuilder()
-                .setConfig(ConfigProtos.Config.newBuilder()
-                        .setLora(ConfigProtos.Config.LoRaConfig.newBuilder()
-                                .setHopLimit(3)
-                                .build())
+        FromRadio config = FromRadio.newBuilder()
+                .setConfig(Config.newBuilder()
+                        .setLora(Config.LoRaConfig.newBuilder().setHopLimit(3).build())
                         .build())
                 .build();
 
@@ -67,10 +54,10 @@ class HandlerRoutingTest {
         AdminService admin = new AdminService(new HandlerStubClient());
         LocalStateHandler handler = new LocalStateHandler(db, new NoOpMeshEventDispatcher(), admin);
 
-        MeshProtos.FromRadio packetMessage = MeshProtos.FromRadio.newBuilder()
-                .setPacket(MeshProtos.MeshPacket.newBuilder()
-                        .setDecoded(MeshProtos.Data.newBuilder()
-                                .setPortnum(Portnums.PortNum.TEXT_MESSAGE_APP)
+        FromRadio packetMessage = FromRadio.newBuilder()
+                .setPacket(MeshPacket.newBuilder()
+                        .setDecoded(Data.newBuilder()
+                                .setPortnum(PortNum.TEXT_MESSAGE_APP)
                                 .build())
                         .build())
                 .build();
@@ -87,22 +74,22 @@ class HandlerRoutingTest {
         AdminService admin = new AdminService(new HandlerStubClient());
         NodeInfoHandler handler = new NodeInfoHandler(db, new NoOpMeshEventDispatcher(), admin);
 
-        MeshProtos.FromRadio nonPacket = MeshProtos.FromRadio.newBuilder()
-                .setNodeInfo(MeshProtos.NodeInfo.newBuilder()
+        FromRadio nonPacket = FromRadio.newBuilder()
+                .setNodeInfo(NodeInfo.newBuilder()
                         .setNum(101)
-                        .setUser(MeshProtos.User.newBuilder()
+                        .setUser(User.newBuilder()
                                 .setLongName("Node 101")
                                 .setShortName("n101")
                                 .build())
                         .build())
                 .build();
 
-        MeshProtos.FromRadio packet = MeshProtos.FromRadio.newBuilder()
-                .setPacket(MeshProtos.MeshPacket.newBuilder()
+        FromRadio packet = FromRadio.newBuilder()
+                .setPacket(MeshPacket.newBuilder()
                         .setFrom(202)
-                        .setDecoded(MeshProtos.Data.newBuilder()
-                                .setPortnum(Portnums.PortNum.NODEINFO_APP)
-                                .setPayload(MeshProtos.User.newBuilder()
+                        .setDecoded(Data.newBuilder()
+                                .setPortnum(PortNum.NODEINFO_APP)
+                                .setPayload(User.newBuilder()
                                         .setLongName("Node 202")
                                         .setShortName("n202")
                                         .build()
@@ -125,13 +112,11 @@ class HandlerRoutingTest {
         CapturingDispatcher dispatcher = new CapturingDispatcher();
         LocalStateHandler handler = new LocalStateHandler(db, dispatcher, admin);
 
-        MeshProtos.FromRadio myInfo = MeshProtos.FromRadio.newBuilder()
-                .setMyInfo(MeshProtos.MyNodeInfo.newBuilder().setMyNodeNum(4321).build())
+        FromRadio myInfo = FromRadio.newBuilder()
+                .setMyInfo(MyNodeInfo.newBuilder().setMyNodeNum(4321).build())
                 .build();
-        MeshProtos.FromRadio channel = MeshProtos.FromRadio.newBuilder()
-                .setChannel(org.meshtastic.proto.ChannelProtos.Channel.newBuilder()
-                        .setIndex(2)
-                        .build())
+        FromRadio channel = FromRadio.newBuilder()
+                .setChannel(Channel.newBuilder().setIndex(2).build())
                 .build();
 
         assertTrue(handler.handle(myInfo));
@@ -157,16 +142,14 @@ class HandlerRoutingTest {
         AdminHandler handler = new AdminHandler(db, dispatcher, admin);
 
         AdminMessage adminMessage = AdminMessage.newBuilder()
-                .setGetChannelResponse(org.meshtastic.proto.ChannelProtos.Channel.newBuilder()
-                        .setIndex(3)
-                        .build())
+                .setGetChannelResponse(Channel.newBuilder().setIndex(3).build())
                 .build();
 
-        MeshProtos.FromRadio message = MeshProtos.FromRadio.newBuilder()
-                .setPacket(MeshProtos.MeshPacket.newBuilder()
+        FromRadio message = FromRadio.newBuilder()
+                .setPacket(MeshPacket.newBuilder()
                         .setFrom(123)
-                        .setDecoded(MeshProtos.Data.newBuilder()
-                                .setPortnum(Portnums.PortNum.ADMIN_APP)
+                        .setDecoded(Data.newBuilder()
+                                .setPortnum(PortNum.ADMIN_APP)
                                 .setPayload(adminMessage.toByteString())
                                 .build())
                         .build())
@@ -189,8 +172,8 @@ class HandlerRoutingTest {
         }
 
         @Override
-        public CompletableFuture<MeshProtos.MeshPacket> executeAdminRequest(int destinationId, AdminMessage adminMsg) {
-            return CompletableFuture.completedFuture(MeshProtos.MeshPacket.getDefaultInstance());
+        public CompletableFuture<MeshPacket> executeAdminRequest(int destinationId, AdminMessage adminMsg) {
+            return CompletableFuture.completedFuture(MeshPacket.getDefaultInstance());
         }
 
         @Override

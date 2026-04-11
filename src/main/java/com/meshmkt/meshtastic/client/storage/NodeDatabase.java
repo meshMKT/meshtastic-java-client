@@ -1,10 +1,9 @@
 package com.meshmkt.meshtastic.client.storage;
 
+import build.buf.gen.meshtastic.*;
 import java.time.Duration;
 import java.util.Collection;
 import java.util.Optional;
-import org.meshtastic.proto.MeshProtos;
-import org.meshtastic.proto.TelemetryProtos;
 
 /**
  * The central authority for Meshtastic node state. This interface standardizes
@@ -18,28 +17,28 @@ public interface NodeDatabase {
      * @param user
      * @param ctx
      */
-    void updateUser(MeshProtos.User user, PacketContext ctx);
+    void updateUser(User user, PacketContext ctx);
 
     /**
      * Updates geographic coordinates and triggers distance recalculation.
      * @param position
      * @param ctx
      */
-    void updatePosition(MeshProtos.Position position, PacketContext ctx);
+    void updatePosition(Position position, PacketContext ctx);
 
     /**
      * Updates device battery and health vitals.
      * @param metrics
      * @param ctx
      */
-    void updateMetrics(TelemetryProtos.DeviceMetrics metrics, PacketContext ctx);
+    void updateMetrics(DeviceMetrics metrics, PacketContext ctx);
 
     /**
      * Updates sensor data (Temp/Humidity/Pressure).
      * @param env
      * @param ctx
      */
-    void updateEnvMetrics(TelemetryProtos.EnvironmentMetrics env, PacketContext ctx);
+    void updateEnvMetrics(EnvironmentMetrics env, PacketContext ctx);
 
     /**
      * Updates signal metadata (SNR/RSSI) without changing payload data.

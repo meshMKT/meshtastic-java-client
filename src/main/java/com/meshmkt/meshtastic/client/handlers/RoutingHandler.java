@@ -1,13 +1,15 @@
 package com.meshmkt.meshtastic.client.handlers;
 
+import build.buf.gen.meshtastic.FromRadio;
+import build.buf.gen.meshtastic.MeshPacket;
+import build.buf.gen.meshtastic.PortNum;
+import build.buf.gen.meshtastic.Routing;
 import com.meshmkt.meshtastic.client.MeshUtils;
 import com.meshmkt.meshtastic.client.event.MeshEventDispatcher;
 import com.meshmkt.meshtastic.client.event.MessageStatusEvent;
 import com.meshmkt.meshtastic.client.storage.NodeDatabase;
 import com.meshmkt.meshtastic.client.storage.PacketContext;
 import lombok.extern.slf4j.Slf4j;
-import org.meshtastic.proto.MeshProtos;
-import org.meshtastic.proto.Portnums.PortNum;
 
 /**
  * Monitors ROUTING_APP packets to track if messages were successfully
@@ -32,7 +34,7 @@ public class RoutingHandler extends BaseMeshHandler {
      * @return {@code true} when this handler should process the message.
      */
     @Override
-    public boolean canHandle(MeshProtos.FromRadio message) {
+    public boolean canHandle(FromRadio message) {
         return message.hasPacket()
                 && message.getPacket().hasDecoded()
                 && message.getPacket().getDecoded().getPortnum() == PortNum.ROUTING_APP;
@@ -46,21 +48,20 @@ public class RoutingHandler extends BaseMeshHandler {
      * @return {@code true} when packet processing is complete for this handler.
      */
     @Override
-    protected boolean handlePacket(MeshProtos.MeshPacket packet, PacketContext ctx) {
+    protected boolean handlePacket(MeshPacket packet, PacketContext ctx) {
         try {
-            MeshProtos.Routing routing =
-                    MeshProtos.Routing.parseFrom(packet.getDecoded().getPayload());
+            Routing routing = Routing.parseFrom(packet.getDecoded().getPayload());
 
             // Signal liveness is already recorded centrally in BaseMeshHandler before per-port handling.
             MessageStatusEvent event = MessageStatusEvent.of(packet, ctx, nodeDb.getSelfNodeId(), routing);
 
             String fromId = MeshUtils.formatId(packet.getFrom());
             String fromName = resolveName(packet.getFrom());
-            MeshProtos.Routing.Error status = routing.getErrorReason();
+            Routing.Error status = routing.getErrorReason();
             int requestId = packet.getDecoded().getRequestId();
 
             // Successful routing statuses are high-volume and best kept at DEBUG.
-            if (status == MeshProtos.Routing.Error.NONE) {
+            if (status == Routing.Error.NONE) {
                 log.debug(
                         "[ROUTING] from={} ({}) status={} packet_id={} request_id={}",
                         fromId,

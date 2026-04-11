@@ -1,12 +1,12 @@
 package com.meshmkt.meshtastic.client;
 
+import build.buf.gen.meshtastic.FromRadio;
 import com.meshmkt.meshtastic.client.handlers.MeshtasticMessageHandler;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import lombok.extern.slf4j.Slf4j;
-import org.meshtastic.proto.MeshProtos;
 
 /**
  * Routes incoming packets to registered handlers asynchronously.
@@ -35,7 +35,7 @@ public class MeshtasticDispatcher {
      * Hands off the message to the worker queue immediately.
      * @param message
      */
-    public void enqueue(MeshProtos.FromRadio message) {
+    public void enqueue(FromRadio message) {
         if (!worker.isShutdown()) {
             worker.execute(() -> dispatch(message));
         }
@@ -46,7 +46,7 @@ public class MeshtasticDispatcher {
      *
      * @param message inbound message.
      */
-    private void dispatch(MeshProtos.FromRadio message) {
+    private void dispatch(FromRadio message) {
         for (MeshtasticMessageHandler handler : handlers) {
             try {
                 if (handler.canHandle(message)) {

@@ -1,21 +1,18 @@
 package com.meshmkt.meshtastic.client.handlers;
 
+import build.buf.gen.meshtastic.*;
+import build.buf.gen.meshtastic.AdminMessage.ModuleConfigType;
 import com.meshmkt.meshtastic.client.event.AdminModelUpdateEvent;
 import com.meshmkt.meshtastic.client.event.MeshEventDispatcher;
 import com.meshmkt.meshtastic.client.service.AdminService;
 import com.meshmkt.meshtastic.client.storage.NodeDatabase;
 import com.meshmkt.meshtastic.client.storage.PacketContext;
-import org.meshtastic.proto.AdminProtos.AdminMessage.ConfigType;
-import org.meshtastic.proto.AdminProtos.AdminMessage.ModuleConfigType;
-import org.meshtastic.proto.ConfigProtos.Config;
-import org.meshtastic.proto.MeshProtos;
-import org.meshtastic.proto.ModuleConfigProtos.ModuleConfig;
 
 /**
  * Handles local (non-packet) state updates from the attached radio transport.
  * <p>
  * This includes both identity bootstrap ({@code my_info}) and settings snapshot variants
- * ({@code config/channel/module_config/metadata}) that arrive as top-level {@link MeshProtos.FromRadio}
+ * ({@code config/channel/module_config/metadata}) that arrive as top-level {@link FromRadio}
  * fields rather than mesh packets.
  * </p>
  * <p>
@@ -42,11 +39,11 @@ public class LocalStateHandler extends BaseMeshHandler {
     /**
      * Matches only local, non-packet state variants that originate from the attached radio link.
      *
-     * @param message inbound {@link MeshProtos.FromRadio} message.
+     * @param message inbound {@link FromRadio} message.
      * @return {@code true} when this message carries local bootstrap/snapshot state.
      */
     @Override
-    public boolean canHandle(MeshProtos.FromRadio message) {
+    public boolean canHandle(FromRadio message) {
         return message.hasMyInfo()
                 || message.hasConfig()
                 || message.hasChannel()
@@ -65,7 +62,7 @@ public class LocalStateHandler extends BaseMeshHandler {
      * @return always {@code true} once message classes for this handler are processed.
      */
     @Override
-    protected boolean handleNonPacketMessage(MeshProtos.FromRadio message) {
+    protected boolean handleNonPacketMessage(FromRadio message) {
         // my_info establishes the local node identity and should be reflected immediately in the DB.
         if (message.hasMyInfo()) {
             int selfId = message.getMyInfo().getMyNodeNum();
@@ -128,28 +125,28 @@ public class LocalStateHandler extends BaseMeshHandler {
      * @return always {@code false}.
      */
     @Override
-    protected boolean handlePacket(MeshProtos.MeshPacket packet, PacketContext ctx) {
+    protected boolean handlePacket(MeshPacket packet, PacketContext ctx) {
         return false;
     }
 
     /**
      * Maps config payload oneof variant to admin config type key.
      */
-    private static ConfigType toConfigType(Config config) {
+    private static AdminMessage.ConfigType toConfigType(Config config) {
         if (config == null) {
             return null;
         }
         return switch (config.getPayloadVariantCase()) {
-            case DEVICE -> ConfigType.DEVICE_CONFIG;
-            case POSITION -> ConfigType.POSITION_CONFIG;
-            case POWER -> ConfigType.POWER_CONFIG;
-            case NETWORK -> ConfigType.NETWORK_CONFIG;
-            case DISPLAY -> ConfigType.DISPLAY_CONFIG;
-            case LORA -> ConfigType.LORA_CONFIG;
-            case BLUETOOTH -> ConfigType.BLUETOOTH_CONFIG;
-            case SECURITY -> ConfigType.SECURITY_CONFIG;
-            case SESSIONKEY -> ConfigType.SESSIONKEY_CONFIG;
-            case DEVICE_UI -> ConfigType.DEVICEUI_CONFIG;
+            case DEVICE -> AdminMessage.ConfigType.DEVICE_CONFIG;
+            case POSITION -> AdminMessage.ConfigType.POSITION_CONFIG;
+            case POWER -> AdminMessage.ConfigType.POWER_CONFIG;
+            case NETWORK -> AdminMessage.ConfigType.NETWORK_CONFIG;
+            case DISPLAY -> AdminMessage.ConfigType.DISPLAY_CONFIG;
+            case LORA -> AdminMessage.ConfigType.LORA_CONFIG;
+            case BLUETOOTH -> AdminMessage.ConfigType.BLUETOOTH_CONFIG;
+            case SECURITY -> AdminMessage.ConfigType.SECURITY_CONFIG;
+            case SESSIONKEY -> AdminMessage.ConfigType.SESSIONKEY_CONFIG;
+            case DEVICE_UI -> AdminMessage.ConfigType.DEVICEUI_CONFIG;
             case PAYLOADVARIANT_NOT_SET -> null;
         };
     }
@@ -176,6 +173,8 @@ public class LocalStateHandler extends BaseMeshHandler {
             case DETECTION_SENSOR -> ModuleConfigType.DETECTIONSENSOR_CONFIG;
             case PAXCOUNTER -> ModuleConfigType.PAXCOUNTER_CONFIG;
             case STATUSMESSAGE -> ModuleConfigType.STATUSMESSAGE_CONFIG;
+            case TRAFFIC_MANAGEMENT -> ModuleConfigType.TRAFFICMANAGEMENT_CONFIG;
+            case TAK -> ModuleConfigType.TAK_CONFIG;
             case PAYLOADVARIANT_NOT_SET -> null;
         };
     }

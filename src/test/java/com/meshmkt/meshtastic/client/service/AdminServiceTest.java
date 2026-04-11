@@ -1,30 +1,15 @@
 package com.meshmkt.meshtastic.client.service;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.*;
 
+import build.buf.gen.meshtastic.*;
 import com.google.protobuf.ByteString;
 import com.meshmkt.meshtastic.client.storage.MeshNode;
 import java.time.Duration;
-import java.util.ArrayDeque;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Deque;
-import java.util.List;
+import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeoutException;
 import org.junit.jupiter.api.Test;
-import org.meshtastic.proto.AdminProtos.AdminMessage;
-import org.meshtastic.proto.ChannelProtos.Channel;
-import org.meshtastic.proto.ChannelProtos.ChannelSettings;
-import org.meshtastic.proto.ConfigProtos;
-import org.meshtastic.proto.DeviceUIProtos;
-import org.meshtastic.proto.MeshProtos;
-import org.meshtastic.proto.ModuleConfigProtos;
-import org.meshtastic.proto.Portnums;
 
 /**
  * Unit tests for {@link AdminService} using a stubbed gateway response queue.
@@ -40,20 +25,19 @@ class AdminServiceTest {
         AdminService service = new AdminService(gateway);
 
         gateway.enqueueAdminResponse(AdminMessage.newBuilder()
-                .setGetDeviceMetadataResponse(MeshProtos.DeviceMetadata.newBuilder()
-                        .setFirmwareVersion("2.7.15")
-                        .build())
+                .setGetDeviceMetadataResponse(
+                        DeviceMetadata.newBuilder().setFirmwareVersion("2.7.15").build())
                 .build());
 
         gateway.enqueueAdminResponse(AdminMessage.newBuilder()
-                .setGetConfigResponse(ConfigProtos.Config.newBuilder()
-                        .setDevice(ConfigProtos.Config.DeviceConfig.newBuilder()
+                .setGetConfigResponse(Config.newBuilder()
+                        .setDevice(Config.DeviceConfig.newBuilder()
                                 .setNodeInfoBroadcastSecs(60)
                                 .build())
                         .build())
                 .build());
 
-        ConfigProtos.Config cfg =
+        Config cfg =
                 service.refreshConfig(AdminMessage.ConfigType.SESSIONKEY_CONFIG).join();
         assertNotNull(cfg);
 
@@ -80,9 +64,8 @@ class AdminServiceTest {
 
         // First attempt: metadata -> set ack -> mismatched readback
         gateway.enqueueAdminResponse(AdminMessage.newBuilder()
-                .setGetDeviceMetadataResponse(MeshProtos.DeviceMetadata.newBuilder()
-                        .setFirmwareVersion("v")
-                        .build())
+                .setGetDeviceMetadataResponse(
+                        DeviceMetadata.newBuilder().setFirmwareVersion("v").build())
                 .build());
         gateway.enqueueAdminResponse(AdminMessage.newBuilder().build());
         gateway.enqueueAdminResponse(AdminMessage.newBuilder()
@@ -96,9 +79,8 @@ class AdminServiceTest {
 
         // Retry attempt: metadata -> set ack -> mismatched readback
         gateway.enqueueAdminResponse(AdminMessage.newBuilder()
-                .setGetDeviceMetadataResponse(MeshProtos.DeviceMetadata.newBuilder()
-                        .setFirmwareVersion("v")
-                        .build())
+                .setGetDeviceMetadataResponse(
+                        DeviceMetadata.newBuilder().setFirmwareVersion("v").build())
                 .build());
         gateway.enqueueAdminResponse(AdminMessage.newBuilder().build());
         gateway.enqueueAdminResponse(AdminMessage.newBuilder()
@@ -137,9 +119,8 @@ class AdminServiceTest {
                 .build();
 
         gateway.enqueueAdminResponse(AdminMessage.newBuilder()
-                .setGetDeviceMetadataResponse(MeshProtos.DeviceMetadata.newBuilder()
-                        .setFirmwareVersion("v")
-                        .build())
+                .setGetDeviceMetadataResponse(
+                        DeviceMetadata.newBuilder().setFirmwareVersion("v").build())
                 .build());
         gateway.enqueueAdminResponse(AdminMessage.newBuilder().build());
         gateway.enqueueAdminResponse(
@@ -148,6 +129,121 @@ class AdminServiceTest {
         boolean applied = service.setChannel(1, requested).join();
         assertTrue(applied);
         assertEquals(3, gateway.requests.size());
+    }
+
+    /**
+     * Verifies refreshAllModuleConfigs includes newly added module config enum types.
+     */
+    @Test
+    void refreshAllModuleConfigsIncludesTrafficManagementAndTak() {
+        StubGateway gateway = new StubGateway(1234);
+        AdminService service = new AdminService(gateway);
+
+        gateway.enqueueAdminResponse(AdminMessage.newBuilder()
+                .setGetModuleConfigResponse(ModuleConfig.newBuilder()
+                        .setMqtt(ModuleConfig.MQTTConfig.newBuilder()
+                                .setEnabled(true)
+                                .build())
+                        .build())
+                .build());
+        gateway.enqueueAdminResponse(AdminMessage.newBuilder()
+                .setGetModuleConfigResponse(ModuleConfig.newBuilder()
+                        .setSerial(ModuleConfig.SerialConfig.newBuilder()
+                                .setEnabled(true)
+                                .build())
+                        .build())
+                .build());
+        gateway.enqueueAdminResponse(AdminMessage.newBuilder()
+                .setGetModuleConfigResponse(ModuleConfig.newBuilder()
+                        .setExternalNotification(ModuleConfig.ExternalNotificationConfig.newBuilder()
+                                .build())
+                        .build())
+                .build());
+        gateway.enqueueAdminResponse(AdminMessage.newBuilder()
+                .setGetModuleConfigResponse(ModuleConfig.newBuilder()
+                        .setStoreForward(
+                                ModuleConfig.StoreForwardConfig.newBuilder().build())
+                        .build())
+                .build());
+        gateway.enqueueAdminResponse(AdminMessage.newBuilder()
+                .setGetModuleConfigResponse(ModuleConfig.newBuilder()
+                        .setRangeTest(ModuleConfig.RangeTestConfig.newBuilder().build())
+                        .build())
+                .build());
+        gateway.enqueueAdminResponse(AdminMessage.newBuilder()
+                .setGetModuleConfigResponse(ModuleConfig.newBuilder()
+                        .setTelemetry(ModuleConfig.TelemetryConfig.newBuilder().build())
+                        .build())
+                .build());
+        gateway.enqueueAdminResponse(AdminMessage.newBuilder()
+                .setGetModuleConfigResponse(ModuleConfig.newBuilder()
+                        .setCannedMessage(
+                                ModuleConfig.CannedMessageConfig.newBuilder().build())
+                        .build())
+                .build());
+        gateway.enqueueAdminResponse(AdminMessage.newBuilder()
+                .setGetModuleConfigResponse(ModuleConfig.newBuilder()
+                        .setAudio(ModuleConfig.AudioConfig.newBuilder().build())
+                        .build())
+                .build());
+        gateway.enqueueAdminResponse(AdminMessage.newBuilder()
+                .setGetModuleConfigResponse(ModuleConfig.newBuilder()
+                        .setRemoteHardware(
+                                ModuleConfig.RemoteHardwareConfig.newBuilder().build())
+                        .build())
+                .build());
+        gateway.enqueueAdminResponse(AdminMessage.newBuilder()
+                .setGetModuleConfigResponse(ModuleConfig.newBuilder()
+                        .setNeighborInfo(
+                                ModuleConfig.NeighborInfoConfig.newBuilder().build())
+                        .build())
+                .build());
+        gateway.enqueueAdminResponse(AdminMessage.newBuilder()
+                .setGetModuleConfigResponse(ModuleConfig.newBuilder()
+                        .setAmbientLighting(
+                                ModuleConfig.AmbientLightingConfig.newBuilder().build())
+                        .build())
+                .build());
+        gateway.enqueueAdminResponse(AdminMessage.newBuilder()
+                .setGetModuleConfigResponse(ModuleConfig.newBuilder()
+                        .setDetectionSensor(
+                                ModuleConfig.DetectionSensorConfig.newBuilder().build())
+                        .build())
+                .build());
+        gateway.enqueueAdminResponse(AdminMessage.newBuilder()
+                .setGetModuleConfigResponse(ModuleConfig.newBuilder()
+                        .setPaxcounter(
+                                ModuleConfig.PaxcounterConfig.newBuilder().build())
+                        .build())
+                .build());
+        gateway.enqueueAdminResponse(AdminMessage.newBuilder()
+                .setGetModuleConfigResponse(ModuleConfig.newBuilder()
+                        .setStatusmessage(
+                                ModuleConfig.StatusMessageConfig.newBuilder().build())
+                        .build())
+                .build());
+        gateway.enqueueAdminResponse(AdminMessage.newBuilder()
+                .setGetModuleConfigResponse(ModuleConfig.newBuilder()
+                        .setTrafficManagement(ModuleConfig.TrafficManagementConfig.newBuilder()
+                                .build())
+                        .build())
+                .build());
+        gateway.enqueueAdminResponse(AdminMessage.newBuilder()
+                .setGetModuleConfigResponse(ModuleConfig.newBuilder()
+                        .setTak(ModuleConfig.TAKConfig.newBuilder().build())
+                        .build())
+                .build());
+
+        java.util.Map<AdminMessage.ModuleConfigType, ModuleConfig> refreshed =
+                service.refreshAllModuleConfigs().join();
+
+        assertTrue(refreshed.containsKey(AdminMessage.ModuleConfigType.TRAFFICMANAGEMENT_CONFIG));
+        assertTrue(refreshed.containsKey(AdminMessage.ModuleConfigType.TAK_CONFIG));
+        assertTrue(gateway.requests.stream()
+                .anyMatch(request ->
+                        request.getGetModuleConfigRequest() == AdminMessage.ModuleConfigType.TRAFFICMANAGEMENT_CONFIG));
+        assertTrue(gateway.requests.stream()
+                .anyMatch(request -> request.getGetModuleConfigRequest() == AdminMessage.ModuleConfigType.TAK_CONFIG));
     }
 
     /**
@@ -165,9 +261,8 @@ class AdminServiceTest {
                 .build();
 
         gateway.enqueueAdminResponse(AdminMessage.newBuilder()
-                .setGetDeviceMetadataResponse(MeshProtos.DeviceMetadata.newBuilder()
-                        .setFirmwareVersion("v")
-                        .build())
+                .setGetDeviceMetadataResponse(
+                        DeviceMetadata.newBuilder().setFirmwareVersion("v").build())
                 .build());
         gateway.enqueueFailure(
                 new IllegalStateException("Routing rejected request 1684545740 with status NO_RESPONSE"));
@@ -330,7 +425,7 @@ class AdminServiceTest {
         gateway.enqueueAdminResponse(AdminMessage.newBuilder().build());
         // local owner readback for verification
         gateway.enqueueAdminResponse(AdminMessage.newBuilder()
-                .setGetOwnerResponse(MeshProtos.User.newBuilder()
+                .setGetOwnerResponse(User.newBuilder()
                         .setLongName("Red Cypress")
                         .setShortName("rcyp")
                         .build())
@@ -355,7 +450,7 @@ class AdminServiceTest {
         gateway.enqueueAdminResponse(AdminMessage.newBuilder().build());
         // local owner readback mismatch
         gateway.enqueueAdminResponse(AdminMessage.newBuilder()
-                .setGetOwnerResponse(MeshProtos.User.newBuilder()
+                .setGetOwnerResponse(User.newBuilder()
                         .setLongName("Wrong Name")
                         .setShortName("wrng")
                         .build())
@@ -379,7 +474,7 @@ class AdminServiceTest {
         gateway.enqueueFailure(
                 new IllegalStateException("Routing rejected request 2103086087 with status NO_RESPONSE"));
         gateway.enqueueAdminResponse(AdminMessage.newBuilder()
-                .setGetOwnerResponse(MeshProtos.User.newBuilder()
+                .setGetOwnerResponse(User.newBuilder()
                         .setLongName("Red Cypress")
                         .setShortName("rcyp")
                         .build())
@@ -430,9 +525,8 @@ class AdminServiceTest {
                 .build();
 
         gateway.enqueueAdminResponse(AdminMessage.newBuilder()
-                .setGetDeviceMetadataResponse(MeshProtos.DeviceMetadata.newBuilder()
-                        .setFirmwareVersion("v")
-                        .build())
+                .setGetDeviceMetadataResponse(
+                        DeviceMetadata.newBuilder().setFirmwareVersion("v").build())
                 .build());
         gateway.enqueueAdminResponse(AdminMessage.newBuilder().build());
 
@@ -490,9 +584,8 @@ class AdminServiceTest {
                 .build();
 
         gateway.enqueueAdminResponse(AdminMessage.newBuilder()
-                .setGetDeviceMetadataResponse(MeshProtos.DeviceMetadata.newBuilder()
-                        .setFirmwareVersion("v")
-                        .build())
+                .setGetDeviceMetadataResponse(
+                        DeviceMetadata.newBuilder().setFirmwareVersion("v").build())
                 .build());
         gateway.enqueueAdminResponse(AdminMessage.newBuilder().build());
 
@@ -516,10 +609,10 @@ class AdminServiceTest {
         StubGateway gateway = new StubGateway(1234);
         AdminService service = new AdminService(gateway);
 
-        ConfigProtos.Config requested = ConfigProtos.Config.newBuilder()
-                .setDisplay(ConfigProtos.Config.DisplayConfig.newBuilder()
+        Config requested = Config.newBuilder()
+                .setDisplay(Config.DisplayConfig.newBuilder()
                         .setScreenOnSecs(30)
-                        .setDisplaymode(ConfigProtos.Config.DisplayConfig.DisplayMode.COLOR)
+                        .setDisplaymode(Config.DisplayConfig.DisplayMode.COLOR)
                         .build())
                 .build();
 
@@ -543,15 +636,15 @@ class AdminServiceTest {
         StubGateway gateway = new StubGateway(1234);
         AdminService service = new AdminService(gateway);
 
-        ConfigProtos.Config requested = ConfigProtos.Config.newBuilder()
-                .setLora(ConfigProtos.Config.LoRaConfig.newBuilder()
+        Config requested = Config.newBuilder()
+                .setLora(Config.LoRaConfig.newBuilder()
                         .setHopLimit(3)
                         .setTxPower(20)
                         .build())
                 .build();
 
-        ConfigProtos.Config observed = ConfigProtos.Config.newBuilder()
-                .setLora(ConfigProtos.Config.LoRaConfig.newBuilder()
+        Config observed = Config.newBuilder()
+                .setLora(Config.LoRaConfig.newBuilder()
                         .setHopLimit(5)
                         .setTxPower(20)
                         .build())
@@ -577,10 +670,10 @@ class AdminServiceTest {
         StubGateway gateway = new StubGateway(1234);
         AdminService service = new AdminService(gateway);
 
-        ConfigProtos.Config requested = ConfigProtos.Config.newBuilder()
-                .setDisplay(ConfigProtos.Config.DisplayConfig.newBuilder()
+        Config requested = Config.newBuilder()
+                .setDisplay(Config.DisplayConfig.newBuilder()
                         .setScreenOnSecs(30)
-                        .setDisplaymode(ConfigProtos.Config.DisplayConfig.DisplayMode.COLOR)
+                        .setDisplaymode(Config.DisplayConfig.DisplayMode.COLOR)
                         .build())
                 .build();
 
@@ -611,17 +704,17 @@ class AdminServiceTest {
                 .maxRetryDelay(Duration.ZERO)
                 .build());
 
-        ConfigProtos.Config requested = ConfigProtos.Config.newBuilder()
-                .setDisplay(ConfigProtos.Config.DisplayConfig.newBuilder()
+        Config requested = Config.newBuilder()
+                .setDisplay(Config.DisplayConfig.newBuilder()
                         .setScreenOnSecs(30)
-                        .setDisplaymode(ConfigProtos.Config.DisplayConfig.DisplayMode.COLOR)
+                        .setDisplaymode(Config.DisplayConfig.DisplayMode.COLOR)
                         .build())
                 .build();
 
-        ConfigProtos.Config staleObserved = ConfigProtos.Config.newBuilder()
-                .setDisplay(ConfigProtos.Config.DisplayConfig.newBuilder()
+        Config staleObserved = Config.newBuilder()
+                .setDisplay(Config.DisplayConfig.newBuilder()
                         .setScreenOnSecs(10)
-                        .setDisplaymode(ConfigProtos.Config.DisplayConfig.DisplayMode.DEFAULT)
+                        .setDisplaymode(Config.DisplayConfig.DisplayMode.DEFAULT)
                         .build())
                 .build();
 
@@ -649,8 +742,8 @@ class AdminServiceTest {
         StubGateway gateway = new StubGateway(1234);
         AdminService service = new AdminService(gateway);
 
-        ModuleConfigProtos.ModuleConfig requested = ModuleConfigProtos.ModuleConfig.newBuilder()
-                .setMqtt(ModuleConfigProtos.ModuleConfig.MQTTConfig.newBuilder()
+        ModuleConfig requested = ModuleConfig.newBuilder()
+                .setMqtt(ModuleConfig.MQTTConfig.newBuilder()
                         .setEnabled(true)
                         .setAddress("mqtt.example.com")
                         .setUsername("mesh-user")
@@ -678,14 +771,14 @@ class AdminServiceTest {
         StubGateway gateway = new StubGateway(1234);
         AdminService service = new AdminService(gateway);
 
-        ModuleConfigProtos.ModuleConfig requested = ModuleConfigProtos.ModuleConfig.newBuilder()
-                .setTelemetry(ModuleConfigProtos.ModuleConfig.TelemetryConfig.newBuilder()
+        ModuleConfig requested = ModuleConfig.newBuilder()
+                .setTelemetry(ModuleConfig.TelemetryConfig.newBuilder()
                         .setEnvironmentMeasurementEnabled(true)
                         .build())
                 .build();
 
-        ModuleConfigProtos.ModuleConfig observed = ModuleConfigProtos.ModuleConfig.newBuilder()
-                .setTelemetry(ModuleConfigProtos.ModuleConfig.TelemetryConfig.newBuilder()
+        ModuleConfig observed = ModuleConfig.newBuilder()
+                .setTelemetry(ModuleConfig.TelemetryConfig.newBuilder()
                         .setEnvironmentMeasurementEnabled(false)
                         .build())
                 .build();
@@ -711,8 +804,8 @@ class AdminServiceTest {
         StubGateway gateway = new StubGateway(1234);
         AdminService service = new AdminService(gateway);
 
-        ModuleConfigProtos.ModuleConfig requested = ModuleConfigProtos.ModuleConfig.newBuilder()
-                .setMqtt(ModuleConfigProtos.ModuleConfig.MQTTConfig.newBuilder()
+        ModuleConfig requested = ModuleConfig.newBuilder()
+                .setMqtt(ModuleConfig.MQTTConfig.newBuilder()
                         .setEnabled(true)
                         .setAddress("mqtt.example.com")
                         .build())
@@ -755,16 +848,15 @@ class AdminServiceTest {
         StubGateway gateway = new StubGateway(1234);
         AdminService service = new AdminService(gateway);
 
-        ModuleConfigProtos.ModuleConfig.MQTTConfig mqtt = ModuleConfigProtos.ModuleConfig.MQTTConfig.newBuilder()
+        ModuleConfig.MQTTConfig mqtt = ModuleConfig.MQTTConfig.newBuilder()
                 .setEnabled(true)
                 .setAddress("broker.mesh.local")
                 .build();
 
         gateway.enqueueAdminResponse(AdminMessage.newBuilder().build());
         gateway.enqueueAdminResponse(AdminMessage.newBuilder()
-                .setGetModuleConfigResponse(ModuleConfigProtos.ModuleConfig.newBuilder()
-                        .setMqtt(mqtt)
-                        .build())
+                .setGetModuleConfigResponse(
+                        ModuleConfig.newBuilder().setMqtt(mqtt).build())
                 .build());
 
         boolean applied = service.setMqttConfig(mqtt, true).join();
@@ -796,9 +888,8 @@ class AdminServiceTest {
                 AdminMessage.newBuilder().setGetChannelResponse(cached).build());
 
         gateway.enqueueAdminResponse(AdminMessage.newBuilder()
-                .setGetDeviceMetadataResponse(MeshProtos.DeviceMetadata.newBuilder()
-                        .setFirmwareVersion("v")
-                        .build())
+                .setGetDeviceMetadataResponse(
+                        DeviceMetadata.newBuilder().setFirmwareVersion("v").build())
                 .build());
         gateway.enqueueAdminResponse(AdminMessage.newBuilder().build());
         gateway.enqueueAdminResponse(AdminMessage.newBuilder()
@@ -844,9 +935,8 @@ class AdminServiceTest {
                 AdminMessage.newBuilder().setGetChannelResponse(cached).build());
 
         gateway.enqueueAdminResponse(AdminMessage.newBuilder()
-                .setGetDeviceMetadataResponse(MeshProtos.DeviceMetadata.newBuilder()
-                        .setFirmwareVersion("v")
-                        .build())
+                .setGetDeviceMetadataResponse(
+                        DeviceMetadata.newBuilder().setFirmwareVersion("v").build())
                 .build());
         gateway.enqueueAdminResponse(AdminMessage.newBuilder().build());
         gateway.enqueueAdminResponse(AdminMessage.newBuilder()
@@ -877,14 +967,12 @@ class AdminServiceTest {
         StubGateway gateway = new StubGateway(1234);
         AdminService service = new AdminService(gateway);
 
-        ConfigProtos.Config.SecurityConfig security = ConfigProtos.Config.SecurityConfig.newBuilder()
-                .setAdminChannelEnabled(true)
-                .build();
+        Config.SecurityConfig security =
+                Config.SecurityConfig.newBuilder().setAdminChannelEnabled(true).build();
 
         gateway.enqueueAdminResponse(AdminMessage.newBuilder().build());
         gateway.enqueueAdminResponse(AdminMessage.newBuilder()
-                .setGetConfigResponse(
-                        ConfigProtos.Config.newBuilder().setSecurity(security).build())
+                .setGetConfigResponse(Config.newBuilder().setSecurity(security).build())
                 .build());
 
         boolean applied = service.setSecurityConfig(security, true).join();
@@ -903,17 +991,14 @@ class AdminServiceTest {
         StubGateway gateway = new StubGateway(1234);
         AdminService service = new AdminService(gateway);
 
-        DeviceUIProtos.DeviceUIConfig deviceUiConfig = DeviceUIProtos.DeviceUIConfig.newBuilder()
-                .setTheme(DeviceUIProtos.Theme.DARK)
-                .build();
+        DeviceUIConfig deviceUiConfig =
+                DeviceUIConfig.newBuilder().setTheme(Theme.DARK).build();
         gateway.enqueueAdminResponse(AdminMessage.newBuilder()
-                .setGetConfigResponse(ConfigProtos.Config.newBuilder()
-                        .setDeviceUi(deviceUiConfig)
-                        .build())
+                .setGetConfigResponse(
+                        Config.newBuilder().setDeviceUi(deviceUiConfig).build())
                 .build());
 
-        DeviceUIProtos.DeviceUIConfig refreshed =
-                service.refreshDeviceUiConfig().join();
+        DeviceUIConfig refreshed = service.refreshDeviceUiConfig().join();
         assertEquals(deviceUiConfig, refreshed);
         assertEquals(1, gateway.requests.size());
         assertEquals(
@@ -928,17 +1013,15 @@ class AdminServiceTest {
         StubGateway gateway = new StubGateway(1234);
         AdminService service = new AdminService(gateway);
 
-        ModuleConfigProtos.ModuleConfig.SerialConfig serialConfig =
-                ModuleConfigProtos.ModuleConfig.SerialConfig.newBuilder()
-                        .setBaud(ModuleConfigProtos.ModuleConfig.SerialConfig.Serial_Baud.BAUD_115200)
-                        .build();
+        ModuleConfig.SerialConfig serialConfig = ModuleConfig.SerialConfig.newBuilder()
+                .setBaud(ModuleConfig.SerialConfig.Serial_Baud.BAUD_115200)
+                .build();
         gateway.enqueueAdminResponse(AdminMessage.newBuilder()
-                .setGetModuleConfigResponse(ModuleConfigProtos.ModuleConfig.newBuilder()
-                        .setSerial(serialConfig)
-                        .build())
+                .setGetModuleConfigResponse(
+                        ModuleConfig.newBuilder().setSerial(serialConfig).build())
                 .build());
 
-        ModuleConfigProtos.ModuleConfig.SerialConfig refreshed =
+        ModuleConfig.SerialConfig refreshed =
                 service.refreshSerialModuleConfig().join();
         assertEquals(serialConfig, refreshed);
         assertEquals(1, gateway.requests.size());
@@ -955,15 +1038,13 @@ class AdminServiceTest {
         StubGateway gateway = new StubGateway(1234);
         AdminService service = new AdminService(gateway);
 
-        DeviceUIProtos.DeviceUIConfig deviceUiConfig = DeviceUIProtos.DeviceUIConfig.newBuilder()
-                .setTheme(DeviceUIProtos.Theme.DARK)
-                .build();
+        DeviceUIConfig deviceUiConfig =
+                DeviceUIConfig.newBuilder().setTheme(Theme.DARK).build();
 
         gateway.enqueueAdminResponse(AdminMessage.newBuilder().build());
         gateway.enqueueAdminResponse(AdminMessage.newBuilder()
-                .setGetConfigResponse(ConfigProtos.Config.newBuilder()
-                        .setDeviceUi(deviceUiConfig)
-                        .build())
+                .setGetConfigResponse(
+                        Config.newBuilder().setDeviceUi(deviceUiConfig).build())
                 .build());
 
         boolean applied = service.setDeviceUiConfig(deviceUiConfig, true).join();
@@ -981,17 +1062,15 @@ class AdminServiceTest {
         StubGateway gateway = new StubGateway(1234);
         AdminService service = new AdminService(gateway);
 
-        ModuleConfigProtos.ModuleConfig.SerialConfig serialConfig =
-                ModuleConfigProtos.ModuleConfig.SerialConfig.newBuilder()
-                        .setBaud(ModuleConfigProtos.ModuleConfig.SerialConfig.Serial_Baud.BAUD_9600)
-                        .setEnabled(true)
-                        .build();
+        ModuleConfig.SerialConfig serialConfig = ModuleConfig.SerialConfig.newBuilder()
+                .setBaud(ModuleConfig.SerialConfig.Serial_Baud.BAUD_9600)
+                .setEnabled(true)
+                .build();
 
         gateway.enqueueAdminResponse(AdminMessage.newBuilder().build());
         gateway.enqueueAdminResponse(AdminMessage.newBuilder()
-                .setGetModuleConfigResponse(ModuleConfigProtos.ModuleConfig.newBuilder()
-                        .setSerial(serialConfig)
-                        .build())
+                .setGetModuleConfigResponse(
+                        ModuleConfig.newBuilder().setSerial(serialConfig).build())
                 .build());
 
         boolean applied = service.setSerialModuleConfig(serialConfig, true).join();
@@ -1010,15 +1089,15 @@ class AdminServiceTest {
         StubGateway gateway = new StubGateway(1234);
         AdminService service = new AdminService(gateway);
 
-        ConfigProtos.Config requested = ConfigProtos.Config.newBuilder()
-                .setLora(ConfigProtos.Config.LoRaConfig.newBuilder()
+        Config requested = Config.newBuilder()
+                .setLora(Config.LoRaConfig.newBuilder()
                         .setHopLimit(3)
                         .setTxPower(20)
                         .build())
                 .build();
 
-        ConfigProtos.Config observed = ConfigProtos.Config.newBuilder()
-                .setLora(ConfigProtos.Config.LoRaConfig.newBuilder()
+        Config observed = Config.newBuilder()
+                .setLora(Config.LoRaConfig.newBuilder()
                         .setHopLimit(5)
                         .setTxPower(20)
                         .build())
@@ -1043,8 +1122,8 @@ class AdminServiceTest {
         gateway.enqueueFailure(
                 new IllegalStateException("Routing rejected request 42 with status ADMIN_PUBLIC_KEY_UNAUTHORIZED"));
 
-        ConfigProtos.Config requested = ConfigProtos.Config.newBuilder()
-                .setSecurity(ConfigProtos.Config.SecurityConfig.newBuilder()
+        Config requested = Config.newBuilder()
+                .setSecurity(Config.SecurityConfig.newBuilder()
                         .setAdminChannelEnabled(true)
                         .build())
                 .build();
@@ -1063,10 +1142,9 @@ class AdminServiceTest {
 
         gateway.enqueueFailure(new TimeoutException("Response timeout for: 100"));
 
-        ConfigProtos.Config requested = ConfigProtos.Config.newBuilder()
-                .setDisplay(ConfigProtos.Config.DisplayConfig.newBuilder()
-                        .setScreenOnSecs(30)
-                        .build())
+        Config requested = Config.newBuilder()
+                .setDisplay(
+                        Config.DisplayConfig.newBuilder().setScreenOnSecs(30).build())
                 .build();
 
         AdminWriteResult result = service.setConfigResult(requested, false).join();
@@ -1087,11 +1165,11 @@ class AdminServiceTest {
         }
 
         void enqueueAdminResponse(AdminMessage response) {
-            MeshProtos.MeshPacket packet = MeshProtos.MeshPacket.newBuilder()
+            MeshPacket packet = MeshPacket.newBuilder()
                     .setFrom(selfNodeId)
                     .setTo(selfNodeId)
-                    .setDecoded(MeshProtos.Data.newBuilder()
-                            .setPortnum(Portnums.PortNum.ADMIN_APP)
+                    .setDecoded(Data.newBuilder()
+                            .setPortnum(PortNum.ADMIN_APP)
                             .setPayload(response.toByteString())
                             .build())
                     .build();
@@ -1112,7 +1190,7 @@ class AdminServiceTest {
         }
 
         @Override
-        public CompletableFuture<MeshProtos.MeshPacket> executeAdminRequest(
+        public CompletableFuture<MeshPacket> executeAdminRequest(
                 int destinationId, AdminMessage adminMsg, boolean expectAdminAppResponse) {
             requests.add(adminMsg);
             Object next = outcomes.pollFirst();
@@ -1122,7 +1200,7 @@ class AdminServiceTest {
             if (next instanceof Throwable failure) {
                 return CompletableFuture.failedFuture(failure);
             }
-            return CompletableFuture.completedFuture((MeshProtos.MeshPacket) next);
+            return CompletableFuture.completedFuture((MeshPacket) next);
         }
 
         @Override

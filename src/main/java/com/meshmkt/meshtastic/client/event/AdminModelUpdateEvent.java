@@ -1,10 +1,9 @@
 package com.meshmkt.meshtastic.client.event;
 
+import build.buf.gen.meshtastic.AdminMessage;
 import java.time.Instant;
 import lombok.Builder;
 import lombok.Getter;
-import org.meshtastic.proto.AdminProtos.AdminMessage.ConfigType;
-import org.meshtastic.proto.AdminProtos.AdminMessage.ModuleConfigType;
 
 /**
  * Event emitted when local admin-facing radio model state changes.
@@ -30,12 +29,12 @@ public final class AdminModelUpdateEvent {
     /**
      * Optional config type when {@link #section} is {@link Section#CONFIG}.
      */
-    private final ConfigType configType;
+    private final AdminMessage.ConfigType configType;
 
     /**
      * Optional module config type when {@link #section} is {@link Section#MODULE_CONFIG}.
      */
-    private final ModuleConfigType moduleConfigType;
+    private final AdminMessage.ModuleConfigType moduleConfigType;
 
     /**
      * Optional node id for updates tied to a specific node identity.

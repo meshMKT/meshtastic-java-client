@@ -1,13 +1,15 @@
 package com.meshmkt.meshtastic.client.handlers;
 
+import build.buf.gen.meshtastic.FromRadio;
+import build.buf.gen.meshtastic.MeshPacket;
+import build.buf.gen.meshtastic.PortNum;
+import build.buf.gen.meshtastic.Position;
 import com.meshmkt.meshtastic.client.MeshUtils;
 import com.meshmkt.meshtastic.client.event.MeshEventDispatcher;
 import com.meshmkt.meshtastic.client.event.PositionUpdateEvent;
 import com.meshmkt.meshtastic.client.storage.NodeDatabase;
 import com.meshmkt.meshtastic.client.storage.PacketContext;
 import lombok.extern.slf4j.Slf4j;
-import org.meshtastic.proto.MeshProtos;
-import org.meshtastic.proto.Portnums.PortNum;
 
 /**
  * Processes incoming POSITION_APP packets. Updates the database and notifies UI
@@ -32,7 +34,7 @@ public class PositionHandler extends BaseMeshHandler {
      * @return {@code true} when this handler should process the message.
      */
     @Override
-    public boolean canHandle(MeshProtos.FromRadio message) {
+    public boolean canHandle(FromRadio message) {
         return message.hasPacket()
                 && message.getPacket().hasDecoded()
                 && message.getPacket().getDecoded().getPortnum() == PortNum.POSITION_APP;
@@ -46,10 +48,9 @@ public class PositionHandler extends BaseMeshHandler {
      * @return {@code true} when packet processing is complete for this handler.
      */
     @Override
-    protected boolean handlePacket(MeshProtos.MeshPacket packet, PacketContext ctx) {
+    protected boolean handlePacket(MeshPacket packet, PacketContext ctx) {
         try {
-            MeshProtos.Position pos =
-                    MeshProtos.Position.parseFrom(packet.getDecoded().getPayload());
+            Position pos = Position.parseFrom(packet.getDecoded().getPayload());
 
             // 1. Update DB: The DB now handles the math and global distance refresh internally
             nodeDb.updatePosition(pos, ctx);

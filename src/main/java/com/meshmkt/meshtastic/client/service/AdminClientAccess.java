@@ -1,10 +1,10 @@
 package com.meshmkt.meshtastic.client.service;
 
+import build.buf.gen.meshtastic.AdminMessage;
+import build.buf.gen.meshtastic.MeshPacket;
 import com.meshmkt.meshtastic.client.storage.MeshNode;
 import java.time.Duration;
 import java.util.concurrent.CompletableFuture;
-import org.meshtastic.proto.AdminProtos.AdminMessage;
-import org.meshtastic.proto.MeshProtos.MeshPacket;
 
 /**
  * Interface used by {@link AdminService} for the few client operations it needs.

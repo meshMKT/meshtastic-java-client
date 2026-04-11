@@ -1,25 +1,11 @@
 package com.meshmkt.meshtastic.client;
 
+import build.buf.gen.meshtastic.*;
 import com.google.protobuf.ByteString;
 import com.google.protobuf.InvalidProtocolBufferException;
 import com.google.protobuf.Message;
-import com.meshmkt.meshtastic.client.event.AdminModelUpdateEvent;
-import com.meshmkt.meshtastic.client.event.ChatMessageEvent;
-import com.meshmkt.meshtastic.client.event.MeshEventDispatcher;
-import com.meshmkt.meshtastic.client.event.MeshtasticEventListener;
-import com.meshmkt.meshtastic.client.event.MessageStatusEvent;
-import com.meshmkt.meshtastic.client.event.NodeDiscoveryEvent;
-import com.meshmkt.meshtastic.client.event.PositionUpdateEvent;
-import com.meshmkt.meshtastic.client.event.RequestLifecycleEvent;
-import com.meshmkt.meshtastic.client.event.StartupState;
-import com.meshmkt.meshtastic.client.event.TelemetryUpdateEvent;
-import com.meshmkt.meshtastic.client.handlers.AdminHandler;
-import com.meshmkt.meshtastic.client.handlers.LocalStateHandler;
-import com.meshmkt.meshtastic.client.handlers.NodeInfoHandler;
-import com.meshmkt.meshtastic.client.handlers.PositionHandler;
-import com.meshmkt.meshtastic.client.handlers.RoutingHandler;
-import com.meshmkt.meshtastic.client.handlers.TelemetryHandler;
-import com.meshmkt.meshtastic.client.handlers.TextMessageHandler;
+import com.meshmkt.meshtastic.client.event.*;
+import com.meshmkt.meshtastic.client.handlers.*;
 import com.meshmkt.meshtastic.client.service.AdminClientAccess;
 import com.meshmkt.meshtastic.client.service.AdminService;
 import com.meshmkt.meshtastic.client.storage.MeshNode;
@@ -38,9 +24,6 @@ import java.util.function.Function;
 import java.util.function.Supplier;
 import lombok.Value;
 import lombok.extern.slf4j.Slf4j;
-import org.meshtastic.proto.AdminProtos.AdminMessage;
-import org.meshtastic.proto.MeshProtos.*;
-import org.meshtastic.proto.Portnums.PortNum;
 
 /**
  * Orchestrates transport lifecycle, request correlation, startup synchronization, and event fan-out.

@@ -1,11 +1,13 @@
 package com.meshmkt.meshtastic.client.event;
 
+import build.buf.gen.meshtastic.MeshPacket;
+import build.buf.gen.meshtastic.Telemetry;
 import com.meshmkt.meshtastic.client.storage.PacketContext;
 import lombok.AccessLevel;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
-import org.meshtastic.proto.MeshProtos;
-import org.meshtastic.proto.TelemetryProtos;
+// import org.meshtastic.proto.MeshProtos;
+// import org.meshtastic.proto.TelemetryProtos;
 
 /**
  * Represents telemetry data received from a node. * To prevent maintenance
@@ -86,7 +88,7 @@ public class TelemetryUpdateEvent extends MeshEvent {
      * The raw protobuf container for accessing niche sensors (Soil, Radiation,
      * etc).
      */
-    private final TelemetryProtos.Telemetry rawTelemetry;
+    private final Telemetry rawTelemetry;
 
     /**
      * Factory to create a Telemetry event.
@@ -97,8 +99,7 @@ public class TelemetryUpdateEvent extends MeshEvent {
      * @param tele The telemetry payload.
      * @return A populated TelemetryUpdateEvent.
      */
-    public static TelemetryUpdateEvent of(
-            MeshProtos.MeshPacket p, PacketContext ctx, int selfId, TelemetryProtos.Telemetry tele) {
+    public static TelemetryUpdateEvent of(MeshPacket p, PacketContext ctx, int selfId, Telemetry tele) {
 
         TelemetryVariant variant = TelemetryVariant.OTHER;
         float batt = 0, volt = 0;

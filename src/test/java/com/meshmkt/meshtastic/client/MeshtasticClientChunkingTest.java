@@ -1,10 +1,8 @@
 package com.meshmkt.meshtastic.client;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.*;
 
+import build.buf.gen.meshtastic.*;
 import com.google.protobuf.ByteString;
 import com.meshmkt.meshtastic.client.storage.InMemoryNodeDatabase;
 import com.meshmkt.meshtastic.client.support.FakeTransport;
@@ -13,16 +11,10 @@ import java.time.Duration;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
-import java.util.concurrent.CancellationException;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.CompletionException;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
+import java.util.concurrent.*;
 import java.util.function.Predicate;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
-import org.meshtastic.proto.MeshProtos;
-import org.meshtastic.proto.Portnums;
 
 /**
  * Integration-lite tests for chunked text send behavior in {@link MeshtasticClient}.
@@ -59,10 +51,10 @@ class MeshtasticClientChunkingTest {
         Set<Integer> seenRequestIds = new HashSet<>();
 
         for (String expectedChunk : expectedChunks) {
-            MeshProtos.ToRadio outbound = awaitToRadio(
+            ToRadio outbound = awaitToRadio(
                     transport,
                     tr -> tr.hasPacket()
-                            && tr.getPacket().getDecoded().getPortnum() == Portnums.PortNum.TEXT_MESSAGE_APP
+                            && tr.getPacket().getDecoded().getPortnum() == PortNum.TEXT_MESSAGE_APP
                             && seenRequestIds.add(tr.getPacket().getId()),
                     Duration.ofSeconds(2));
 
@@ -70,7 +62,7 @@ class MeshtasticClientChunkingTest {
             assertEquals(expectedChunk, payload);
             assertEquals(2, outbound.getPacket().getChannel());
 
-            transport.emitParsedPacket(MeshProtos.FromRadio.newBuilder()
+            transport.emitParsedPacket(FromRadio.newBuilder()
                     .setPacket(routingAckFor(outbound.getPacket().getId(), client.getSelfNodeId()))
                     .build()
                     .toByteArray());
@@ -92,7 +84,7 @@ class MeshtasticClientChunkingTest {
         CompletableFuture<Boolean> sendFuture = client.sendChannelText(1, "z".repeat(500));
         assertNotNull(awaitToRadio(
                 transport,
-                tr -> tr.hasPacket() && tr.getPacket().getDecoded().getPortnum() == Portnums.PortNum.TEXT_MESSAGE_APP,
+                tr -> tr.hasPacket() && tr.getPacket().getDecoded().getPortnum() == PortNum.TEXT_MESSAGE_APP,
                 Duration.ofSeconds(2)));
 
         client.disconnect();
@@ -102,12 +94,12 @@ class MeshtasticClientChunkingTest {
         assertTrue(ex.getCause() instanceof CancellationException);
     }
 
-    private static MeshProtos.MeshPacket routingAckFor(int requestId, int selfNodeId) {
-        return MeshProtos.MeshPacket.newBuilder()
+    private static MeshPacket routingAckFor(int requestId, int selfNodeId) {
+        return MeshPacket.newBuilder()
                 .setFrom(selfNodeId)
                 .setTo(selfNodeId)
-                .setDecoded(MeshProtos.Data.newBuilder()
-                        .setPortnum(Portnums.PortNum.ROUTING_APP)
+                .setDecoded(Data.newBuilder()
+                        .setPortnum(PortNum.ROUTING_APP)
                         .setRequestId(requestId)
                         .setPayload(ByteString.copyFrom(new byte[] {0x18, 0x00}))
                         .build())
@@ -116,30 +108,24 @@ class MeshtasticClientChunkingTest {
     }
 
     private static void completeStartupSync(FakeTransport transport, int selfNodeId) {
-        transport.emitParsedPacket(MeshProtos.FromRadio.newBuilder()
-                .setMyInfo(MeshProtos.MyNodeInfo.newBuilder()
-                        .setMyNodeNum(selfNodeId)
-                        .build())
+        transport.emitParsedPacket(FromRadio.newBuilder()
+                .setMyInfo(MyNodeInfo.newBuilder().setMyNodeNum(selfNodeId).build())
                 .build()
                 .toByteArray());
-        transport.emitParsedPacket(MeshProtos.FromRadio.newBuilder()
-                .setConfigCompleteId(69420)
-                .build()
-                .toByteArray());
-        transport.emitParsedPacket(MeshProtos.FromRadio.newBuilder()
-                .setConfigCompleteId(69421)
-                .build()
-                .toByteArray());
+        transport.emitParsedPacket(
+                FromRadio.newBuilder().setConfigCompleteId(69420).build().toByteArray());
+        transport.emitParsedPacket(
+                FromRadio.newBuilder().setConfigCompleteId(69421).build().toByteArray());
     }
 
-    private static MeshProtos.ToRadio awaitToRadio(
-            FakeTransport transport, Predicate<MeshProtos.ToRadio> predicate, Duration timeout) throws Exception {
+    private static ToRadio awaitToRadio(FakeTransport transport, Predicate<ToRadio> predicate, Duration timeout)
+            throws Exception {
         long deadline = System.nanoTime() + timeout.toNanos();
         int seen = 0;
         while (System.nanoTime() < deadline) {
             List<byte[]> writes = transport.getWritesSnapshot();
             for (int i = seen; i < writes.size(); i++) {
-                MeshProtos.ToRadio parsed = MeshProtos.ToRadio.parseFrom(writes.get(i));
+                ToRadio parsed = ToRadio.parseFrom(writes.get(i));
                 if (predicate.test(parsed)) {
                     return parsed;
                 }

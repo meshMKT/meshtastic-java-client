@@ -1,11 +1,12 @@
 package com.meshmkt.meshtastic.client.event;
 
+import build.buf.gen.meshtastic.MeshPacket;
+import build.buf.gen.meshtastic.Position;
 import com.meshmkt.meshtastic.client.MeshUtils;
 import com.meshmkt.meshtastic.client.storage.PacketContext;
 import lombok.AccessLevel;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
-import org.meshtastic.proto.MeshProtos;
 
 /**
  *
@@ -21,7 +22,7 @@ public class PositionUpdateEvent extends MeshEvent {
     private final float altitude;
 
     // We keep the raw proto so the UI can check things like 'time' or 'PDOP'
-    private final MeshProtos.Position rawPosition;
+    private final Position rawPosition;
 
     /**
      *
@@ -31,8 +32,7 @@ public class PositionUpdateEvent extends MeshEvent {
      * @param raw
      * @return
      */
-    public static PositionUpdateEvent of(
-            MeshProtos.MeshPacket p, PacketContext ctx, int selfId, MeshProtos.Position raw) {
+    public static PositionUpdateEvent of(MeshPacket p, PacketContext ctx, int selfId, Position raw) {
         return new PositionUpdateEvent(
                         MeshUtils.toDecimal(raw.getLatitudeI()),
                         MeshUtils.toDecimal(raw.getLongitudeI()),

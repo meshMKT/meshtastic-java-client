@@ -1,11 +1,9 @@
 package com.meshmkt.meshtastic.client.service;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.*;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
+import build.buf.gen.meshtastic.*;
 import com.meshmkt.meshtastic.client.MeshConstants;
 import com.meshmkt.meshtastic.client.MeshtasticClient;
 import com.meshmkt.meshtastic.client.ProtocolConstraints;
@@ -20,33 +18,14 @@ import com.meshmkt.meshtastic.client.transport.stream.serial.SerialTransport;
 import com.meshmkt.meshtastic.client.transport.stream.tcp.TcpConfig;
 import com.meshmkt.meshtastic.client.transport.stream.tcp.TcpTransport;
 import java.time.Duration;
-import java.util.ArrayList;
-import java.util.EnumMap;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Locale;
+import java.util.*;
 import java.util.Map;
-import java.util.Objects;
-import java.util.Set;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.function.Supplier;
-import org.junit.jupiter.api.AfterAll;
-import org.junit.jupiter.api.BeforeAll;
-import org.junit.jupiter.api.Tag;
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.TestInstance;
-import org.junit.jupiter.api.Timeout;
-import org.meshtastic.proto.AdminProtos.AdminMessage.ConfigType;
-import org.meshtastic.proto.AdminProtos.AdminMessage.ModuleConfigType;
-import org.meshtastic.proto.ChannelProtos.Channel;
-import org.meshtastic.proto.ChannelProtos.ChannelSettings;
-import org.meshtastic.proto.ConfigProtos.Config;
-import org.meshtastic.proto.MeshProtos.DeviceMetadata;
-import org.meshtastic.proto.MeshProtos.User;
-import org.meshtastic.proto.ModuleConfigProtos.ModuleConfig;
+import org.junit.jupiter.api.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -86,17 +65,17 @@ class RealRadioAdminIT {
     private static final Duration SELF_ID_READY_TIMEOUT = Duration.ofSeconds(20);
     private static final Duration RESTORE_READBACK_WINDOW = Duration.ofSeconds(60);
     private static final int RESTORE_ATTEMPTS = 4;
-    private static final List<ConfigType> CORE_CONFIG_MATRIX = List.of(
-            ConfigType.LORA_CONFIG,
-            ConfigType.DEVICE_CONFIG,
-            ConfigType.DISPLAY_CONFIG,
-            ConfigType.NETWORK_CONFIG,
-            ConfigType.SECURITY_CONFIG);
-    private static final List<ModuleConfigType> MODULE_CONFIG_MATRIX = List.of(
-            ModuleConfigType.MQTT_CONFIG,
-            ModuleConfigType.SERIAL_CONFIG,
-            ModuleConfigType.TELEMETRY_CONFIG,
-            ModuleConfigType.STOREFORWARD_CONFIG);
+    private static final List<AdminMessage.ConfigType> CORE_CONFIG_MATRIX = List.of(
+            AdminMessage.ConfigType.LORA_CONFIG,
+            AdminMessage.ConfigType.DEVICE_CONFIG,
+            AdminMessage.ConfigType.DISPLAY_CONFIG,
+            AdminMessage.ConfigType.NETWORK_CONFIG,
+            AdminMessage.ConfigType.SECURITY_CONFIG);
+    private static final List<AdminMessage.ModuleConfigType> MODULE_CONFIG_MATRIX = List.of(
+            AdminMessage.ModuleConfigType.MQTT_CONFIG,
+            AdminMessage.ModuleConfigType.SERIAL_CONFIG,
+            AdminMessage.ModuleConfigType.TELEMETRY_CONFIG,
+            AdminMessage.ModuleConfigType.STOREFORWARD_CONFIG);
 
     private MeshtasticClient client;
     private AdminService adminService;
@@ -198,10 +177,10 @@ class RealRadioAdminIT {
     @Test
     @Timeout(value = 240)
     void refreshCoreConfigMatrixCompletes() throws Exception {
-        Map<ConfigType, Config> observed = new EnumMap<>(ConfigType.class);
+        Map<AdminMessage.ConfigType, Config> observed = new EnumMap<>(AdminMessage.ConfigType.class);
         List<String> failures = new ArrayList<>();
 
-        for (ConfigType type : CORE_CONFIG_MATRIX) {
+        for (AdminMessage.ConfigType type : CORE_CONFIG_MATRIX) {
             try {
                 Config cfg = awaitWithRetry(() -> adminService.refreshConfig(type), 2);
                 observed.put(type, cfg);
@@ -210,8 +189,9 @@ class RealRadioAdminIT {
             }
         }
 
-        assertTrue(observed.containsKey(ConfigType.LORA_CONFIG), "LORA_CONFIG refresh should succeed.");
-        assertTrue(observed.containsKey(ConfigType.DEVICE_CONFIG), "DEVICE_CONFIG refresh should succeed.");
+        assertTrue(observed.containsKey(AdminMessage.ConfigType.LORA_CONFIG), "LORA_CONFIG refresh should succeed.");
+        assertTrue(
+                observed.containsKey(AdminMessage.ConfigType.DEVICE_CONFIG), "DEVICE_CONFIG refresh should succeed.");
         assertTrue(observed.size() >= 2, "Expected at least two core config refresh successes; failures=" + failures);
     }
 
@@ -230,7 +210,7 @@ class RealRadioAdminIT {
         int successCount = 0;
         List<String> failures = new ArrayList<>();
 
-        for (ModuleConfigType type : MODULE_CONFIG_MATRIX) {
+        for (AdminMessage.ModuleConfigType type : MODULE_CONFIG_MATRIX) {
             try {
                 ModuleConfig cfg = awaitWithRetry(() -> adminService.refreshModuleConfig(type), 2);
                 if (cfg != null) {

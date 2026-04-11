@@ -1,16 +1,19 @@
 package com.meshmkt.meshtastic.client.service;
 
+import build.buf.gen.meshtastic.AdminMessage;
+import build.buf.gen.meshtastic.Channel;
+import build.buf.gen.meshtastic.Config;
+import build.buf.gen.meshtastic.ModuleConfig;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Supplier;
 import lombok.Value;
 import lombok.extern.slf4j.Slf4j;
-import org.meshtastic.proto.AdminProtos.AdminMessage.ConfigType;
-import org.meshtastic.proto.ConfigProtos.Config;
-import org.meshtastic.proto.ModuleConfigProtos.ModuleConfig;
 
 /**
  * Encapsulates verify-applied retry policy and payload comparison rules for admin writes.
@@ -75,12 +78,15 @@ final class AdminVerificationEngine {
      * @param impactedTypes affected config types.
      * @return {@code true} when all impacted sections match.
      */
-    boolean isConfigApplied(Config requested, Map<ConfigType, Config> observedByType, List<ConfigType> impactedTypes) {
+    boolean isConfigApplied(
+            Config requested,
+            Map<AdminMessage.ConfigType, Config> observedByType,
+            List<AdminMessage.ConfigType> impactedTypes) {
         if (impactedTypes == null || impactedTypes.isEmpty()) {
             return false;
         }
 
-        for (ConfigType type : impactedTypes) {
+        for (AdminMessage.ConfigType type : impactedTypes) {
             Config observed = observedByType.get(type);
             if (observed == null) {
                 return false;
@@ -169,6 +175,8 @@ final class AdminVerificationEngine {
             case DETECTION_SENSOR -> requested.getDetectionSensor().equals(observed.getDetectionSensor());
             case PAXCOUNTER -> requested.getPaxcounter().equals(observed.getPaxcounter());
             case STATUSMESSAGE -> requested.getStatusmessage().equals(observed.getStatusmessage());
+            case TRAFFIC_MANAGEMENT -> requested.getTrafficManagement().equals(observed.getTrafficManagement());
+            case TAK -> requested.getTak().equals(observed.getTak());
             case PAYLOADVARIANT_NOT_SET -> false;
         };
     }
@@ -180,9 +188,7 @@ final class AdminVerificationEngine {
      * @param appliedChannel observed channel.
      * @return {@code true} when role and settings match.
      */
-    boolean isChannelApplied(
-            org.meshtastic.proto.ChannelProtos.Channel expected,
-            org.meshtastic.proto.ChannelProtos.Channel appliedChannel) {
+    boolean isChannelApplied(Channel expected, Channel appliedChannel) {
         return expected.getRole() == appliedChannel.getRole()
                 && expected.getSettings().equals(appliedChannel.getSettings());
     }
@@ -275,8 +281,7 @@ final class AdminVerificationEngine {
     private static Throwable unwrap(Throwable error) {
         Throwable current = error;
         while (current.getCause() != null
-                && (current instanceof java.util.concurrent.CompletionException
-                        || current instanceof java.util.concurrent.ExecutionException)) {
+                && (current instanceof CompletionException || current instanceof ExecutionException)) {
             current = current.getCause();
         }
         return current;

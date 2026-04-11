@@ -1,8 +1,9 @@
 package com.meshmkt.meshtastic.client.storage;
 
+import build.buf.gen.meshtastic.FromRadio;
+import build.buf.gen.meshtastic.MeshPacket;
 import lombok.Builder;
 import lombok.Value;
-import org.meshtastic.proto.MeshProtos;
 
 /**
  *
@@ -34,15 +35,15 @@ public class PacketContext {
     // created during the initial radio sync
     boolean live;
 
-    MeshProtos.MeshPacket rawProto;
+    MeshPacket rawProto;
 
     /**
      *
      * @param message
      * @return
      */
-    public static PacketContext from(MeshProtos.FromRadio message) {
-        MeshProtos.MeshPacket p = message.getPacket();
+    public static PacketContext from(FromRadio message) {
+        MeshPacket p = message.getPacket();
 
         return PacketContext.builder()
                 .snr(p.getRxSnr())

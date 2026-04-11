@@ -1,5 +1,6 @@
 package com.meshmkt.meshtastic.client.handlers;
 
+import build.buf.gen.meshtastic.*;
 import com.meshmkt.meshtastic.client.MeshUtils;
 import com.meshmkt.meshtastic.client.event.MeshEventDispatcher;
 import com.meshmkt.meshtastic.client.event.NodeDiscoveryEvent;
@@ -7,8 +8,6 @@ import com.meshmkt.meshtastic.client.service.AdminService;
 import com.meshmkt.meshtastic.client.storage.NodeDatabase;
 import com.meshmkt.meshtastic.client.storage.PacketContext;
 import lombok.extern.slf4j.Slf4j;
-import org.meshtastic.proto.MeshProtos;
-import org.meshtastic.proto.Portnums.PortNum;
 
 /**
  * Handles identity discovery. Bridges the gap between "Nodes I'm learning about
@@ -37,7 +36,7 @@ public class NodeInfoHandler extends BaseMeshHandler {
      * @return {@code true} when this handler should process the message.
      */
     @Override
-    public boolean canHandle(MeshProtos.FromRadio message) {
+    public boolean canHandle(FromRadio message) {
         return message.hasNodeInfo()
                 || (message.hasPacket()
                         && message.getPacket().hasDecoded()
@@ -52,10 +51,10 @@ public class NodeInfoHandler extends BaseMeshHandler {
      * @return
      */
     @Override
-    protected boolean handleNonPacketMessage(MeshProtos.FromRadio message) {
+    protected boolean handleNonPacketMessage(FromRadio message) {
         if (message.hasNodeInfo()) {
-            MeshProtos.NodeInfo info = message.getNodeInfo();
-            MeshProtos.User user = info.getUser();
+            NodeInfo info = message.getNodeInfo();
+            User user = info.getUser();
 
             // We are just updating the 'Device' timestamp from the sync.
             // The MeshNode status calculator treats snapshot-only data as CACHED
@@ -100,9 +99,9 @@ public class NodeInfoHandler extends BaseMeshHandler {
      * @return
      */
     @Override
-    protected boolean handlePacket(MeshProtos.MeshPacket packet, PacketContext ctx) {
+    protected boolean handlePacket(MeshPacket packet, PacketContext ctx) {
         try {
-            MeshProtos.User user = MeshProtos.User.parseFrom(packet.getDecoded().getPayload());
+            User user = User.parseFrom(packet.getDecoded().getPayload());
 
             log.info(
                     "[NODE] discovered from={} ({}) snr={}dB hops={} via_mqtt={}",

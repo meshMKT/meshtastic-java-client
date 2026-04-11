@@ -1,9 +1,9 @@
 package com.meshmkt.meshtastic.client.event;
 
+import build.buf.gen.meshtastic.PortNum;
 import java.time.Instant;
 import java.util.Objects;
 import lombok.Getter;
-import org.meshtastic.proto.Portnums.PortNum;
 
 /**
  * Describes lifecycle transitions for one outbound request initiated by {@code MeshtasticClient}.

@@ -1,9 +1,9 @@
 package com.meshmkt.meshtastic.client.event;
 
+import build.buf.gen.meshtastic.MeshPacket;
 import com.meshmkt.meshtastic.client.storage.PacketContext;
 import java.time.Instant;
 import lombok.Getter;
-import org.meshtastic.proto.MeshProtos;
 
 /**
  * The "Smart Envelope" for all mesh traffic. Centralizes the extraction of
@@ -51,7 +51,7 @@ public abstract class MeshEvent {
     /**
      * The raw Protobuf packet for deep inspection of specific flags or headers.
      */
-    private MeshProtos.MeshPacket rawPacket;
+    private MeshPacket rawPacket;
 
     /**
      * System timestamp of when this event was instantiated in the application.
@@ -69,7 +69,7 @@ public abstract class MeshEvent {
      * @return The current instance for fluent chaining.
      */
     @SuppressWarnings("unchecked")
-    protected <T extends MeshEvent> T applyMetadata(MeshProtos.MeshPacket p, PacketContext ctx, int selfId) {
+    protected <T extends MeshEvent> T applyMetadata(MeshPacket p, PacketContext ctx, int selfId) {
         // Fallback logic: Use PacketContext if the raw MeshPacket is missing
         this.nodeId = (p != null) ? p.getFrom() : ctx.getFrom();
         this.destinationId = (p != null) ? p.getTo() : ctx.getTo();

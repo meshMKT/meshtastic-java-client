@@ -1,12 +1,13 @@
 package com.meshmkt.meshtastic.client.handlers;
 
+import build.buf.gen.meshtastic.FromRadio;
+import build.buf.gen.meshtastic.MeshPacket;
+import build.buf.gen.meshtastic.PortNum;
 import com.meshmkt.meshtastic.client.MeshUtils;
 import com.meshmkt.meshtastic.client.storage.NodeDatabase;
 import com.meshmkt.meshtastic.client.storage.PacketContext;
 import java.nio.charset.StandardCharsets;
 import lombok.extern.slf4j.Slf4j;
-import org.meshtastic.proto.MeshProtos;
-import org.meshtastic.proto.Portnums;
 
 /**
  * Dedicated logger for Chat messages.
@@ -29,10 +30,10 @@ public class MessageLoggingHandler extends BaseMeshHandler {
      * @return {@code true} when this handler is interested in the message.
      */
     @Override
-    public boolean canHandle(MeshProtos.FromRadio message) {
+    public boolean canHandle(FromRadio message) {
         return message.hasPacket()
                 && message.getPacket().hasDecoded()
-                && message.getPacket().getDecoded().getPortnumValue() == Portnums.PortNum.TEXT_MESSAGE_APP_VALUE;
+                && message.getPacket().getDecoded().getPortnumValue() == PortNum.TEXT_MESSAGE_APP_VALUE;
     }
 
     /**
@@ -43,7 +44,7 @@ public class MessageLoggingHandler extends BaseMeshHandler {
      * @return {@code true} when packet processing is terminal for this handler chain.
      */
     @Override
-    protected boolean handlePacket(MeshProtos.MeshPacket packet, PacketContext ctx) {
+    protected boolean handlePacket(MeshPacket packet, PacketContext ctx) {
         String text = packet.getDecoded().getPayload().toString(StandardCharsets.UTF_8);
         String from = resolveName(packet.getFrom());
 

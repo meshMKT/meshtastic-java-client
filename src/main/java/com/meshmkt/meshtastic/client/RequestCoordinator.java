@@ -1,5 +1,6 @@
 package com.meshmkt.meshtastic.client;
 
+import build.buf.gen.meshtastic.*;
 import java.time.Duration;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
@@ -12,10 +13,6 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Supplier;
 import lombok.Value;
 import lombok.extern.slf4j.Slf4j;
-import org.meshtastic.proto.MeshProtos.Data;
-import org.meshtastic.proto.MeshProtos.FromRadio;
-import org.meshtastic.proto.MeshProtos.MeshPacket;
-import org.meshtastic.proto.Portnums.PortNum;
 
 /**
  * Coordinates in-flight request correlation, request timeouts, and single-flight radio locking.
@@ -237,11 +234,11 @@ final class RequestCoordinator {
      */
     private void handleRoutingCorrelation(int confirmedId, PendingRequest pending, MeshPacket incoming) {
         try {
-            org.meshtastic.proto.MeshProtos.Routing routing = org.meshtastic.proto.MeshProtos.Routing.parseFrom(
-                    incoming.getDecoded().getPayload());
 
-            if (routing.getErrorReason() != org.meshtastic.proto.MeshProtos.Routing.Error.NONE) {
-                if (routing.getErrorReason() == org.meshtastic.proto.MeshProtos.Routing.Error.NO_RESPONSE
+            Routing routing = Routing.parseFrom(incoming.getDecoded().getPayload());
+
+            if (routing.getErrorReason() != Routing.Error.NONE) {
+                if (routing.getErrorReason() == Routing.Error.NO_RESPONSE
                         && pending.isAllowRoutingNoResponseAsAccept()) {
                     if (pendingRequests.remove(confirmedId, pending)) {
                         log.debug(

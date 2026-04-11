@@ -1,15 +1,15 @@
 package com.meshmkt.meshtastic.client.storage;
 
+import build.buf.gen.meshtastic.*;
 import com.meshmkt.meshtastic.client.MeshConstants;
 import com.meshmkt.meshtastic.client.MeshUtils;
-import java.util.*;
+import java.util.Collection;
+import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
 import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
-import org.meshtastic.proto.MeshProtos;
-import org.meshtastic.proto.TelemetryProtos;
 
 /**
  *
@@ -26,10 +26,10 @@ public class InMemoryNodeDatabase extends AbstractNodeDatabase {
     @Data
     private static class NodeRecord {
 
-        private MeshProtos.User user;
-        private MeshProtos.Position position;
-        private TelemetryProtos.DeviceMetrics metrics;
-        private TelemetryProtos.EnvironmentMetrics envMetrics;
+        private User user;
+        private Position position;
+        private DeviceMetrics metrics;
+        private EnvironmentMetrics envMetrics;
 
         // Signal Vitals (Last Known Good from a LIVE packet)
         private float snr;
@@ -113,7 +113,7 @@ public class InMemoryNodeDatabase extends AbstractNodeDatabase {
      * @param ctx packet context metadata.
      */
     @Override
-    public void updateUser(MeshProtos.User u, PacketContext ctx) {
+    public void updateUser(User u, PacketContext ctx) {
         updateNodeRecord(ctx, r -> r.setUser(u));
     }
 
@@ -124,7 +124,7 @@ public class InMemoryNodeDatabase extends AbstractNodeDatabase {
      * @param ctx packet context metadata.
      */
     @Override
-    public void updatePosition(MeshProtos.Position pos, PacketContext ctx) {
+    public void updatePosition(Position pos, PacketContext ctx) {
         // GATEKEEPER: Don't overwrite good data with "no fix" (0,0)
         if (pos.getLatitudeI() == 0 && pos.getLongitudeI() == 0) {
             log.debug("Skipping position update: No valid GPS fix from !{}", Integer.toHexString(ctx.getFrom()));
@@ -160,7 +160,7 @@ public class InMemoryNodeDatabase extends AbstractNodeDatabase {
      * @param ctx packet context metadata.
      */
     @Override
-    public void updateMetrics(TelemetryProtos.DeviceMetrics m, PacketContext ctx) {
+    public void updateMetrics(DeviceMetrics m, PacketContext ctx) {
         updateNodeRecord(ctx, r -> r.setMetrics(m));
     }
 
@@ -171,7 +171,7 @@ public class InMemoryNodeDatabase extends AbstractNodeDatabase {
      * @param ctx packet context metadata.
      */
     @Override
-    public void updateEnvMetrics(TelemetryProtos.EnvironmentMetrics e, PacketContext ctx) {
+    public void updateEnvMetrics(EnvironmentMetrics e, PacketContext ctx) {
         updateNodeRecord(ctx, r -> r.setEnvMetrics(e));
     }
 

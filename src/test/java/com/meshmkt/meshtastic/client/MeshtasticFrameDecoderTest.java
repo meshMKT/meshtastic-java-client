@@ -1,14 +1,13 @@
 package com.meshmkt.meshtastic.client;
 
-import static org.junit.jupiter.api.Assertions.assertArrayEquals;
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.*;
 
+import build.buf.gen.meshtastic.FromRadio;
+import build.buf.gen.meshtastic.MyNodeInfo;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
-import org.meshtastic.proto.MeshProtos;
 
 /**
  * Unit tests for {@link MeshtasticFrameDecoder}.
@@ -27,9 +26,8 @@ class MeshtasticFrameDecoderTest {
         List<byte[]> decodedPayloads = new ArrayList<>();
         MeshtasticFrameDecoder decoder = new MeshtasticFrameDecoder(decodedPayloads::add);
 
-        byte[] payload = MeshProtos.FromRadio.newBuilder()
-                .setMyInfo(
-                        MeshProtos.MyNodeInfo.newBuilder().setMyNodeNum(123456).build())
+        byte[] payload = FromRadio.newBuilder()
+                .setMyInfo(MyNodeInfo.newBuilder().setMyNodeNum(123456).build())
                 .build()
                 .toByteArray();
 
@@ -47,13 +45,13 @@ class MeshtasticFrameDecoderTest {
         List<byte[]> decodedPayloads = new ArrayList<>();
         MeshtasticFrameDecoder decoder = new MeshtasticFrameDecoder(decodedPayloads::add);
 
-        byte[] firstPayload = MeshProtos.FromRadio.newBuilder()
-                .setMyInfo(MeshProtos.MyNodeInfo.newBuilder().setMyNodeNum(1).build())
+        byte[] firstPayload = FromRadio.newBuilder()
+                .setMyInfo(MyNodeInfo.newBuilder().setMyNodeNum(1).build())
                 .build()
                 .toByteArray();
 
-        byte[] secondPayload = MeshProtos.FromRadio.newBuilder()
-                .setMyInfo(MeshProtos.MyNodeInfo.newBuilder().setMyNodeNum(2).build())
+        byte[] secondPayload = FromRadio.newBuilder()
+                .setMyInfo(MyNodeInfo.newBuilder().setMyNodeNum(2).build())
                 .build()
                 .toByteArray();
 
@@ -83,8 +81,8 @@ class MeshtasticFrameDecoderTest {
         // Invalid frame header with length 0.
         feed(decoder, new byte[] {(byte) 0x94, (byte) 0xC3, 0x00, 0x00});
 
-        byte[] payload = MeshProtos.FromRadio.newBuilder()
-                .setMyInfo(MeshProtos.MyNodeInfo.newBuilder().setMyNodeNum(42).build())
+        byte[] payload = FromRadio.newBuilder()
+                .setMyInfo(MyNodeInfo.newBuilder().setMyNodeNum(42).build())
                 .build()
                 .toByteArray();
 
@@ -290,10 +288,8 @@ class MeshtasticFrameDecoderTest {
      * @return serialized protobuf payload bytes.
      */
     private static byte[] protoPayload(int myNodeNum) {
-        return MeshProtos.FromRadio.newBuilder()
-                .setMyInfo(MeshProtos.MyNodeInfo.newBuilder()
-                        .setMyNodeNum(myNodeNum)
-                        .build())
+        return FromRadio.newBuilder()
+                .setMyInfo(MyNodeInfo.newBuilder().setMyNodeNum(myNodeNum).build())
                 .build()
                 .toByteArray();
     }

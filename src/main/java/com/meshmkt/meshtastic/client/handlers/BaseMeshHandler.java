@@ -1,10 +1,11 @@
 package com.meshmkt.meshtastic.client.handlers;
 
+import build.buf.gen.meshtastic.FromRadio;
+import build.buf.gen.meshtastic.MeshPacket;
 import com.meshmkt.meshtastic.client.MeshUtils;
 import com.meshmkt.meshtastic.client.event.MeshEventDispatcher;
 import com.meshmkt.meshtastic.client.storage.NodeDatabase;
 import com.meshmkt.meshtastic.client.storage.PacketContext;
-import org.meshtastic.proto.MeshProtos;
 
 /**
  * The traffic controller for all incoming radio data. It distinguishes between
@@ -95,7 +96,7 @@ public abstract class BaseMeshHandler implements MeshtasticMessageHandler {
      * @return {@code true} when this handler consumed the message.
      */
     @Override
-    public final boolean handle(MeshProtos.FromRadio message) {
+    public final boolean handle(FromRadio message) {
         // SCENARIO A: LOCAL HANDSHAKE / STATUS
         // If the message does NOT have a packet, it is the local radio
         // talking about itself or syncing its internal memory with us.
@@ -106,7 +107,7 @@ public abstract class BaseMeshHandler implements MeshtasticMessageHandler {
         // SCENARIO B: LIVE MESH PACKET
         // If it has a packet, it was heard on the mesh. It has signal
         // quality metadata (RSSI/SNR) which we extract into the PacketContext.
-        MeshProtos.MeshPacket packet = message.getPacket();
+        MeshPacket packet = message.getPacket();
         PacketContext ctx = PacketContext.from(message);
 
         // Record the fact that this node is alive and update signal health
@@ -123,7 +124,7 @@ public abstract class BaseMeshHandler implements MeshtasticMessageHandler {
      * @param message incoming local-only radio message.
      * @return {@code true} if handled.
      */
-    protected boolean handleNonPacketMessage(MeshProtos.FromRadio message) {
+    protected boolean handleNonPacketMessage(FromRadio message) {
         return false;
     }
 
@@ -134,7 +135,7 @@ public abstract class BaseMeshHandler implements MeshtasticMessageHandler {
      * @param ctx derived packet context (signal, relay, timestamps).
      * @return {@code true} if handled.
      */
-    protected boolean handlePacket(MeshProtos.MeshPacket packet, PacketContext ctx) {
+    protected boolean handlePacket(MeshPacket packet, PacketContext ctx) {
         return false;
     }
 

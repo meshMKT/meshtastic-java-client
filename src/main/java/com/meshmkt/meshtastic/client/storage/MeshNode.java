@@ -1,12 +1,10 @@
 package com.meshmkt.meshtastic.client.storage;
 
+import build.buf.gen.meshtastic.*;
 import java.time.Instant;
 import java.util.Objects;
 import lombok.Builder;
 import lombok.Value;
-import org.meshtastic.proto.ConfigProtos;
-import org.meshtastic.proto.MeshProtos;
-import org.meshtastic.proto.TelemetryProtos;
 
 /**
  * An immutable data transfer object representing a snapshot of a Meshtastic
@@ -48,27 +46,27 @@ public class MeshNode {
     /**
      * The hardware model detected from the User packet.
      */
-    MeshProtos.HardwareModel hwModel;
+    HardwareModel hwModel;
 
     /**
      * The operational role (e.g., ROUTER, CLIENT) defined in ConfigProtos.
      */
-    ConfigProtos.Config.DeviceConfig.Role role;
+    Config.DeviceConfig.Role role;
 
     /**
      * The most recent geographic coordinates and altitude.
      */
-    MeshProtos.Position position;
+    Position position;
 
     /**
      * Device health metrics including battery and voltage.
      */
-    TelemetryProtos.DeviceMetrics deviceMetrics;
+    DeviceMetrics deviceMetrics;
 
     /**
      * Environmental sensor data like temperature and humidity.
      */
-    TelemetryProtos.EnvironmentMetrics envMetrics;
+    EnvironmentMetrics envMetrics;
 
     /**
      * Signal-to-noise ratio (dB) of the last received packet.

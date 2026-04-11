@@ -1,16 +1,12 @@
 package com.meshmkt.meshtastic.client.storage;
 
+import build.buf.gen.meshtastic.Position;
 import com.meshmkt.meshtastic.client.MeshConstants;
 import com.meshmkt.meshtastic.client.MeshUtils;
 import java.time.Duration;
 import java.util.List;
 import java.util.Optional;
-import java.util.concurrent.CopyOnWriteArrayList;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.ScheduledFuture;
-import java.util.concurrent.TimeUnit;
-import org.meshtastic.proto.MeshProtos;
+import java.util.concurrent.*;
 
 /**
  *
@@ -180,7 +176,7 @@ public abstract class AbstractNodeDatabase implements NodeDatabase {
      * @param ctx
      * @return
      */
-    protected double calculateDistance(int remoteId, MeshProtos.Position remotePos, PacketContext ctx) {
+    protected double calculateDistance(int remoteId, Position remotePos, PacketContext ctx) {
         if (ctx != null && ctx.isViaMqtt()) {
             return MeshConstants.DISTANCE_MQTT;
         }

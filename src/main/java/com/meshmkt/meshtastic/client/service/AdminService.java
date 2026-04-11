@@ -1,40 +1,20 @@
 package com.meshmkt.meshtastic.client.service;
 
+import build.buf.gen.meshtastic.*;
 import com.google.protobuf.ByteString;
 import com.meshmkt.meshtastic.client.MeshUtils;
 import com.meshmkt.meshtastic.client.ProtocolConstraints;
 import com.meshmkt.meshtastic.client.model.RadioModel;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.Comparator;
-import java.util.EnumMap;
-import java.util.LinkedHashSet;
-import java.util.List;
+import java.util.*;
 import java.util.Map;
-import java.util.Objects;
-import java.util.Optional;
-import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeoutException;
 import java.util.function.Function;
 import java.util.stream.IntStream;
 import lombok.extern.slf4j.Slf4j;
-import org.meshtastic.proto.AdminProtos.AdminMessage;
-import org.meshtastic.proto.AdminProtos.AdminMessage.ConfigType;
-import org.meshtastic.proto.AdminProtos.AdminMessage.ModuleConfigType;
-import org.meshtastic.proto.ChannelProtos.Channel;
-import org.meshtastic.proto.ChannelProtos.ChannelSettings;
-import org.meshtastic.proto.ConfigProtos.Config;
-import org.meshtastic.proto.DeviceUIProtos.DeviceUIConfig;
-import org.meshtastic.proto.MeshProtos.DeviceMetadata;
-import org.meshtastic.proto.MeshProtos.FromRadio;
-import org.meshtastic.proto.MeshProtos.MeshPacket;
-import org.meshtastic.proto.MeshProtos.NodeInfo;
-import org.meshtastic.proto.MeshProtos.User;
-import org.meshtastic.proto.ModuleConfigProtos.ModuleConfig;
 
 /**
  * Admin/config facade for Meshtastic settings operations.
@@ -65,23 +45,28 @@ import org.meshtastic.proto.ModuleConfigProtos.ModuleConfig;
 public class AdminService {
     private static final Duration OWNER_VERIFY_TIMEOUT = Duration.ofSeconds(10);
     private static final int PRIMARY_CHANNEL_INDEX = 0;
-    private static final List<ConfigType> CORE_CONFIG_TYPES = List.of(
-            ConfigType.LORA_CONFIG, ConfigType.DEVICE_CONFIG, ConfigType.DISPLAY_CONFIG, ConfigType.NETWORK_CONFIG);
-    private static final List<ModuleConfigType> SUPPORTED_MODULE_CONFIG_TYPES = List.of(
-            ModuleConfigType.MQTT_CONFIG,
-            ModuleConfigType.SERIAL_CONFIG,
-            ModuleConfigType.EXTNOTIF_CONFIG,
-            ModuleConfigType.STOREFORWARD_CONFIG,
-            ModuleConfigType.RANGETEST_CONFIG,
-            ModuleConfigType.TELEMETRY_CONFIG,
-            ModuleConfigType.CANNEDMSG_CONFIG,
-            ModuleConfigType.AUDIO_CONFIG,
-            ModuleConfigType.REMOTEHARDWARE_CONFIG,
-            ModuleConfigType.NEIGHBORINFO_CONFIG,
-            ModuleConfigType.AMBIENTLIGHTING_CONFIG,
-            ModuleConfigType.DETECTIONSENSOR_CONFIG,
-            ModuleConfigType.PAXCOUNTER_CONFIG,
-            ModuleConfigType.STATUSMESSAGE_CONFIG);
+    private static final List<AdminMessage.ConfigType> CORE_CONFIG_TYPES = List.of(
+            AdminMessage.ConfigType.LORA_CONFIG,
+            AdminMessage.ConfigType.DEVICE_CONFIG,
+            AdminMessage.ConfigType.DISPLAY_CONFIG,
+            AdminMessage.ConfigType.NETWORK_CONFIG);
+    private static final List<AdminMessage.ModuleConfigType> SUPPORTED_MODULE_CONFIG_TYPES = List.of(
+            AdminMessage.ModuleConfigType.MQTT_CONFIG,
+            AdminMessage.ModuleConfigType.SERIAL_CONFIG,
+            AdminMessage.ModuleConfigType.EXTNOTIF_CONFIG,
+            AdminMessage.ModuleConfigType.STOREFORWARD_CONFIG,
+            AdminMessage.ModuleConfigType.RANGETEST_CONFIG,
+            AdminMessage.ModuleConfigType.TELEMETRY_CONFIG,
+            AdminMessage.ModuleConfigType.CANNEDMSG_CONFIG,
+            AdminMessage.ModuleConfigType.AUDIO_CONFIG,
+            AdminMessage.ModuleConfigType.REMOTEHARDWARE_CONFIG,
+            AdminMessage.ModuleConfigType.NEIGHBORINFO_CONFIG,
+            AdminMessage.ModuleConfigType.AMBIENTLIGHTING_CONFIG,
+            AdminMessage.ModuleConfigType.DETECTIONSENSOR_CONFIG,
+            AdminMessage.ModuleConfigType.PAXCOUNTER_CONFIG,
+            AdminMessage.ModuleConfigType.STATUSMESSAGE_CONFIG,
+            AdminMessage.ModuleConfigType.TRAFFICMANAGEMENT_CONFIG,
+            AdminMessage.ModuleConfigType.TAK_CONFIG);
 
     private final AdminClientAccess clientAccess;
     private final RadioModel radioModel = new RadioModel();
@@ -187,7 +172,7 @@ public class AdminService {
      *
      * @return future completing with immutable map of refreshed config payloads keyed by type.
      */
-    public CompletableFuture<Map<ConfigType, Config>> refreshCoreConfigs() {
+    public CompletableFuture<Map<AdminMessage.ConfigType, Config>> refreshCoreConfigs() {
         return refreshConfigs(CORE_CONFIG_TYPES);
     }
 
@@ -232,14 +217,14 @@ public class AdminService {
     /**
      * Refreshes a specific config block from the radio.
      * <p>
-     * For {@link ConfigType#SESSIONKEY_CONFIG}, metadata is refreshed first to match behavior seen in official clients.
+     * For {@link AdminMessage.ConfigType#SESSIONKEY_CONFIG}, metadata is refreshed first to match behavior seen in official clients.
      * </p>
      *
      * @param type config type to request.
      * @return future completing with parsed config response.
      */
-    public CompletableFuture<Config> refreshConfig(ConfigType type) {
-        CompletableFuture<Void> preflight = type == ConfigType.SESSIONKEY_CONFIG
+    public CompletableFuture<Config> refreshConfig(AdminMessage.ConfigType type) {
+        CompletableFuture<Void> preflight = type == AdminMessage.ConfigType.SESSIONKEY_CONFIG
                 ? refreshMetadata().thenApply(metadata -> null)
                 : CompletableFuture.completedFuture(null);
 
@@ -264,7 +249,7 @@ public class AdminService {
      * @return future completing with parsed security config payload.
      */
     public CompletableFuture<Config> refreshSecurityConfig() {
-        return refreshConfig(ConfigType.SECURITY_CONFIG);
+        return refreshConfig(AdminMessage.ConfigType.SECURITY_CONFIG);
     }
 
     /**
@@ -273,7 +258,7 @@ public class AdminService {
      * @return future completing with parsed device config section.
      */
     public CompletableFuture<Config.DeviceConfig> refreshDeviceConfig() {
-        return refreshConfig(ConfigType.DEVICE_CONFIG).thenApply(Config::getDevice);
+        return refreshConfig(AdminMessage.ConfigType.DEVICE_CONFIG).thenApply(Config::getDevice);
     }
 
     /**
@@ -282,7 +267,7 @@ public class AdminService {
      * @return future completing with parsed position config section.
      */
     public CompletableFuture<Config.PositionConfig> refreshPositionConfig() {
-        return refreshConfig(ConfigType.POSITION_CONFIG).thenApply(Config::getPosition);
+        return refreshConfig(AdminMessage.ConfigType.POSITION_CONFIG).thenApply(Config::getPosition);
     }
 
     /**
@@ -291,7 +276,7 @@ public class AdminService {
      * @return future completing with parsed power config section.
      */
     public CompletableFuture<Config.PowerConfig> refreshPowerConfig() {
-        return refreshConfig(ConfigType.POWER_CONFIG).thenApply(Config::getPower);
+        return refreshConfig(AdminMessage.ConfigType.POWER_CONFIG).thenApply(Config::getPower);
     }
 
     /**
@@ -300,7 +285,7 @@ public class AdminService {
      * @return future completing with parsed network config section.
      */
     public CompletableFuture<Config.NetworkConfig> refreshNetworkConfig() {
-        return refreshConfig(ConfigType.NETWORK_CONFIG).thenApply(Config::getNetwork);
+        return refreshConfig(AdminMessage.ConfigType.NETWORK_CONFIG).thenApply(Config::getNetwork);
     }
 
     /**
@@ -309,7 +294,7 @@ public class AdminService {
      * @return future completing with parsed display config section.
      */
     public CompletableFuture<Config.DisplayConfig> refreshDisplayConfig() {
-        return refreshConfig(ConfigType.DISPLAY_CONFIG).thenApply(Config::getDisplay);
+        return refreshConfig(AdminMessage.ConfigType.DISPLAY_CONFIG).thenApply(Config::getDisplay);
     }
 
     /**
@@ -318,7 +303,7 @@ public class AdminService {
      * @return future completing with parsed LoRa config section.
      */
     public CompletableFuture<Config.LoRaConfig> refreshLoraConfig() {
-        return refreshConfig(ConfigType.LORA_CONFIG).thenApply(Config::getLora);
+        return refreshConfig(AdminMessage.ConfigType.LORA_CONFIG).thenApply(Config::getLora);
     }
 
     /**
@@ -327,7 +312,7 @@ public class AdminService {
      * @return future completing with parsed Bluetooth config section.
      */
     public CompletableFuture<Config.BluetoothConfig> refreshBluetoothConfig() {
-        return refreshConfig(ConfigType.BLUETOOTH_CONFIG).thenApply(Config::getBluetooth);
+        return refreshConfig(AdminMessage.ConfigType.BLUETOOTH_CONFIG).thenApply(Config::getBluetooth);
     }
 
     /**
@@ -336,7 +321,7 @@ public class AdminService {
      * @return future completing with parsed session key config section.
      */
     public CompletableFuture<Config.SessionkeyConfig> refreshSessionKeyConfig() {
-        return refreshConfig(ConfigType.SESSIONKEY_CONFIG).thenApply(Config::getSessionkey);
+        return refreshConfig(AdminMessage.ConfigType.SESSIONKEY_CONFIG).thenApply(Config::getSessionkey);
     }
 
     /**
@@ -345,7 +330,7 @@ public class AdminService {
      * @return future completing with parsed device UI config section.
      */
     public CompletableFuture<DeviceUIConfig> refreshDeviceUiConfig() {
-        return refreshConfig(ConfigType.DEVICEUI_CONFIG).thenApply(Config::getDeviceUi);
+        return refreshConfig(AdminMessage.ConfigType.DEVICEUI_CONFIG).thenApply(Config::getDeviceUi);
     }
 
     /**
@@ -357,12 +342,12 @@ public class AdminService {
      * @param types config types to refresh. Null and duplicate entries are ignored.
      * @return future completing with immutable map of refreshed config payloads keyed by type.
      */
-    public CompletableFuture<Map<ConfigType, Config>> refreshConfigs(List<ConfigType> types) {
-        Set<ConfigType> uniqueTypes = normalizeDistinct(types);
-        CompletableFuture<Map<ConfigType, Config>> chain =
-                CompletableFuture.completedFuture(new EnumMap<>(ConfigType.class));
+    public CompletableFuture<Map<AdminMessage.ConfigType, Config>> refreshConfigs(List<AdminMessage.ConfigType> types) {
+        Set<AdminMessage.ConfigType> uniqueTypes = normalizeDistinct(types);
+        CompletableFuture<Map<AdminMessage.ConfigType, Config>> chain =
+                CompletableFuture.completedFuture(new EnumMap<>(AdminMessage.ConfigType.class));
 
-        for (ConfigType type : uniqueTypes) {
+        for (AdminMessage.ConfigType type : uniqueTypes) {
             chain = chain.thenCompose(refreshed -> refreshConfig(type).thenApply(config -> {
                 refreshed.put(type, config);
                 return refreshed;
@@ -471,7 +456,7 @@ public class AdminService {
      * @param type module config type to request.
      * @return future completing with parsed module config response.
      */
-    public CompletableFuture<ModuleConfig> refreshModuleConfig(ModuleConfigType type) {
+    public CompletableFuture<ModuleConfig> refreshModuleConfig(AdminMessage.ModuleConfigType type) {
         AdminMessage request = snapshotApplier
                 .withSessionIfPresent(AdminMessage.newBuilder().setGetModuleConfigRequest(type))
                 .build();
@@ -491,7 +476,7 @@ public class AdminService {
      * @return future completing with parsed MQTT module config payload.
      */
     public CompletableFuture<ModuleConfig> refreshMqttConfig() {
-        return refreshModuleConfig(ModuleConfigType.MQTT_CONFIG);
+        return refreshModuleConfig(AdminMessage.ModuleConfigType.MQTT_CONFIG);
     }
 
     /**
@@ -500,7 +485,7 @@ public class AdminService {
      * @return future completing with parsed serial module settings.
      */
     public CompletableFuture<ModuleConfig.SerialConfig> refreshSerialModuleConfig() {
-        return refreshModuleConfig(ModuleConfigType.SERIAL_CONFIG).thenApply(ModuleConfig::getSerial);
+        return refreshModuleConfig(AdminMessage.ModuleConfigType.SERIAL_CONFIG).thenApply(ModuleConfig::getSerial);
     }
 
     /**
@@ -509,7 +494,8 @@ public class AdminService {
      * @return future completing with parsed external-notification module settings.
      */
     public CompletableFuture<ModuleConfig.ExternalNotificationConfig> refreshExternalNotificationModuleConfig() {
-        return refreshModuleConfig(ModuleConfigType.EXTNOTIF_CONFIG).thenApply(ModuleConfig::getExternalNotification);
+        return refreshModuleConfig(AdminMessage.ModuleConfigType.EXTNOTIF_CONFIG)
+                .thenApply(ModuleConfig::getExternalNotification);
     }
 
     /**
@@ -518,7 +504,8 @@ public class AdminService {
      * @return future completing with parsed store-forward module settings.
      */
     public CompletableFuture<ModuleConfig.StoreForwardConfig> refreshStoreForwardModuleConfig() {
-        return refreshModuleConfig(ModuleConfigType.STOREFORWARD_CONFIG).thenApply(ModuleConfig::getStoreForward);
+        return refreshModuleConfig(AdminMessage.ModuleConfigType.STOREFORWARD_CONFIG)
+                .thenApply(ModuleConfig::getStoreForward);
     }
 
     /**
@@ -527,7 +514,8 @@ public class AdminService {
      * @return future completing with parsed range-test module settings.
      */
     public CompletableFuture<ModuleConfig.RangeTestConfig> refreshRangeTestModuleConfig() {
-        return refreshModuleConfig(ModuleConfigType.RANGETEST_CONFIG).thenApply(ModuleConfig::getRangeTest);
+        return refreshModuleConfig(AdminMessage.ModuleConfigType.RANGETEST_CONFIG)
+                .thenApply(ModuleConfig::getRangeTest);
     }
 
     /**
@@ -536,7 +524,8 @@ public class AdminService {
      * @return future completing with parsed telemetry module settings.
      */
     public CompletableFuture<ModuleConfig.TelemetryConfig> refreshTelemetryModuleConfig() {
-        return refreshModuleConfig(ModuleConfigType.TELEMETRY_CONFIG).thenApply(ModuleConfig::getTelemetry);
+        return refreshModuleConfig(AdminMessage.ModuleConfigType.TELEMETRY_CONFIG)
+                .thenApply(ModuleConfig::getTelemetry);
     }
 
     /**
@@ -545,7 +534,8 @@ public class AdminService {
      * @return future completing with parsed canned-message module settings.
      */
     public CompletableFuture<ModuleConfig.CannedMessageConfig> refreshCannedMessageModuleConfig() {
-        return refreshModuleConfig(ModuleConfigType.CANNEDMSG_CONFIG).thenApply(ModuleConfig::getCannedMessage);
+        return refreshModuleConfig(AdminMessage.ModuleConfigType.CANNEDMSG_CONFIG)
+                .thenApply(ModuleConfig::getCannedMessage);
     }
 
     /**
@@ -554,7 +544,7 @@ public class AdminService {
      * @return future completing with parsed audio module settings.
      */
     public CompletableFuture<ModuleConfig.AudioConfig> refreshAudioModuleConfig() {
-        return refreshModuleConfig(ModuleConfigType.AUDIO_CONFIG).thenApply(ModuleConfig::getAudio);
+        return refreshModuleConfig(AdminMessage.ModuleConfigType.AUDIO_CONFIG).thenApply(ModuleConfig::getAudio);
     }
 
     /**
@@ -563,7 +553,8 @@ public class AdminService {
      * @return future completing with parsed remote-hardware module settings.
      */
     public CompletableFuture<ModuleConfig.RemoteHardwareConfig> refreshRemoteHardwareModuleConfig() {
-        return refreshModuleConfig(ModuleConfigType.REMOTEHARDWARE_CONFIG).thenApply(ModuleConfig::getRemoteHardware);
+        return refreshModuleConfig(AdminMessage.ModuleConfigType.REMOTEHARDWARE_CONFIG)
+                .thenApply(ModuleConfig::getRemoteHardware);
     }
 
     /**
@@ -572,7 +563,8 @@ public class AdminService {
      * @return future completing with parsed neighbor-info module settings.
      */
     public CompletableFuture<ModuleConfig.NeighborInfoConfig> refreshNeighborInfoModuleConfig() {
-        return refreshModuleConfig(ModuleConfigType.NEIGHBORINFO_CONFIG).thenApply(ModuleConfig::getNeighborInfo);
+        return refreshModuleConfig(AdminMessage.ModuleConfigType.NEIGHBORINFO_CONFIG)
+                .thenApply(ModuleConfig::getNeighborInfo);
     }
 
     /**
@@ -581,7 +573,8 @@ public class AdminService {
      * @return future completing with parsed ambient-lighting module settings.
      */
     public CompletableFuture<ModuleConfig.AmbientLightingConfig> refreshAmbientLightingModuleConfig() {
-        return refreshModuleConfig(ModuleConfigType.AMBIENTLIGHTING_CONFIG).thenApply(ModuleConfig::getAmbientLighting);
+        return refreshModuleConfig(AdminMessage.ModuleConfigType.AMBIENTLIGHTING_CONFIG)
+                .thenApply(ModuleConfig::getAmbientLighting);
     }
 
     /**
@@ -590,7 +583,8 @@ public class AdminService {
      * @return future completing with parsed detection-sensor module settings.
      */
     public CompletableFuture<ModuleConfig.DetectionSensorConfig> refreshDetectionSensorModuleConfig() {
-        return refreshModuleConfig(ModuleConfigType.DETECTIONSENSOR_CONFIG).thenApply(ModuleConfig::getDetectionSensor);
+        return refreshModuleConfig(AdminMessage.ModuleConfigType.DETECTIONSENSOR_CONFIG)
+                .thenApply(ModuleConfig::getDetectionSensor);
     }
 
     /**
@@ -599,7 +593,8 @@ public class AdminService {
      * @return future completing with parsed paxcounter module settings.
      */
     public CompletableFuture<ModuleConfig.PaxcounterConfig> refreshPaxcounterModuleConfig() {
-        return refreshModuleConfig(ModuleConfigType.PAXCOUNTER_CONFIG).thenApply(ModuleConfig::getPaxcounter);
+        return refreshModuleConfig(AdminMessage.ModuleConfigType.PAXCOUNTER_CONFIG)
+                .thenApply(ModuleConfig::getPaxcounter);
     }
 
     /**
@@ -608,7 +603,27 @@ public class AdminService {
      * @return future completing with parsed status-message module settings.
      */
     public CompletableFuture<ModuleConfig.StatusMessageConfig> refreshStatusMessageModuleConfig() {
-        return refreshModuleConfig(ModuleConfigType.STATUSMESSAGE_CONFIG).thenApply(ModuleConfig::getStatusmessage);
+        return refreshModuleConfig(AdminMessage.ModuleConfigType.STATUSMESSAGE_CONFIG)
+                .thenApply(ModuleConfig::getStatusmessage);
+    }
+
+    /**
+     * Refreshes traffic-management module settings.
+     *
+     * @return future completing with parsed traffic-management module settings.
+     */
+    public CompletableFuture<ModuleConfig.TrafficManagementConfig> refreshTrafficManagementModuleConfig() {
+        return refreshModuleConfig(AdminMessage.ModuleConfigType.TRAFFICMANAGEMENT_CONFIG)
+                .thenApply(ModuleConfig::getTrafficManagement);
+    }
+
+    /**
+     * Refreshes TAK module settings.
+     *
+     * @return future completing with parsed TAK module settings.
+     */
+    public CompletableFuture<ModuleConfig.TAKConfig> refreshTakModuleConfig() {
+        return refreshModuleConfig(AdminMessage.ModuleConfigType.TAK_CONFIG).thenApply(ModuleConfig::getTak);
     }
 
     /**
@@ -620,12 +635,13 @@ public class AdminService {
      * @param types module config types to refresh. Null and duplicate entries are ignored.
      * @return future completing with immutable map of refreshed module config payloads keyed by type.
      */
-    public CompletableFuture<Map<ModuleConfigType, ModuleConfig>> refreshModuleConfigs(List<ModuleConfigType> types) {
-        Set<ModuleConfigType> uniqueTypes = normalizeDistinct(types);
-        CompletableFuture<Map<ModuleConfigType, ModuleConfig>> chain =
-                CompletableFuture.completedFuture(new EnumMap<>(ModuleConfigType.class));
+    public CompletableFuture<Map<AdminMessage.ModuleConfigType, ModuleConfig>> refreshModuleConfigs(
+            List<AdminMessage.ModuleConfigType> types) {
+        Set<AdminMessage.ModuleConfigType> uniqueTypes = normalizeDistinct(types);
+        CompletableFuture<Map<AdminMessage.ModuleConfigType, ModuleConfig>> chain =
+                CompletableFuture.completedFuture(new EnumMap<>(AdminMessage.ModuleConfigType.class));
 
-        for (ModuleConfigType type : uniqueTypes) {
+        for (AdminMessage.ModuleConfigType type : uniqueTypes) {
             chain = chain.thenCompose(refreshed -> refreshModuleConfig(type).thenApply(config -> {
                 refreshed.put(type, config);
                 return refreshed;
@@ -640,7 +656,7 @@ public class AdminService {
      *
      * @return future completing with immutable map of refreshed module config payloads keyed by type.
      */
-    public CompletableFuture<Map<ModuleConfigType, ModuleConfig>> refreshAllModuleConfigs() {
+    public CompletableFuture<Map<AdminMessage.ModuleConfigType, ModuleConfig>> refreshAllModuleConfigs() {
         return refreshModuleConfigs(SUPPORTED_MODULE_CONFIG_TYPES);
     }
 
@@ -783,7 +799,7 @@ public class AdminService {
                         return CompletableFuture.completedFuture(true);
                     }
 
-                    List<ConfigType> impactedTypes = snapshotApplier.extractConfigTypes(config);
+                    List<AdminMessage.ConfigType> impactedTypes = snapshotApplier.extractConfigTypes(config);
                     if (impactedTypes.isEmpty()) {
                         return CompletableFuture.completedFuture(false);
                     }
@@ -798,7 +814,7 @@ public class AdminService {
                     }
 
                     log.warn("[ADMIN] setConfig returned ROUTING NO_RESPONSE; verifying by read-back");
-                    List<ConfigType> impactedTypes = snapshotApplier.extractConfigTypes(config);
+                    List<AdminMessage.ConfigType> impactedTypes = snapshotApplier.extractConfigTypes(config);
                     if (impactedTypes.isEmpty()) {
                         return CompletableFuture.completedFuture(false);
                     }
@@ -831,7 +847,7 @@ public class AdminService {
     public CompletableFuture<Boolean> setModuleConfig(ModuleConfig moduleConfig, boolean verifyApplied) {
         Objects.requireNonNull(moduleConfig, "moduleConfig must not be null");
 
-        ModuleConfigType moduleType = snapshotApplier.toModuleConfigType(moduleConfig);
+        AdminMessage.ModuleConfigType moduleType = snapshotApplier.toModuleConfigType(moduleConfig);
         if (moduleType == null) {
             return CompletableFuture.failedFuture(
                     new IllegalArgumentException("moduleConfig must include a concrete payload variant"));
@@ -1054,6 +1070,32 @@ public class AdminService {
         Objects.requireNonNull(config, "statusMessageConfig must not be null");
         return setModuleConfig(
                 ModuleConfig.newBuilder().setStatusmessage(config).build(), verifyApplied);
+    }
+
+    /**
+     * Writes traffic-management module settings.
+     *
+     * @param config traffic-management module config payload.
+     * @param verifyApplied when {@code true}, verifies by read-back.
+     * @return future completing with write/verification result.
+     */
+    public CompletableFuture<Boolean> setTrafficManagementModuleConfig(
+            ModuleConfig.TrafficManagementConfig config, boolean verifyApplied) {
+        Objects.requireNonNull(config, "trafficManagementConfig must not be null");
+        return setModuleConfig(
+                ModuleConfig.newBuilder().setTrafficManagement(config).build(), verifyApplied);
+    }
+
+    /**
+     * Writes TAK module settings.
+     *
+     * @param config TAK module config payload.
+     * @param verifyApplied when {@code true}, verifies by read-back.
+     * @return future completing with write/verification result.
+     */
+    public CompletableFuture<Boolean> setTakModuleConfig(ModuleConfig.TAKConfig config, boolean verifyApplied) {
+        Objects.requireNonNull(config, "takConfig must not be null");
+        return setModuleConfig(ModuleConfig.newBuilder().setTak(config).build(), verifyApplied);
     }
 
     /**
@@ -1464,7 +1506,7 @@ public class AdminService {
      * @param type config type key.
      * @return optional cached config payload.
      */
-    public Optional<Config> getConfigSnapshot(ConfigType type) {
+    public Optional<Config> getConfigSnapshot(AdminMessage.ConfigType type) {
         return radioModel.getConfig(type);
     }
 
@@ -1473,7 +1515,7 @@ public class AdminService {
      *
      * @return immutable config snapshot map.
      */
-    public Map<ConfigType, Config> getConfigSnapshots() {
+    public Map<AdminMessage.ConfigType, Config> getConfigSnapshots() {
         return radioModel.getConfigs();
     }
 
@@ -1483,7 +1525,7 @@ public class AdminService {
      * @param type module config type key.
      * @return optional cached module config payload.
      */
-    public Optional<ModuleConfig> getModuleConfigSnapshot(ModuleConfigType type) {
+    public Optional<ModuleConfig> getModuleConfigSnapshot(AdminMessage.ModuleConfigType type) {
         return radioModel.getModuleConfig(type);
     }
 
@@ -1492,7 +1534,7 @@ public class AdminService {
      *
      * @return immutable module config snapshot map.
      */
-    public Map<ModuleConfigType, ModuleConfig> getModuleConfigSnapshots() {
+    public Map<AdminMessage.ModuleConfigType, ModuleConfig> getModuleConfigSnapshots() {
         return radioModel.getModuleConfigs();
     }
 

@@ -1,14 +1,12 @@
 package com.meshmkt.meshtastic.client.handlers;
 
+import build.buf.gen.meshtastic.*;
 import com.meshmkt.meshtastic.client.MeshUtils;
 import com.meshmkt.meshtastic.client.event.MeshEventDispatcher;
 import com.meshmkt.meshtastic.client.event.TelemetryUpdateEvent;
 import com.meshmkt.meshtastic.client.storage.NodeDatabase;
 import com.meshmkt.meshtastic.client.storage.PacketContext;
 import lombok.extern.slf4j.Slf4j;
-import org.meshtastic.proto.MeshProtos;
-import org.meshtastic.proto.Portnums.PortNum;
-import org.meshtastic.proto.TelemetryProtos;
 
 /**
  * Processes TELEMETRY_APP packets containing device vitals and environmental
@@ -33,7 +31,7 @@ public class TelemetryHandler extends BaseMeshHandler {
      * @return {@code true} when this handler should process the message.
      */
     @Override
-    public boolean canHandle(MeshProtos.FromRadio message) {
+    public boolean canHandle(FromRadio message) {
         return message.hasPacket()
                 && message.getPacket().hasDecoded()
                 && message.getPacket().getDecoded().getPortnum() == PortNum.TELEMETRY_APP;
@@ -47,10 +45,9 @@ public class TelemetryHandler extends BaseMeshHandler {
      * @return {@code true} when packet processing is complete for this handler.
      */
     @Override
-    protected boolean handlePacket(MeshProtos.MeshPacket packet, PacketContext ctx) {
+    protected boolean handlePacket(MeshPacket packet, PacketContext ctx) {
         try {
-            TelemetryProtos.Telemetry tele =
-                    TelemetryProtos.Telemetry.parseFrom(packet.getDecoded().getPayload());
+            Telemetry tele = Telemetry.parseFrom(packet.getDecoded().getPayload());
             String fromId = MeshUtils.formatId(packet.getFrom());
             String name = resolveName(packet.getFrom());
 

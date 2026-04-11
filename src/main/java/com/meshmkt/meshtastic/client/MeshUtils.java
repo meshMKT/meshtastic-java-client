@@ -1,5 +1,7 @@
 package com.meshmkt.meshtastic.client;
 
+import build.buf.gen.meshtastic.Config;
+import build.buf.gen.meshtastic.User;
 import com.meshmkt.meshtastic.client.storage.MeshNode;
 import java.time.Duration;
 import java.time.Instant;
@@ -7,8 +9,6 @@ import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.Objects;
-import org.meshtastic.proto.ConfigProtos;
-import org.meshtastic.proto.MeshProtos;
 
 /**
  * <h2>MeshUtils</h2>
@@ -122,7 +122,7 @@ public final class MeshUtils {
      * @param user
      * @return
      */
-    public static String resolveName(int nodeId, MeshProtos.User user) {
+    public static String resolveName(int nodeId, User user) {
         if (user != null) {
             if (user.getLongName() != null && !user.getLongName().isEmpty()) {
                 return user.getLongName();
@@ -359,7 +359,7 @@ public final class MeshUtils {
      * @param role
      * @return
      */
-    public static String getRoleSymbol(ConfigProtos.Config.DeviceConfig.Role role) {
+    public static String getRoleSymbol(Config.DeviceConfig.Role role) {
         if (role == null) {
             return "C";
         }
