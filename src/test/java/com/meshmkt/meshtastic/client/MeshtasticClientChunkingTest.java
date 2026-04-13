@@ -94,6 +94,32 @@ class MeshtasticClientChunkingTest {
         assertTrue(ex.getCause() instanceof CancellationException);
     }
 
+    /**
+     * Verifies callers can disable chunking and receive a fast failure for oversized text.
+     */
+    @Test
+    void sendChannelTextFailsFastWhenChunkingDisabled() throws Exception {
+        FakeTransport transport = new FakeTransport();
+        client = new MeshtasticClient(new InMemoryNodeDatabase());
+        client.connect(transport);
+        completeStartupSync(transport, 6060);
+
+        CompletableFuture<Boolean> sendFuture = client.sendChannelText(1, "z".repeat(500), false);
+
+        CompletionException ex = assertThrows(CompletionException.class, sendFuture::join);
+        assertTrue(ex.getCause() instanceof IllegalArgumentException);
+        assertTrue(ex.getCause().getMessage().contains("chunking is disabled"));
+        boolean textWriteObserved = transport.getWritesSnapshot().stream().anyMatch(bytes -> {
+            try {
+                ToRadio parsed = ToRadio.parseFrom(bytes);
+                return parsed.hasPacket() && parsed.getPacket().getDecoded().getPortnum() == PortNum.TEXT_MESSAGE_APP;
+            } catch (Exception e) {
+                throw new RuntimeException(e);
+            }
+        });
+        assertFalse(textWriteObserved, "Oversized text should fail before any text packet write");
+    }
+
     private static MeshPacket routingAckFor(int requestId, int selfNodeId) {
         return MeshPacket.newBuilder()
                 .setFrom(selfNodeId)

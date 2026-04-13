@@ -251,7 +251,20 @@ public class MeshtasticClient implements AdminClientAccess {
      * @return future completed when all message chunks are correlated as accepted.
      */
     public CompletableFuture<Boolean> sendDirectText(int nodeId, String text) {
-        return sendText(nodeId, MeshConstants.PRIMARY_CHANNEL_INDEX, text);
+        return sendDirectText(nodeId, text, true);
+    }
+
+    /**
+     * Sends a direct message (DM) to one node over {@link MeshConstants#PRIMARY_CHANNEL_INDEX}.
+     *
+     * @param nodeId destination node id.
+     * @param text message text to send.
+     * @param allowChunking when {@code true}, split oversized text into multiple packets. When {@code false},
+     *                      fail fast if the text does not fit in one packet.
+     * @return future completed when the text send is accepted.
+     */
+    public CompletableFuture<Boolean> sendDirectText(int nodeId, String text, boolean allowChunking) {
+        return sendText(nodeId, MeshConstants.PRIMARY_CHANNEL_INDEX, text, allowChunking);
     }
 
     /**
@@ -267,7 +280,21 @@ public class MeshtasticClient implements AdminClientAccess {
      * @return future completed when all message chunks are correlated as accepted.
      */
     public CompletableFuture<Boolean> sendDirectText(int nodeId, int channelIndex, String text) {
-        return sendText(nodeId, channelIndex, text);
+        return sendDirectText(nodeId, channelIndex, text, true);
+    }
+
+    /**
+     * Sends a direct message (DM) to one node using an explicit channel context.
+     *
+     * @param nodeId destination node id.
+     * @param channelIndex channel slot to use for the direct message.
+     * @param text message text to send.
+     * @param allowChunking when {@code true}, split oversized text into multiple packets. When {@code false},
+     *                      fail fast if the text does not fit in one packet.
+     * @return future completed when the text send is accepted.
+     */
+    public CompletableFuture<Boolean> sendDirectText(int nodeId, int channelIndex, String text, boolean allowChunking) {
+        return sendText(nodeId, channelIndex, text, allowChunking);
     }
 
     /**
@@ -278,7 +305,20 @@ public class MeshtasticClient implements AdminClientAccess {
      * @return future completed when all message chunks are correlated as accepted.
      */
     public CompletableFuture<Boolean> sendChannelText(int channelIndex, String text) {
-        return sendText(MeshConstants.ID_BROADCAST, channelIndex, text);
+        return sendChannelText(channelIndex, text, true);
+    }
+
+    /**
+     * Sends a channel broadcast message.
+     *
+     * @param channelIndex destination channel index.
+     * @param text message text to send.
+     * @param allowChunking when {@code true}, split oversized text into multiple packets. When {@code false},
+     *                      fail fast if the text does not fit in one packet.
+     * @return future completed when the text send is accepted.
+     */
+    public CompletableFuture<Boolean> sendChannelText(int channelIndex, String text, boolean allowChunking) {
+        return sendText(MeshConstants.ID_BROADCAST, channelIndex, text, allowChunking);
     }
 
     /**
@@ -288,7 +328,8 @@ public class MeshtasticClient implements AdminClientAccess {
      * {@link PortNum#TEXT_MESSAGE_APP}, which currently allows one text packet every two seconds.
      * </p>
      */
-    private CompletableFuture<Boolean> sendText(int destinationId, int channelIndex, String text) {
+    private CompletableFuture<Boolean> sendText(
+            int destinationId, int channelIndex, String text, boolean allowChunking) {
         Objects.requireNonNull(text, "text must not be null");
         ProtocolConstraints.validateChannelIndex(channelIndex);
         MeshtasticChunker.ChunkedResult result = MeshtasticChunker.prepare(text);
@@ -296,14 +337,24 @@ public class MeshtasticClient implements AdminClientAccess {
         int utf8Length = text.getBytes(StandardCharsets.UTF_8).length;
         String destinationLabel = formatTextDestination(destinationId);
 
+        if (result.isMultiPart() && !allowChunking) {
+            String message = String.format(
+                    "Text send to %s on channel %d requires %d chunks, but chunking is disabled.",
+                    destinationLabel, channelIndex, result.getFormattedChunks().size());
+            log.warn("[CHUNKER] {}", message);
+            finalStatus.completeExceptionally(new IllegalArgumentException(message));
+            return finalStatus;
+        }
+
         log.info(
-                "[CHUNKER] Preparing {} text send to {} on channel {} (bytes={} chunks={} multipart={})",
+                "[CHUNKER] Preparing {} text send to {} on channel {} (bytes={} chunks={} multipart={} allowChunking={})",
                 destinationId == MeshConstants.ID_BROADCAST ? "broadcast" : "direct",
                 destinationLabel,
                 channelIndex,
                 utf8Length,
                 result.getFormattedChunks().size(),
-                result.isMultiPart());
+                result.isMultiPart(),
+                allowChunking);
 
         // Kick off the recursion using the common worker
         sendNextChunk(destinationId, channelIndex, result.getFormattedChunks(), 0, finalStatus);
