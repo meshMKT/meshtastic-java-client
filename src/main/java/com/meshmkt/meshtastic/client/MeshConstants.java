@@ -72,4 +72,13 @@ public final class MeshConstants {
      * If not seen in 7 days, it's gone.
      */
     public static final Duration PURGE_THRESHOLD = Duration.ofDays(7);
+
+    /**
+     * Firmware phone-API rate limit for text messages.
+     * <p>
+     * Recent Meshtastic firmware enforces one {@code TEXT_MESSAGE_APP} packet every two seconds.
+     * Multipart text sends should respect this pacing between chunks.
+     * </p>
+     */
+    public static final long TEXT_MESSAGE_RATE_LIMIT_MS = 2000L;
 }

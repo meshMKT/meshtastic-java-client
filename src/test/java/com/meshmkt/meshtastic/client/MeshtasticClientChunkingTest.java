@@ -56,7 +56,7 @@ class MeshtasticClientChunkingTest {
                     tr -> tr.hasPacket()
                             && tr.getPacket().getDecoded().getPortnum() == PortNum.TEXT_MESSAGE_APP
                             && seenRequestIds.add(tr.getPacket().getId()),
-                    Duration.ofSeconds(2));
+                    Duration.ofSeconds(5));
 
             String payload = outbound.getPacket().getDecoded().getPayload().toString(StandardCharsets.UTF_8);
             assertEquals(expectedChunk, payload);
@@ -68,7 +68,7 @@ class MeshtasticClientChunkingTest {
                     .toByteArray());
         }
 
-        assertTrue(sendFuture.get(2, TimeUnit.SECONDS));
+        assertTrue(sendFuture.get(8, TimeUnit.SECONDS));
     }
 
     /**

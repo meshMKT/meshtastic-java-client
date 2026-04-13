@@ -282,13 +282,28 @@ public class MeshtasticClient implements AdminClientAccess {
     }
 
     /**
-     * THE master method.
+     * Sends text message, chunking when required.
+     * <p>
+     * Multipart text sends are paced to match firmware phone-API throttling for
+     * {@link PortNum#TEXT_MESSAGE_APP}, which currently allows one text packet every two seconds.
+     * </p>
      */
     private CompletableFuture<Boolean> sendText(int destinationId, int channelIndex, String text) {
         Objects.requireNonNull(text, "text must not be null");
         ProtocolConstraints.validateChannelIndex(channelIndex);
         MeshtasticChunker.ChunkedResult result = MeshtasticChunker.prepare(text);
         CompletableFuture<Boolean> finalStatus = new CompletableFuture<>();
+        int utf8Length = text.getBytes(StandardCharsets.UTF_8).length;
+        String destinationLabel = formatTextDestination(destinationId);
+
+        log.info(
+                "[CHUNKER] Preparing {} text send to {} on channel {} (bytes={} chunks={} multipart={})",
+                destinationId == MeshConstants.ID_BROADCAST ? "broadcast" : "direct",
+                destinationLabel,
+                channelIndex,
+                utf8Length,
+                result.getFormattedChunks().size(),
+                result.isMultiPart());
 
         // Kick off the recursion using the common worker
         sendNextChunk(destinationId, channelIndex, result.getFormattedChunks(), 0, finalStatus);
@@ -314,7 +329,7 @@ public class MeshtasticClient implements AdminClientAccess {
                 "[CHUNKER] Sending chunk {}/{} to {} on channel index {}",
                 index + 1,
                 chunks.size(),
-                Integer.toHexString(destinationId),
+                formatTextDestination(destinationId),
                 channelIndex);
 
         byte[] chunkBytes = chunks.get(index).getBytes(StandardCharsets.UTF_8);
@@ -331,15 +346,45 @@ public class MeshtasticClient implements AdminClientAccess {
 
         executeRequest(request)
                 .thenAccept(packet -> {
-                    // executeRequest only completes after the 200ms cooldown,
-                    // so we can loop immediately to the next chunk safely.
-                    sendNextChunk(destinationId, channelIndex, chunks, index + 1, finalStatus);
+                    if (index + 1 >= chunks.size()) {
+                        log.info(
+                                "[CHUNKER] Completed {} text send to {} on channel {} (chunks={})",
+                                destinationId == MeshConstants.ID_BROADCAST ? "broadcast" : "direct",
+                                formatTextDestination(destinationId),
+                                channelIndex,
+                                chunks.size());
+                        sendNextChunk(destinationId, channelIndex, chunks, index + 1, finalStatus);
+                        return;
+                    }
+
+                    log.debug(
+                            "[CHUNKER] Chunk {}/{} accepted. Waiting {}ms before next text chunk to match firmware rate limiting.",
+                            index + 1,
+                            chunks.size(),
+                            MeshConstants.TEXT_MESSAGE_RATE_LIMIT_MS);
+                    scheduler.schedule(
+                            () -> sendNextChunk(destinationId, channelIndex, chunks, index + 1, finalStatus),
+                            MeshConstants.TEXT_MESSAGE_RATE_LIMIT_MS,
+                            TimeUnit.MILLISECONDS);
                 })
                 .exceptionally(ex -> {
-                    log.error("[CHUNKER] Chunk {} failed: {}", index + 1, ex.getMessage());
+                    Throwable root = unwrapCompletionThrowable(ex);
+                    String rootMessage = root.getMessage() == null ? root.toString() : root.getMessage();
+                    log.error(
+                            "[CHUNKER] {} text send to {} on channel {} failed on chunk {}/{}: {}",
+                            destinationId == MeshConstants.ID_BROADCAST ? "Broadcast" : "Direct",
+                            formatTextDestination(destinationId),
+                            channelIndex,
+                            index + 1,
+                            chunks.size(),
+                            rootMessage);
                     finalStatus.completeExceptionally(ex);
                     return null;
                 });
+    }
+
+    private static String formatTextDestination(int destinationId) {
+        return destinationId == MeshConstants.ID_BROADCAST ? "BROADCAST" : MeshUtils.formatId(destinationId);
     }
 
     // -------------------------------------------------------------------------
