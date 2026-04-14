@@ -11,6 +11,7 @@ import com.meshmkt.meshtastic.client.event.MeshtasticEventListener;
 import com.meshmkt.meshtastic.client.event.RequestLifecycleEvent;
 import com.meshmkt.meshtastic.client.event.StartupState;
 import com.meshmkt.meshtastic.client.storage.InMemoryNodeDatabase;
+import com.meshmkt.meshtastic.client.storage.MeshNode;
 import com.meshmkt.meshtastic.client.storage.NodeDatabase;
 import com.meshmkt.meshtastic.client.transport.MeshtasticTransport;
 import com.meshmkt.meshtastic.client.transport.stream.serial.SerialConfig;
@@ -50,6 +51,8 @@ import org.slf4j.LoggerFactory;
  * <li>{@code MESHTASTIC_TEST_TCP_PORT}: TCP port when {@code MESHTASTIC_TEST_TRANSPORT=tcp} (default: 4403).</li>
  * <li>{@code MESHTASTIC_TEST_TIMEOUT_SEC}: per-future timeout in seconds (default: 45).</li>
  * <li>{@code MESHTASTIC_TEST_MUTABLE_CHANNEL_INDEX}: channel slot used for reversible write test (default: 2).</li>
+ * <li>{@code MESHTASTIC_TEST_ENABLE_NODEDB_MUTATION}: enables reversible node-db mutation checks on a non-self node.</li>
+ * <li>{@code MESHTASTIC_TEST_ENABLE_NODEDB_RESET}: enables destructive node-db reset/reconnect validation.</li>
  * </ul>
  */
 @Tag("hardware")
@@ -64,6 +67,7 @@ class RealRadioAdminIT {
     private static final Duration RECONNECT_READY_TIMEOUT = Duration.ofSeconds(120);
     private static final Duration SELF_ID_READY_TIMEOUT = Duration.ofSeconds(20);
     private static final Duration RESTORE_READBACK_WINDOW = Duration.ofSeconds(60);
+    private static final Duration NODE_DISCOVERY_WAIT_TIMEOUT = Duration.ofSeconds(15);
     private static final int RESTORE_ATTEMPTS = 4;
     private static final List<AdminMessage.ConfigType> CORE_CONFIG_MATRIX = List.of(
             AdminMessage.ConfigType.LORA_CONFIG,
@@ -79,12 +83,15 @@ class RealRadioAdminIT {
 
     private MeshtasticClient client;
     private AdminService adminService;
+    private NodeDatabase nodeDatabase;
     private Duration operationTimeout;
     private int mutableChannelIndex;
     private boolean enableOwnerWriteTest;
     private boolean enableSecurityWriteTest;
     private boolean enableMqttWriteTest;
     private boolean enableRebootResilienceTest;
+    private boolean enableNodeDbMutationTest;
+    private boolean enableNodeDbResetTest;
     private String transportKind;
     private final List<RequestLifecycleEvent> lifecycleEvents = new CopyOnWriteArrayList<>();
 
@@ -108,8 +115,12 @@ class RealRadioAdminIT {
                 parseBoolean(trimToNull(System.getProperty("MESHTASTIC_TEST_ENABLE_MQTT_WRITE")), false);
         this.enableRebootResilienceTest =
                 parseBoolean(trimToNull(System.getProperty("MESHTASTIC_TEST_ENABLE_REBOOT_TEST")), false);
+        this.enableNodeDbMutationTest =
+                parseBoolean(trimToNull(System.getProperty("MESHTASTIC_TEST_ENABLE_NODEDB_MUTATION")), false);
+        this.enableNodeDbResetTest =
+                parseBoolean(trimToNull(System.getProperty("MESHTASTIC_TEST_ENABLE_NODEDB_RESET")), false);
 
-        NodeDatabase nodeDatabase = new InMemoryNodeDatabase();
+        nodeDatabase = new InMemoryNodeDatabase();
         client = new MeshtasticClient(nodeDatabase);
         adminService = client.getAdminService();
 
@@ -474,6 +485,58 @@ class RealRadioAdminIT {
         requireAssumption(awaitKnownSelfNodeId(Duration.ofSeconds(45)), "Self node ID did not recover after reboot.");
         assertNotNull(
                 awaitWithRetry(adminService::refreshMetadata, 2), "Metadata refresh after reboot should succeed.");
+    }
+
+    /**
+     * Optional reversible node-db mutation test on a discovered non-self node.
+     * <p>
+     * Enabled with {@code MESHTASTIC_TEST_ENABLE_NODEDB_MUTATION=true}.
+     * </p>
+     *
+     * @throws Exception when request acceptance fails.
+     */
+    @Test
+    @Timeout(value = 240)
+    void nodeDbMutationCommandsWhenEnabled() throws Exception {
+        requireAssumption(
+                enableNodeDbMutationTest,
+                "Set MESHTASTIC_TEST_ENABLE_NODEDB_MUTATION=true to enable node-db mutation IT.");
+
+        Integer targetNodeId = awaitNonSelfNodeId(NODE_DISCOVERY_WAIT_TIMEOUT);
+        requireAssumption(targetNodeId != null, "No non-self node discovered for node-db mutation test.");
+
+        assertTrue(awaitWithRetry(() -> adminService.setFavoriteNode(targetNodeId), 2));
+        assertTrue(awaitWithRetry(() -> adminService.removeFavoriteNode(targetNodeId), 2));
+        assertTrue(awaitWithRetry(() -> adminService.setIgnoredNode(targetNodeId), 2));
+        assertTrue(awaitWithRetry(() -> adminService.removeIgnoredNode(targetNodeId), 2));
+        assertTrue(awaitWithRetry(() -> adminService.toggleMutedNode(targetNodeId), 2));
+        assertTrue(awaitWithRetry(() -> adminService.toggleMutedNode(targetNodeId), 2));
+    }
+
+    /**
+     * Optional destructive node-db reset/reconnect validation.
+     * <p>
+     * Enabled with {@code MESHTASTIC_TEST_ENABLE_NODEDB_RESET=true}.
+     * </p>
+     *
+     * @throws Exception when reset request or reconnection validation fails.
+     */
+    @Test
+    @Timeout(value = 360)
+    void nodeDbResetReconnectsWhenEnabled() throws Exception {
+        requireAssumption(
+                enableNodeDbResetTest, "Set MESHTASTIC_TEST_ENABLE_NODEDB_RESET=true to enable node-db reset IT.");
+        requireAssumption(isKnownSelfNodeId(client.getSelfNodeId()), "Self node ID is unavailable.");
+
+        boolean accepted = awaitWithRetry(() -> adminService.resetNodeDb(true), 2);
+        assertTrue(accepted, "Node-db reset request was not accepted.");
+
+        awaitReadyState(Duration.ofSeconds(180));
+        requireAssumption(
+                awaitKnownSelfNodeId(Duration.ofSeconds(45)), "Self node ID did not recover after node-db reset.");
+        assertNotNull(
+                awaitWithRetry(adminService::refreshMetadata, 2),
+                "Metadata refresh after node-db reset should succeed.");
     }
 
     /**
@@ -925,6 +988,33 @@ class RealRadioAdminIT {
             Thread.sleep(READBACK_POLL_INTERVAL.toMillis());
         }
         return isKnownSelfNodeId(client.getSelfNodeId());
+    }
+
+    /**
+     * Waits for one discovered non-self node id to become available from the local node database.
+     *
+     * @param timeout max wait time.
+     * @return first discovered non-self node id, or null when none is observed before timeout.
+     * @throws InterruptedException when interrupted while waiting.
+     */
+    private Integer awaitNonSelfNodeId(Duration timeout) throws InterruptedException {
+        long deadline = System.nanoTime() + timeout.toNanos();
+        while (System.nanoTime() < deadline) {
+            Optional<Integer> candidate = nodeDatabase.getAllNodes().stream()
+                    .map(MeshNode::getNodeId)
+                    .filter(nodeId -> nodeId != client.getSelfNodeId())
+                    .findFirst();
+            if (candidate.isPresent()) {
+                return candidate.get();
+            }
+            Thread.sleep(READBACK_POLL_INTERVAL.toMillis());
+        }
+
+        return nodeDatabase.getAllNodes().stream()
+                .map(MeshNode::getNodeId)
+                .filter(nodeId -> nodeId != client.getSelfNodeId())
+                .findFirst()
+                .orElse(null);
     }
 
     /**

@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.*;
 
 import build.buf.gen.meshtastic.*;
 import com.google.protobuf.ByteString;
+import com.meshmkt.meshtastic.client.MeshUtils;
 import com.meshmkt.meshtastic.client.storage.MeshNode;
 import java.time.Duration;
 import java.util.*;
@@ -1149,6 +1150,79 @@ class AdminServiceTest {
 
         AdminWriteResult result = service.setConfigResult(requested, false).join();
         assertEquals(AdminWriteStatus.TIMEOUT, result.getStatus());
+    }
+
+    /**
+     * Verifies node-database convenience methods send the expected admin message variants.
+     */
+    @Test
+    void nodeDbConvenienceMethodsSendExpectedAdminRequests() {
+        StubGateway gateway = new StubGateway(1234);
+        AdminService service = new AdminService(gateway);
+
+        for (int i = 0; i < 8; i++) {
+            gateway.enqueueAdminResponse(AdminMessage.newBuilder().build());
+        }
+
+        SharedContact contact = SharedContact.newBuilder()
+                .setNodeNum(0x00abc123)
+                .setUser(User.newBuilder()
+                        .setShortName("kc3")
+                        .setLongName("KC3 Test")
+                        .build())
+                .build();
+
+        assertTrue(service.removeNodeByNum(0x00abc123).join());
+        assertTrue(service.addContact(contact).join());
+        assertTrue(service.setFavoriteNode(0x00abc123).join());
+        assertTrue(service.removeFavoriteNode(0x00abc123).join());
+        assertTrue(service.setIgnoredNode(0x00abc123).join());
+        assertTrue(service.removeIgnoredNode(0x00abc123).join());
+        assertTrue(service.toggleMutedNode(0x00abc123).join());
+        assertTrue(service.resetNodeDb(true).join());
+
+        assertEquals(8, gateway.requests.size());
+        assertEquals(0x00abc123, gateway.requests.get(0).getRemoveByNodenum());
+        assertEquals(contact, gateway.requests.get(1).getAddContact());
+        assertEquals(0x00abc123, gateway.requests.get(2).getSetFavoriteNode());
+        assertEquals(0x00abc123, gateway.requests.get(3).getRemoveFavoriteNode());
+        assertEquals(0x00abc123, gateway.requests.get(4).getSetIgnoredNode());
+        assertEquals(0x00abc123, gateway.requests.get(5).getRemoveIgnoredNode());
+        assertEquals(0x00abc123, gateway.requests.get(6).getToggleMutedNode());
+        assertTrue(gateway.requests.get(7).getNodedbReset());
+    }
+
+    /**
+     * Verifies fixed-position convenience methods send the expected admin payloads.
+     */
+    @Test
+    void fixedPositionConvenienceMethodsSendExpectedAdminRequests() {
+        StubGateway gateway = new StubGateway(1234);
+        AdminService service = new AdminService(gateway);
+
+        gateway.enqueueAdminResponse(AdminMessage.newBuilder().build());
+        gateway.enqueueAdminResponse(AdminMessage.newBuilder().build());
+        gateway.enqueueAdminResponse(AdminMessage.newBuilder().build());
+
+        Position explicit = Position.newBuilder()
+                .setLatitudeI(404321000)
+                .setLongitudeI(-739876000)
+                .setAltitude(123)
+                .build();
+
+        assertTrue(service.setFixedPosition(explicit).join());
+        assertTrue(service.setFixedPosition(40.4321d, -73.9876d, 123).join());
+        assertTrue(service.removeFixedPosition().join());
+
+        assertEquals(explicit, gateway.requests.get(0).getSetFixedPosition());
+        assertEquals(
+                (int) Math.round(40.4321d * MeshUtils.COORD_SCALE),
+                gateway.requests.get(1).getSetFixedPosition().getLatitudeI());
+        assertEquals(
+                (int) Math.round(-73.9876d * MeshUtils.COORD_SCALE),
+                gateway.requests.get(1).getSetFixedPosition().getLongitudeI());
+        assertEquals(123, gateway.requests.get(1).getSetFixedPosition().getAltitude());
+        assertTrue(gateway.requests.get(2).getRemoveFixedPosition());
     }
 
     /**

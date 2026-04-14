@@ -13,7 +13,7 @@ import lombok.extern.slf4j.Slf4j;
  * Maintains message order while freeing up the serial transport thread.
  */
 @Slf4j
-public class MeshtasticDispatcher {
+final class MeshtasticDispatcher {
     private final List<MeshtasticMessageHandler> handlers = new CopyOnWriteArrayList<>();
 
     // Single thread worker ensures messages are processed in the order they were received.

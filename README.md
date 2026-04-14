@@ -121,7 +121,7 @@ MESHTASTIC_TEST_TCP_HOST=192.168.1.40 \
 mvn -Phardware-it verify
 ```
 
-See the user guide for the full hardware test configuration and optional write/reboot test flags.
+See the user guide for the full hardware test configuration and optional write, node-db, and reboot test flags.
 
 ## Contributing
 

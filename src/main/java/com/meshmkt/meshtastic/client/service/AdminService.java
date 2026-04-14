@@ -1136,6 +1136,60 @@ public class AdminService {
     }
 
     /**
+     * Sets fixed position data on the local radio and enables fixed-position mode.
+     *
+     * @param position fixed position payload to send.
+     * @return future completing with {@code true} when accepted by the radio.
+     */
+    public CompletableFuture<Boolean> setFixedPosition(Position position) {
+        Objects.requireNonNull(position, "position must not be null");
+        AdminMessage request = snapshotApplier
+                .withSessionIfPresent(AdminMessage.newBuilder().setSetFixedPosition(position))
+                .build();
+        log.info("[ADMIN] Setting fixed position on the radio");
+        return clientAccess
+                .executeAdminRequest(clientAccess.getSelfNodeId(), request, false)
+                .thenApply(packet -> true);
+    }
+
+    /**
+     * Sets fixed position data on the local radio using decimal degrees and altitude.
+     *
+     * @param latitude latitude in decimal degrees.
+     * @param longitude longitude in decimal degrees.
+     * @param altitude altitude in meters.
+     * @return future completing with {@code true} when accepted by the radio.
+     */
+    public CompletableFuture<Boolean> setFixedPosition(double latitude, double longitude, int altitude) {
+        Position.Builder builder = Position.newBuilder();
+        if (latitude != 0.0d) {
+            builder.setLatitudeI((int) Math.round(latitude * MeshUtils.COORD_SCALE));
+        }
+        if (longitude != 0.0d) {
+            builder.setLongitudeI((int) Math.round(longitude * MeshUtils.COORD_SCALE));
+        }
+        if (altitude != 0) {
+            builder.setAltitude(altitude);
+        }
+        return setFixedPosition(builder.build());
+    }
+
+    /**
+     * Clears fixed position data on the local radio and disables fixed-position mode.
+     *
+     * @return future completing with {@code true} when accepted by the radio.
+     */
+    public CompletableFuture<Boolean> removeFixedPosition() {
+        AdminMessage request = snapshotApplier
+                .withSessionIfPresent(AdminMessage.newBuilder().setRemoveFixedPosition(true))
+                .build();
+        log.info("[ADMIN] Removing fixed position from the radio");
+        return clientAccess
+                .executeAdminRequest(clientAccess.getSelfNodeId(), request, false)
+                .thenApply(packet -> true);
+    }
+
+    /**
      * Writes power config to the local radio.
      *
      * @param powerConfig power config payload.
@@ -1482,6 +1536,135 @@ public class AdminService {
                 .build();
 
         log.info("[ADMIN] Requesting radio reboot in {} seconds...", seconds);
+        return clientAccess
+                .executeAdminRequest(clientAccess.getSelfNodeId(), request, false)
+                .thenApply(packet -> true);
+    }
+
+    /**
+     * Removes one node from the radio's on-device node database.
+     *
+     * @param nodeId node id to remove from the radio node database.
+     * @return future completing with {@code true} when accepted by the radio.
+     */
+    public CompletableFuture<Boolean> removeNodeByNum(int nodeId) {
+        AdminMessage request = snapshotApplier
+                .withSessionIfPresent(AdminMessage.newBuilder().setRemoveByNodenum(nodeId))
+                .build();
+        log.info("[ADMIN] Removing node {} from radio node database", MeshUtils.formatId(nodeId));
+        return clientAccess
+                .executeAdminRequest(clientAccess.getSelfNodeId(), request, false)
+                .thenApply(packet -> true);
+    }
+
+    /**
+     * Adds one shared contact to the radio's on-device node database.
+     *
+     * @param contact shared contact payload to add.
+     * @return future completing with {@code true} when accepted by the radio.
+     */
+    public CompletableFuture<Boolean> addContact(SharedContact contact) {
+        Objects.requireNonNull(contact, "contact must not be null");
+        AdminMessage request = snapshotApplier
+                .withSessionIfPresent(AdminMessage.newBuilder().setAddContact(contact))
+                .build();
+        log.info("[ADMIN] Adding contact {} to radio node database", MeshUtils.formatId(contact.getNodeNum()));
+        return clientAccess
+                .executeAdminRequest(clientAccess.getSelfNodeId(), request, false)
+                .thenApply(packet -> true);
+    }
+
+    /**
+     * Marks one node as favorite on the radio's on-device node database.
+     *
+     * @param nodeId node id to favorite.
+     * @return future completing with {@code true} when accepted by the radio.
+     */
+    public CompletableFuture<Boolean> setFavoriteNode(int nodeId) {
+        AdminMessage request = snapshotApplier
+                .withSessionIfPresent(AdminMessage.newBuilder().setSetFavoriteNode(nodeId))
+                .build();
+        log.info("[ADMIN] Marking node {} as favorite on the radio", MeshUtils.formatId(nodeId));
+        return clientAccess
+                .executeAdminRequest(clientAccess.getSelfNodeId(), request, false)
+                .thenApply(packet -> true);
+    }
+
+    /**
+     * Removes favorite status from one node on the radio's on-device node database.
+     *
+     * @param nodeId node id to un-favorite.
+     * @return future completing with {@code true} when accepted by the radio.
+     */
+    public CompletableFuture<Boolean> removeFavoriteNode(int nodeId) {
+        AdminMessage request = snapshotApplier
+                .withSessionIfPresent(AdminMessage.newBuilder().setRemoveFavoriteNode(nodeId))
+                .build();
+        log.info("[ADMIN] Removing favorite flag for node {} on the radio", MeshUtils.formatId(nodeId));
+        return clientAccess
+                .executeAdminRequest(clientAccess.getSelfNodeId(), request, false)
+                .thenApply(packet -> true);
+    }
+
+    /**
+     * Marks one node as ignored on the radio's on-device node database.
+     *
+     * @param nodeId node id to ignore.
+     * @return future completing with {@code true} when accepted by the radio.
+     */
+    public CompletableFuture<Boolean> setIgnoredNode(int nodeId) {
+        AdminMessage request = snapshotApplier
+                .withSessionIfPresent(AdminMessage.newBuilder().setSetIgnoredNode(nodeId))
+                .build();
+        log.info("[ADMIN] Marking node {} as ignored on the radio", MeshUtils.formatId(nodeId));
+        return clientAccess
+                .executeAdminRequest(clientAccess.getSelfNodeId(), request, false)
+                .thenApply(packet -> true);
+    }
+
+    /**
+     * Removes ignored status from one node on the radio's on-device node database.
+     *
+     * @param nodeId node id to un-ignore.
+     * @return future completing with {@code true} when accepted by the radio.
+     */
+    public CompletableFuture<Boolean> removeIgnoredNode(int nodeId) {
+        AdminMessage request = snapshotApplier
+                .withSessionIfPresent(AdminMessage.newBuilder().setRemoveIgnoredNode(nodeId))
+                .build();
+        log.info("[ADMIN] Removing ignored flag for node {} on the radio", MeshUtils.formatId(nodeId));
+        return clientAccess
+                .executeAdminRequest(clientAccess.getSelfNodeId(), request, false)
+                .thenApply(packet -> true);
+    }
+
+    /**
+     * Toggles muted state for one node on the radio's on-device node database.
+     *
+     * @param nodeId node id to toggle mute for.
+     * @return future completing with {@code true} when accepted by the radio.
+     */
+    public CompletableFuture<Boolean> toggleMutedNode(int nodeId) {
+        AdminMessage request = snapshotApplier
+                .withSessionIfPresent(AdminMessage.newBuilder().setToggleMutedNode(nodeId))
+                .build();
+        log.info("[ADMIN] Toggling muted flag for node {} on the radio", MeshUtils.formatId(nodeId));
+        return clientAccess
+                .executeAdminRequest(clientAccess.getSelfNodeId(), request, false)
+                .thenApply(packet -> true);
+    }
+
+    /**
+     * Resets the radio's on-device node database.
+     *
+     * @param preserveFavorites when {@code true}, preserve favorite nodes through reset if firmware supports it.
+     * @return future completing with {@code true} when accepted by the radio.
+     */
+    public CompletableFuture<Boolean> resetNodeDb(boolean preserveFavorites) {
+        AdminMessage request = snapshotApplier
+                .withSessionIfPresent(AdminMessage.newBuilder().setNodedbReset(preserveFavorites))
+                .build();
+        log.warn("[ADMIN] Requesting radio node database reset (preserveFavorites={})", preserveFavorites);
         return clientAccess
                 .executeAdminRequest(clientAccess.getSelfNodeId(), request, false)
                 .thenApply(packet -> true);

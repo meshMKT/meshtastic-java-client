@@ -194,6 +194,7 @@ If a change affects:
 - request correlation
 - startup sync
 - admin write/readback behavior
+- radio node database behavior
 - reconnect handling
 - transport pacing/timeout behavior
 
