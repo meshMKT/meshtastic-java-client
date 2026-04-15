@@ -71,7 +71,7 @@
     <dependency>
       <groupId>build.buf.gen</groupId>
       <artifactId>meshtastic_protobufs_protocolbuffers_java</artifactId>
-      <version>34.1.0.1.20260410112702.806a62096ca3</version>
+      <version>34.1.0.1.20260414125134.23b4140add41</version>
     </dependency>
 
     <!-- Lombok -->
