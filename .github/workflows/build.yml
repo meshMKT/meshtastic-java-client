@@ -38,10 +38,6 @@ jobs:
         run: |
           mkdir -p _site
           cp -R target/docs/* _site/
-          if [ -d target/site/apidocs ]; then
-            mkdir -p _site/apidocs
-            cp -R target/site/apidocs/* _site/apidocs/
-          fi
           touch _site/.nojekyll
 
       - name: Upload build artifacts
@@ -51,7 +47,6 @@ jobs:
           path: |
             target/*.jar
             target/docs/**
-            target/site/apidocs/**
             _site/**
           if-no-files-found: warn
 

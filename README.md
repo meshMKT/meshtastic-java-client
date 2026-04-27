@@ -23,11 +23,8 @@ This library was built to fill that gap with a Java-first client that is practic
 
 ## Licensing Note
 
-This project is moving from Apache-2.0 to GPL-3.0 to match the licensing of the Meshtastic protobuf definitions it now depends on and generates code from.
+This project moved from Apache-2.0 to GPL-3.0 to match the licensing of the Meshtastic protobuf definitions it now depends on and generates code from.
 
-The important distinction is that this library is no longer just an independent implementation of the protocol. The distributed artifact now includes generated classes derived from the Meshtastic protobuf schema definitions, and those upstream definitions are published by the Meshtastic project under GPL-3.0.
-
-To avoid sending mixed signals about the licensing of the shipped artifact, the project documentation and published metadata are being aligned to GPL-3.0 as well.
 
 ## What It Supports
 
@@ -73,7 +70,7 @@ implementation group: 'com.meshmkt.meshtastic', name: 'meshtastic-java-client', 
 
 ## Quick Start
 
-The smallest useful setup is still just a few lines of Java:
+Quickly get started in a few lines of Java:
 
 ```java
 NodeDatabase db = new InMemoryNodeDatabase();
@@ -110,6 +107,14 @@ The user guide covers topics such as:
 - transport behavior and reconnect expectations
 - extension points such as BLE and custom node database implementations
 - hardware integration testing
+
+## Third-Party Dependencies
+
+If you want a quick summary of the main third-party libraries used by this project and why they are present, see:
+
+- `THIRD_PARTY.md`
+
+That file is a companion to `pom.xml`, not a replacement for it. `pom.xml` remains the source of truth for exact versions.
 
 ## Project Status
 
