@@ -32,7 +32,6 @@ public class BleTransport extends StreamTransport {
 
     /**
      * Establishes the underlying transport connection.
-     *
      */
     @Override
     protected void connect() throws Exception {
@@ -48,7 +47,6 @@ public class BleTransport extends StreamTransport {
 
     /**
      * Closes the underlying transport connection and releases resources.
-     *
      */
     @Override
     protected void disconnect() throws Exception {
@@ -139,7 +137,7 @@ public class BleTransport extends StreamTransport {
                         retryLoopActive.set(false);
                     }
                 },
-                "BleRetryThread");
+                "Mesh-BleRetry");
         retryThread.setDaemon(true);
         retryThread.start();
     }

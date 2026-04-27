@@ -14,18 +14,33 @@ import lombok.extern.slf4j.Slf4j;
  */
 @Slf4j
 public abstract class AbstractFramedTransport implements MeshtasticTransport {
+    private static final int DEFAULT_RX_QUEUE_CAPACITY = 1000;
+    private static final int DEFAULT_TX_QUEUE_CAPACITY = 100;
+    private static final long DEFAULT_TX_QUEUE_OFFER_TIMEOUT_SECONDS = 1L;
+    private static final long DEFAULT_OUTBOUND_PACING_DELAY_MS = 200L;
 
     /**
-     *
+     * Buffered raw inbound bytes waiting to be decoded into protobuf payloads.
+     * <p>
+     * The queue is intentionally bounded so a stalled consumer cannot grow memory without limit
+     * on small devices or long-running desktop clients.
+     * </p>
      */
-    protected final BlockingQueue<byte[]> dataQueue = new LinkedBlockingQueue<>(1000);
+    protected final BlockingQueue<byte[]> dataQueue = new LinkedBlockingQueue<>(DEFAULT_RX_QUEUE_CAPACITY);
 
+    /**
+     * Registered connection listeners notified on a dedicated event executor.
+     */
     private final List<TransportConnectionListener> connectionListeners = new CopyOnWriteArrayList<>();
 
     /**
-     *
+     * Buffered outbound protobuf payloads waiting to be framed and transmitted.
+     * <p>
+     * This queue is intentionally bounded so callers receive an observable backpressure signal instead
+     * of unbounded memory growth during sustained radio or transport congestion.
+     * </p>
      */
-    protected final BlockingQueue<byte[]> txQueue = new LinkedBlockingQueue<>(100);
+    protected final BlockingQueue<byte[]> txQueue = new LinkedBlockingQueue<>(DEFAULT_TX_QUEUE_CAPACITY);
 
     private ExecutorService txExecutor;
 
@@ -33,49 +48,57 @@ public abstract class AbstractFramedTransport implements MeshtasticTransport {
     private ExecutorService eventExecutor; // Decouples IO from Listeners
 
     /**
-     *
+     * Consumer invoked after a full protobuf payload has been decoded from the transport framing.
      */
     protected Consumer<byte[]> packetConsumer = (data) -> {};
 
     /**
-     *
+     * /**
+     * Transport lifecycle flag shared by worker loops and reconnect logic.
      */
     protected volatile boolean running = false;
 
-    // Default to 1000ms, which is a safe "middle ground"
-    private long outboundPacingDelay = 200;
+    /**
+     * Small pacing delay inserted between outbound frames to avoid overrunning slower radios.
+     */
+    private long outboundPacingDelay = DEFAULT_OUTBOUND_PACING_DELAY_MS;
 
     // --- Template Methods for Subclasses ---
     /**
      * Subclasses implement physical connection logic.
-     * @throws java.lang.Exception
+     *
+     * @throws Exception when the physical transport cannot be opened.
      */
     protected abstract void connect() throws Exception;
 
     /**
      * Subclasses implement physical disconnection.
-     * @throws java.lang.Exception
+     *
+     * @throws Exception when the physical transport cannot be closed cleanly.
      */
     protected abstract void disconnect() throws Exception;
 
     /**
      * Subclasses implement the physical write (e.g., serial.writeBytes).
-     * @param data
-     * @throws java.lang.Exception
+     *
+     * @param data outbound protobuf payload or transport-specific frame bytes.
+     * @throws Exception when the physical write fails.
      */
     protected abstract void sendRawBytes(byte[] data) throws Exception;
 
     /**
      * Subclasses define how raw bytes are processed into packets.
-     * @param data
+     *
+     * @param data raw bytes read from the physical transport.
      */
     protected abstract void handleIncomingRawData(byte[] data);
 
     // --- Public Template API (Final) ---
 
     /**
+     * Sets the inter-frame pacing delay used by the outbound transmit worker.
      *
-     * @param millis
+     * @param millis pacing delay in milliseconds.
      */
     public void setOutboundPacingDelay(long millis) {
         this.outboundPacingDelay = millis;
@@ -96,7 +119,7 @@ public abstract class AbstractFramedTransport implements MeshtasticTransport {
         // If enqueue cannot complete quickly, we log and notify so callers can observe congestion behavior.
         log.trace("write - adding bytes to txQueue");
         try {
-            boolean enqueued = txQueue.offer(protobufData, 1, TimeUnit.SECONDS);
+            boolean enqueued = txQueue.offer(protobufData, DEFAULT_TX_QUEUE_OFFER_TIMEOUT_SECONDS, TimeUnit.SECONDS);
             if (!enqueued) {
                 log.warn("write - txQueue full, dropping outbound frame ({} bytes)", protobufData.length);
                 notifyError(new IllegalStateException("Outbound queue saturated; frame dropped"));
@@ -111,7 +134,8 @@ public abstract class AbstractFramedTransport implements MeshtasticTransport {
 
     /**
      * Entry point for hardware threads to feed the system.
-     * @param data
+     *
+     * @param data raw bytes read from the physical transport.
      */
     protected final void enqueueData(byte[] data) {
         if (data != null && data.length > 0) {
@@ -129,14 +153,15 @@ public abstract class AbstractFramedTransport implements MeshtasticTransport {
 
     // --- Event Dispatching Logic ---
     /**
-     * Look in the outbox to see if we have packets to send to the radio
+     * Pulls outbound payloads from the transmit queue, writes them to the physical transport,
+     * and emits traffic notifications.
      */
     private void processTxQueue() {
         while (running && !Thread.currentThread().isInterrupted()) {
             try {
                 log.trace("processTxQueue - Checking for txQueue data");
-                byte[] protobufData = txQueue.take(); // Wait for a packet
-                log.trace("processTxQeueu - Found data to process");
+                byte[] protobufData = txQueue.take();
+                log.trace("processTxQueue - Found data to process");
 
                 log.trace("processTxQueue - Sending bytes to radio");
                 sendRawBytes(protobufData);
@@ -146,7 +171,6 @@ public abstract class AbstractFramedTransport implements MeshtasticTransport {
                 asyncNotify(TransportConnectionListener::onTrafficTransmitted);
                 log.trace("processTxQueue - Activity event sent");
 
-                /// Use the configurable delay
                 if (outboundPacingDelay > 0) {
                     log.trace("processTxQueue - Sleeping for {}ms", outboundPacingDelay);
                     Thread.sleep(outboundPacingDelay);
@@ -182,22 +206,23 @@ public abstract class AbstractFramedTransport implements MeshtasticTransport {
     }
 
     /**
-     *
+     * Notifies listeners that the transport link is connected.
      */
     protected void notifyConnected() {
         asyncNotify(TransportConnectionListener::onConnected);
     }
 
     /**
-     *
+     * Notifies listeners that the transport link was disconnected.
      */
     protected void notifyDisconnected() {
         asyncNotify(TransportConnectionListener::onDisconnected);
     }
 
     /**
+     * Notifies listeners about a transport error.
      *
-     * @param t
+     * @param t transport failure to publish.
      */
     protected void notifyError(Throwable t) {
         asyncNotify(l -> l.onError(t));
@@ -206,7 +231,6 @@ public abstract class AbstractFramedTransport implements MeshtasticTransport {
     // --- Lifecycle Management ---
     /**
      * Starts transport workers and opens the underlying physical link.
-     *
      */
     @Override
     public synchronized void start() {
@@ -215,21 +239,23 @@ public abstract class AbstractFramedTransport implements MeshtasticTransport {
         }
 
         try {
+            String transportName = getClass().getSimpleName();
+
             // Setup Event Executor first so we can notify connection success
             eventExecutor = Executors.newSingleThreadExecutor(r -> {
-                Thread t = new Thread(r, "TransportEvent-" + getClass().getSimpleName());
+                Thread t = new Thread(r, "Mesh-TransportEvents-" + transportName);
                 t.setDaemon(true);
                 return t;
             });
 
             consumerExecutor = Executors.newSingleThreadExecutor(r -> {
-                Thread t = new Thread(r, "TransportWorker-" + getClass().getSimpleName());
+                Thread t = new Thread(r, "Mesh-TransportRx-" + transportName);
                 t.setDaemon(true);
                 return t;
             });
 
             txExecutor = Executors.newSingleThreadExecutor(r -> {
-                Thread t = new Thread(r, "TransportTX-" + getClass().getSimpleName());
+                Thread t = new Thread(r, "Mesh-TransportTx-" + transportName);
                 t.setDaemon(true);
                 return t;
             });
@@ -251,7 +277,7 @@ public abstract class AbstractFramedTransport implements MeshtasticTransport {
     }
 
     /**
-     * Process the incoming raw data queue so we don't block the IO thread
+     * Processes queued inbound raw data so the physical IO callback can return quickly.
      */
     private void processIncomingDataQueue() {
         while (running && !Thread.currentThread().isInterrupted()) {
@@ -267,7 +293,6 @@ public abstract class AbstractFramedTransport implements MeshtasticTransport {
 
     /**
      * Stops transport workers and closes the underlying physical link.
-     *
      */
     @Override
     public synchronized void stop() {
@@ -340,17 +365,18 @@ public abstract class AbstractFramedTransport implements MeshtasticTransport {
     }
 
     /**
+     * Forwards one decoded protobuf payload to the registered parsed-packet consumer.
      *
-     * @param packet
+     * @param packet decoded protobuf payload.
      */
     protected void dispatchToConsumer(byte[] packet) {
         packetConsumer.accept(packet);
     }
 
     /**
-     * Logic for handling errors and triggering retries (implemented in concrete
-     * class)
-     * @param e
+     * Handles transport errors and optional reconnect logic in concrete implementations.
+     *
+     * @param e transport error.
      */
     protected abstract void handleTransportError(Exception e);
 }

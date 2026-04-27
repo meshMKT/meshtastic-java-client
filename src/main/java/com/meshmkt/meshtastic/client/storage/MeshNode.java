@@ -34,12 +34,12 @@ public class MeshNode {
     String shortName;
 
     /**
-     * Last channel
+     * Last channel slot on which this node was observed.
      */
     int lastChannel;
 
     /**
-     * Did we get this via Mqtt
+     * Whether the most recent observation arrived via MQTT instead of direct mesh RF.
      */
     boolean isMqtt;
 
@@ -104,7 +104,7 @@ public class MeshNode {
     long lastSeenLocal;
 
     /**
-     * Is this node ourself
+     * Whether this snapshot represents the local node itself.
      */
     boolean self;
 
@@ -118,17 +118,17 @@ public class MeshNode {
     }
 
     /**
-     *
+     * Coarse freshness status derived from radio timestamps and app-session observations.
      */
     public enum NodeStatus {
 
         /**
-         *
+         * The local node itself.
          */
         SELF,
 
         /**
-         *
+         * Heard live by this app recently enough to be considered active now.
          */
         LIVE,
 
@@ -148,14 +148,15 @@ public class MeshNode {
         CACHED,
 
         /**
-         *
+         * Old enough to be considered stale or unavailable.
          */
         OFFLINE
     }
 
     /**
+     * Returns the node id in Meshtastic hexadecimal format.
      *
-     * @return
+     * @return formatted node id such as {@code !abcdef12}.
      */
     public String getHexId() {
         return String.format("!%08x", nodeId);

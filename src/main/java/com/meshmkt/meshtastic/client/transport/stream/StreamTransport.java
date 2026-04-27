@@ -14,12 +14,12 @@ import java.io.IOException;
 public abstract class StreamTransport extends AbstractFramedTransport {
 
     /**
-     *
+     * Stateful decoder that reconstructs Meshtastic framed packets from raw stream bytes.
      */
     protected final MeshtasticFrameDecoder frameDecoder;
 
     /**
-     *
+     * Creates a stream transport using the default stalled-frame timeout.
      */
     protected StreamTransport() {
         this(200L);
@@ -36,7 +36,8 @@ public abstract class StreamTransport extends AbstractFramedTransport {
 
     /**
      * Feeds raw data chunks into the byte-by-byte frame decoder.
-     * @param data
+     *
+     * @param data raw bytes from the transport stream.
      */
     @Override
     protected void handleIncomingRawData(byte[] data) {
@@ -46,11 +47,11 @@ public abstract class StreamTransport extends AbstractFramedTransport {
     }
 
     /**
-     * Implementation of the Template Method from AbstractFramedTransport. This
-     * method is called after the base class has validated connectivity and is
-     * responsible for framing the data before the physical write.
-     * @param protobufData
-     * @throws java.lang.Exception
+     * Frames one protobuf payload using the Meshtastic serial framing envelope before writing it to the
+     * concrete physical transport.
+     *
+     * @param protobufData outbound protobuf payload.
+     * @throws Exception when the physical write fails.
      */
     @Override
     protected synchronized void sendRawBytes(byte[] protobufData) throws Exception {
@@ -75,14 +76,16 @@ public abstract class StreamTransport extends AbstractFramedTransport {
 
     /**
      * Subclasses (Serial/TCP) implement this to transmit the framed packet.
-     * @param framedData
-     * @throws java.io.IOException
+     *
+     * @param framedData transport frame ready for physical transmission.
+     * @throws IOException when the underlying transport write fails.
      */
     protected abstract void writeToPhysicalLayer(byte[] framedData) throws IOException;
 
     /**
      * Subclasses implement recovery logic (e.g., retry loops).
-     * @param e
+     *
+     * @param e transport failure to recover from.
      */
     @Override
     protected abstract void handleTransportError(Exception e);

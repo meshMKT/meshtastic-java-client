@@ -216,8 +216,7 @@ public class MeshtasticClient implements AdminClientAccess {
     }
 
     /**
-     * Registers built-in protocol handlers with the dispatcher.
-     *
+     * Registers the built-in protocol handlers used by the client runtime.
      */
     private void initializeHandlers() {
         dispatcher.registerHandler(new AdminHandler(nodeDb, internalDispatcher, adminService));
@@ -744,7 +743,6 @@ public class MeshtasticClient implements AdminClientAccess {
 
     /**
      * Initializes startup sync state for a new connection cycle.
-     *
      */
     private synchronized void primeStartupSync() {
         startupSynchronizer.prime();
@@ -752,7 +750,6 @@ public class MeshtasticClient implements AdminClientAccess {
 
     /**
      * Starts startup synchronization using the current phase state.
-     *
      */
     private synchronized void startStartupSync() {
         startupSynchronizer.start();
@@ -1329,7 +1326,6 @@ public class MeshtasticClient implements AdminClientAccess {
 
     /**
      * Starts periodic heartbeat scheduling when startup is ready.
-     *
      */
     private synchronized void startHeartbeatTask() {
         if (heartbeatFuture != null && !heartbeatFuture.isDone()) {
@@ -1340,7 +1336,6 @@ public class MeshtasticClient implements AdminClientAccess {
 
     /**
      * Stops and clears the active heartbeat schedule.
-     *
      */
     private synchronized void stopHeartbeatTask() {
         if (heartbeatFuture != null) {
@@ -1351,7 +1346,6 @@ public class MeshtasticClient implements AdminClientAccess {
 
     /**
      * Sends one heartbeat envelope to maintain local link activity.
-     *
      */
     private void sendHeartbeat() {
         if (!isConnected()) {
@@ -1384,7 +1378,7 @@ public class MeshtasticClient implements AdminClientAccess {
         /**
          * Dispatches chat-message events to registered listeners.
          *
-         * @param e error or event payload, depending on callback context.
+         * @param e chat-message event.
          */
         @Override
         public void onChatMessage(ChatMessageEvent e) {
@@ -1394,7 +1388,7 @@ public class MeshtasticClient implements AdminClientAccess {
         /**
          * Dispatches position-update events to registered listeners.
          *
-         * @param e error or event payload, depending on callback context.
+         * @param e position-update event.
          */
         @Override
         public void onPositionUpdate(PositionUpdateEvent e) {
@@ -1404,7 +1398,7 @@ public class MeshtasticClient implements AdminClientAccess {
         /**
          * Dispatches telemetry-update events to registered listeners.
          *
-         * @param e error or event payload, depending on callback context.
+         * @param e telemetry-update event.
          */
         @Override
         public void onTelemetryUpdate(TelemetryUpdateEvent e) {
@@ -1414,7 +1408,7 @@ public class MeshtasticClient implements AdminClientAccess {
         /**
          * Dispatches node-discovery events to registered listeners.
          *
-         * @param e error or event payload, depending on callback context.
+         * @param e node-discovery event.
          */
         @Override
         public void onNodeDiscovery(NodeDiscoveryEvent e) {
@@ -1424,7 +1418,7 @@ public class MeshtasticClient implements AdminClientAccess {
         /**
          * Dispatches message-status events to registered listeners.
          *
-         * @param e error or event payload, depending on callback context.
+         * @param e message-status event.
          */
         @Override
         public void onMessageStatusUpdate(MessageStatusEvent e) {
@@ -1434,7 +1428,7 @@ public class MeshtasticClient implements AdminClientAccess {
         /**
          * Dispatches admin-model update events to registered listeners.
          *
-         * @param e error or event payload, depending on callback context.
+         * @param e admin-model update event.
          */
         @Override
         public void onAdminModelUpdate(AdminModelUpdateEvent e) {
@@ -1445,8 +1439,9 @@ public class MeshtasticClient implements AdminClientAccess {
     private final List<MeshtasticEventListener> listeners = new CopyOnWriteArrayList<>();
 
     /**
+     * Registers an event listener that will receive high-level client events.
      *
-     * @param l
+     * @param l listener to add.
      */
     public void addEventListener(MeshtasticEventListener l) {
         listeners.add(l);

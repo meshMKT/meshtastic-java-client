@@ -44,11 +44,11 @@ public class ChatMessageEvent extends MeshEvent {
     /**
      * Factory to create a Chat event.
      *
-     * @param p
-     * @param text The decoded UTF-8 string.
-     * @param ctx
-     * @param selfId
-     * @return
+     * @param p raw mesh packet carrying the text message.
+     * @param ctx packet context describing timing and signal metadata.
+     * @param selfId local node id used to determine direct-message routing.
+     * @param text decoded UTF-8 text content.
+     * @return populated chat-message event.
      */
     public static ChatMessageEvent of(MeshPacket p, PacketContext ctx, int selfId, String text) {
         Data data = p.getDecoded();

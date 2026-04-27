@@ -38,11 +38,11 @@ public class MessageStatusEvent extends MeshEvent {
     /**
      * Factory to create a Message Status event.
      *
-     * @param p
-     * @param ctx
-     * @param selfId
-     * @param routing The routing payload containing the error code.
-     * @return
+     * @param p raw mesh packet carrying the routing status.
+     * @param ctx packet context describing timing and signal metadata.
+     * @param selfId local node id for direct-message classification.
+     * @param routing routing payload containing the result code.
+     * @return populated message-status event.
      */
     public static MessageStatusEvent of(MeshPacket p, PacketContext ctx, int selfId, Routing routing) {
         // Correlate with the original message ID stored in the decoded data

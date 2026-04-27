@@ -30,7 +30,6 @@ public final class ProtocolConstraints {
 
     /**
      * Utility class; not intended to be instantiated.
-     *
      */
     private ProtocolConstraints() {}
 

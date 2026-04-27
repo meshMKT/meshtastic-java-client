@@ -44,8 +44,9 @@ public class SerialTransport extends StreamTransport {
     private volatile String activeDescriptiveName;
 
     /**
+     * Creates a serial transport for USB or UART-attached radios.
      *
-     * @param config
+     * @param config serial transport configuration.
      */
     public SerialTransport(SerialConfig config) {
         this.config = config;
@@ -57,7 +58,6 @@ public class SerialTransport extends StreamTransport {
 
     /**
      * Establishes the underlying transport connection.
-     *
      */
     @Override
     protected void connect() throws Exception {
@@ -121,8 +121,9 @@ public class SerialTransport extends StreamTransport {
     /**
      * Physical implementation of the framed write. Magic bytes and length are
      * already applied by the StreamTransport layer.
-     * @param framedData
-     * @throws java.io.IOException
+     *
+     * @param framedData framed outbound packet bytes.
+     * @throws IOException when the serial write fails.
      */
     @Override
     protected void writeToPhysicalLayer(byte[] framedData) throws IOException {
@@ -159,7 +160,6 @@ public class SerialTransport extends StreamTransport {
 
     /**
      * Starts the reconnect retry loop after unexpected link loss.
-     *
      */
     private void startRetryLoop() {
         if (!retryLoopActive.compareAndSet(false, true)) {
@@ -169,14 +169,14 @@ public class SerialTransport extends StreamTransport {
         Thread retryThread = new Thread(
                 () -> {
                     try {
-                        log.trace(">>> Serial link lost. Searching for radio (preferred: {})...", activePortDescriptor);
+                        log.trace("Serial link lost. Searching for radio (preferred: {})...", activePortDescriptor);
                         while (running && !isConnected()) {
                             try {
                                 Thread.sleep(5000);
                                 log.trace("Serial reconnect attempt (preferred: {})", activePortDescriptor);
                                 connect();
                                 if (isConnected()) {
-                                    log.trace(">>> Radio Found! Link Restored on {}.", activePortDescriptor);
+                                    log.trace("Serial link restored on {}.", activePortDescriptor);
                                     notifyConnected();
                                     break;
                                 }
@@ -189,14 +189,13 @@ public class SerialTransport extends StreamTransport {
                         retryLoopActive.set(false);
                     }
                 },
-                "SerialRetryThread");
+                "Mesh-SerialRetry");
         retryThread.setDaemon(true);
         retryThread.start();
     }
 
     /**
      * Closes the underlying transport connection and releases resources.
-     *
      */
     @Override
     protected void disconnect() {

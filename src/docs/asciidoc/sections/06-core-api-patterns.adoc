@@ -191,20 +191,25 @@ Bots often need both broadcast behavior and direct replies.
 ----
 client.addEventListener(new MeshtasticEventListener() {
     @Override
-    public void onChatMessage(ChatMessageEvent event) {
+    public void onTextMessage(ChatMessageEvent event) {
         String text = event.getText();
-        int fromNode = event.getFromNodeId();
+        int fromNode = event.getNodeId();
 
         if ("ping".equalsIgnoreCase(text)) {
             client.sendDirectText(fromNode, "pong");
         }
 
-        if ("announce".equalsIgnoreCase(text)) {
+        if ("announce".equalsIgnoreCase(text) && event.getChannel() == MeshConstants.PRIMARY_CHANNEL_INDEX) {
             client.sendChannelText(MeshConstants.PRIMARY_CHANNEL_INDEX, "bot online");
         }
     }
 });
 ----
+
+For complete runnable versions of this pattern, see:
+
+- `examples/jbang/AnnounceResponder.java`
+- `examples/jbang/WeatherBeacon.java`
 
 ==== Advanced Channel Context Example
 

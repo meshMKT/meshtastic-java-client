@@ -18,9 +18,10 @@ import lombok.extern.slf4j.Slf4j;
 public class TextMessageHandler extends BaseMeshHandler {
 
     /**
+     * Creates a text-message handler.
      *
-     * @param nodeDb
-     * @param dispatcher
+     * @param nodeDb node database used for identity lookups and self-node checks.
+     * @param dispatcher event dispatcher used to publish chat events.
      */
     public TextMessageHandler(NodeDatabase nodeDb, MeshEventDispatcher dispatcher) {
         super(nodeDb, dispatcher);

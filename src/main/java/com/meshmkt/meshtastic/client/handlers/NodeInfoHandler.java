@@ -20,9 +20,11 @@ public class NodeInfoHandler extends BaseMeshHandler {
     private final AdminService adminService;
 
     /**
+     * Creates a node-info handler.
      *
-     * @param nodeDb
-     * @param dispatcher
+     * @param nodeDb node database updated with discovered identities and cached snapshots.
+     * @param dispatcher event dispatcher used to publish node discovery events.
+     * @param adminService admin service used to keep local admin snapshot state in sync for the self node.
      */
     public NodeInfoHandler(NodeDatabase nodeDb, MeshEventDispatcher dispatcher, AdminService adminService) {
         super(nodeDb, dispatcher);
@@ -47,8 +49,9 @@ public class NodeInfoHandler extends BaseMeshHandler {
      * LOCAL HANDSHAKE (Non-Packet): The radio is dumping its internal list of
      * nodes to us via Serial/Bluetooth. These represent "Cached" nodes and do
      * not have current signal (SNR/RSSI) data.
-     * @param message
-     * @return
+     *
+     * @param message non-packet local radio envelope containing cached node state.
+     * @return {@code true} when a node-info snapshot was consumed.
      */
     @Override
     protected boolean handleNonPacketMessage(FromRadio message) {
@@ -94,9 +97,10 @@ public class NodeInfoHandler extends BaseMeshHandler {
      * OVER-THE-AIR BROADCAST (Packet): A node just broadcast its User info to
      * the whole mesh. This IS a live radio event and includes signal metadata
      * (SNR/RSSI).
-     * @param packet
-     * @param ctx
-     * @return
+     *
+     * @param packet decoded mesh packet.
+     * @param ctx packet context metadata.
+     * @return {@code true} when the node info packet was processed successfully.
      */
     @Override
     protected boolean handlePacket(MeshPacket packet, PacketContext ctx) {

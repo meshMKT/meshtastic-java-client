@@ -16,7 +16,6 @@ final class SerialPortSelector {
 
     /**
      * Creates a new SerialPortSelector instance.
-     *
      */
     private SerialPortSelector() {}
 

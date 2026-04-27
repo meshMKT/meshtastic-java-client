@@ -16,8 +16,9 @@ import lombok.extern.slf4j.Slf4j;
 public class MessageLoggingHandler extends BaseMeshHandler {
 
     /**
+     * Creates a logging-only chat handler that does not emit higher-level events.
      *
-     * @param nodeDb
+     * @param nodeDb node database used for name resolution.
      */
     public MessageLoggingHandler(NodeDatabase nodeDb) {
         super(nodeDb, null); // No dispatcher needed for simple logging

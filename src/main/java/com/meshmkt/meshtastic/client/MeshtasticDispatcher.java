@@ -18,14 +18,15 @@ final class MeshtasticDispatcher {
 
     // Single thread worker ensures messages are processed in the order they were received.
     private final ExecutorService worker = Executors.newSingleThreadExecutor(r -> {
-        Thread t = new Thread(r, "Meshtastic-Dispatcher");
+        Thread t = new Thread(r, "Mesh-Dispatcher");
         t.setDaemon(true);
         return t;
     });
 
     /**
+     * Registers one message handler in the dispatch chain.
      *
-     * @param handler
+     * @param handler handler to append.
      */
     public void registerHandler(MeshtasticMessageHandler handler) {
         handlers.add(handler);
@@ -33,7 +34,8 @@ final class MeshtasticDispatcher {
 
     /**
      * Hands off the message to the worker queue immediately.
-     * @param message
+     *
+     * @param message inbound radio message to dispatch.
      */
     public void enqueue(FromRadio message) {
         if (!worker.isShutdown()) {
@@ -66,7 +68,7 @@ final class MeshtasticDispatcher {
     }
 
     /**
-     *
+     * Shuts down the dispatcher worker thread.
      */
     public void shutdown() {
         worker.shutdown();

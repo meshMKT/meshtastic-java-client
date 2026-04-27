@@ -10,10 +10,12 @@ import lombok.Getter;
 // import org.meshtastic.proto.TelemetryProtos;
 
 /**
- * Represents telemetry data received from a node. * To prevent maintenance
- * bloat, only the most common fields (Battery, Temp, Humidity) are flattened.
- * More obscure sensors (Soil, Air Quality) should be accessed via the
- * rawTelemetry object.
+ * Represents telemetry data received from a node.
+ * <p>
+ * To keep the public event compact, only the most commonly used fields such as battery,
+ * voltage, temperature, and humidity are flattened. Less common telemetry payloads remain
+ * available through {@link #getRawTelemetry()}.
+ * </p>
  */
 @Getter
 @AllArgsConstructor(access = AccessLevel.PRIVATE)
@@ -26,32 +28,32 @@ public class TelemetryUpdateEvent extends MeshEvent {
     public enum TelemetryVariant {
 
         /**
-         *
+         * Standard battery and voltage metrics.
          */
         DEVICE_METRICS,
 
         /**
-         *
+         * Standard environmental readings such as temperature and humidity.
          */
         ENVIRONMENT_METRICS,
 
         /**
-         *
+         * Air quality telemetry such as gas resistance.
          */
         AIR_QUALITY_METRICS,
 
         /**
-         *
+         * Power rail metrics from external current or voltage sensors.
          */
         POWER_METRICS, // InA219/InA260 sensors
 
         /**
-         *
+         * Device-local statistics such as uptime and memory usage.
          */
         LOCAL_STATS, // Device uptime/memory
 
         /**
-         *
+         * Catch-all for niche or newly added telemetry variants.
          */
         OTHER // Catch-all for niche/future types
     }
@@ -137,7 +139,8 @@ public class TelemetryUpdateEvent extends MeshEvent {
 
     /**
      * Helper to check if this event contains power/battery info.
-     * @return
+     *
+     * @return {@code true} when {@link #getVariant()} is {@link TelemetryVariant#DEVICE_METRICS}.
      */
     public boolean isDeviceMetrics() {
         return variant == TelemetryVariant.DEVICE_METRICS;
@@ -145,7 +148,8 @@ public class TelemetryUpdateEvent extends MeshEvent {
 
     /**
      * Helper to check if this event contains weather/env info.
-     * @return
+     *
+     * @return {@code true} when {@link #getVariant()} is {@link TelemetryVariant#ENVIRONMENT_METRICS}.
      */
     public boolean isEnvironmentMetrics() {
         return variant == TelemetryVariant.ENVIRONMENT_METRICS;

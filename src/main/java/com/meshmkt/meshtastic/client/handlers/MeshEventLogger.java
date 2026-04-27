@@ -20,8 +20,9 @@ public class MeshEventLogger extends BaseMeshHandler {
             DateTimeFormatter.ofPattern("HH:mm:ss.SSS").withZone(ZoneId.systemDefault());
 
     /**
+     * Creates a verbose diagnostic logger for raw and decoded mesh traffic.
      *
-     * @param nodeDb
+     * @param nodeDb node database used for name resolution.
      */
     public MeshEventLogger(NodeDatabase nodeDb) {
         super(nodeDb, null);
@@ -40,8 +41,9 @@ public class MeshEventLogger extends BaseMeshHandler {
 
     /**
      * Handles local serial/BLE handshake messages.
-     * @param message
-     * @return
+     *
+     * @param message local radio envelope.
+     * @return {@code false} so other handlers may continue processing the same message.
      */
     @Override
     protected boolean handleNonPacketMessage(FromRadio message) {
@@ -67,9 +69,10 @@ public class MeshEventLogger extends BaseMeshHandler {
 
     /**
      * Handles live Over-The-Air traffic.
-     * @param packet
-     * @param ctx
-     * @return
+     *
+     * @param packet decoded mesh packet.
+     * @param ctx packet context metadata.
+     * @return {@code false} so other handlers may continue processing the same packet.
      */
     @Override
     protected boolean handlePacket(MeshPacket packet, PacketContext ctx) {

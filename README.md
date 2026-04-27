@@ -63,6 +63,28 @@ The library is available on Maven Central.
 implementation group: 'com.meshmkt.meshtastic', name: 'meshtastic-java-client', version: '${version}'
 ```
 
+## Quick Start
+
+The smallest useful setup is still just a few lines of Java:
+
+```java
+NodeDatabase db = new InMemoryNodeDatabase();
+MeshtasticClient client = new MeshtasticClient(db);
+
+SerialConfig cfg = SerialConfig.builder()
+        .portName("/dev/ttyUSB0")
+        .build();
+
+client.connect(new SerialTransport(cfg));
+```
+
+If you want runnable examples instead of a blank starting point, the user guide now includes:
+
+- a JBang responder that works over either serial or TCP, watches a chosen channel slot for `/announce`, and replies by direct message
+- an hourly weather beacon that posts to `Weather Updates`
+
+Those runnable samples also live directly in the repository under `examples/jbang/`.
+
 ## Documentation
 
 The full project documentation is available through the generated user guide and API docs:

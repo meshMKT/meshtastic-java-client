@@ -1,5 +1,16 @@
 == Quick Start
 
+This section will show you the minimum code needed to start up the client. You can see it doesn't take much at all if you want to use the defaults for some configurations.
+
+The snippet belows shows a Serial transport being used with the use of the SerialConfig builder.
+
+Sequence of steps needed:
+
+* Create instance of NodeDatabase
+* Create instance of Meshtastic Client passing in the node database
+* Config either a TCP or Serial configuration using the appropriate builder
+* Pass in an instance of your `MeshtasticTransport` into the `connect` method of the client when you want to initiate communications with your radio
+
 [source,java]
 ----
 NodeDatabase db = new InMemoryNodeDatabase();
@@ -48,3 +59,93 @@ Order matters for some settings:
   `setRequestCorrelationTimeout(...)` are runtime-tunable and can be changed before or after `connect(...)`.
 - `AdminService.setVerificationPolicy(...)` is also runtime-tunable and affects future verify-applied admin writes.
 ====
+
+=== Runnable JBang Examples
+
+There are two concrete examples that live in the repository under `examples/jbang/` so they are easy to copy into your own project and adapt.
+
+I used JBang because they are simple one file source files and JBang makes it very easy to run single file examples.
+
+If you don't have JBang installed, you can use the standard Maven project setup and just include the meshtastic client dependency in your pom and then use the same source code of the examples.
+
+=== Announce Responder
+
+This example:
+
+- connects to a USB-attached or TCP connected radio
+- waits for startup sync to finish
+- uses the exact channel slot index you pass on the command line
+- listens for `/announce` or any other trigger keyword you specified on that channel
+- sends a direct reply back to the node that submitted it
+
+[NOTE]
+====
+The example watches the configured broadcast channel slot, but it replies with the normal direct-message API instead of forcing the same channel slot on the outbound DM.
+
+In practice, that is the more reliable default for simple responders because many nodes will happily receive the broadcast on a secondary channel but still expect direct-message
+routing to use the normal primary-channel path.
+====
+
+Run it over serial:
+
+[source,bash]
+----
+jbang examples/jbang/AnnounceResponder.java \
+  --port /dev/ttyUSB0 \
+  --channel-index 1
+----
+
+Or over TCP:
+
+[source,bash]
+----
+jbang examples/jbang/AnnounceResponder.java \
+  --host 192.168.1.40 \
+  --channel-index 1
+----
+
+[source,java]
+----
+include::../../../../examples/jbang/AnnounceResponder.java[]
+----
+
+=== Hourly Weather Beacon
+
+This example acts like a simple information beacon:
+
+- connects over either serial or TCP
+- uses the exact channel slot index you pass on the command line
+- looks up a ZIP code using Open-Meteo's public geocoding API
+- fetches the latest weather once an hour (default) or at the interval specified
+- posts a concise weather summary to the configured channel slot
+
+Run it over serial:
+
+[source,bash]
+----
+jbang examples/jbang/WeatherBeacon.java \
+  --port /dev/ttyUSB0 \
+  --zip 27514 \
+  --channel-index 1
+----
+
+Or over TCP:
+
+[source,bash]
+----
+jbang examples/jbang/WeatherBeacon.java \
+  --host 192.168.1.40 \
+  --zip 27514 \
+  --channel-index 1
+----
+
+[NOTE]
+====
+Each JBang file keeps the Meshtastic client dependency in its own `//DEPS` header. Replace
+`RELEASE_VERSION_HERE` with the release you want to run before you execute the script.
+====
+
+[source,java]
+----
+include::../../../../examples/jbang/WeatherBeacon.java[]
+----

@@ -6,8 +6,7 @@ import lombok.Builder;
 import lombok.Value;
 
 /**
- *
- * @author tmulle
+ * Immutable metadata envelope describing how one mesh packet was received and how it should be interpreted.
  */
 @Value
 @Builder
@@ -38,9 +37,10 @@ public class PacketContext {
     MeshPacket rawProto;
 
     /**
+     * Extracts a packet context from one inbound radio envelope.
      *
-     * @param message
-     * @return
+     * @param message inbound radio envelope containing a mesh packet.
+     * @return derived packet context.
      */
     public static PacketContext from(FromRadio message) {
         MeshPacket p = message.getPacket();
@@ -64,8 +64,9 @@ public class PacketContext {
     }
 
     /**
+     * Returns how many hops were consumed while the packet traversed the mesh.
      *
-     * @return
+     * @return non-negative hop distance.
      */
     public int getHopsAway() {
         // Standard formula: How many hops were consumed?

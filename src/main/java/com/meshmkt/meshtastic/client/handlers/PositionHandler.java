@@ -19,9 +19,10 @@ import lombok.extern.slf4j.Slf4j;
 public class PositionHandler extends BaseMeshHandler {
 
     /**
+     * Creates a position handler.
      *
-     * @param nodeDb
-     * @param dispatcher
+     * @param nodeDb node database updated with incoming position payloads.
+     * @param dispatcher event dispatcher used to publish position updates.
      */
     public PositionHandler(NodeDatabase nodeDb, MeshEventDispatcher dispatcher) {
         super(nodeDb, dispatcher);

@@ -16,9 +16,10 @@ import lombok.extern.slf4j.Slf4j;
 public class TelemetryHandler extends BaseMeshHandler {
 
     /**
+     * Creates a telemetry handler.
      *
-     * @param nodeDb
-     * @param dispatcher
+     * @param nodeDb node database updated with telemetry-derived state.
+     * @param dispatcher event dispatcher used to publish telemetry events.
      */
     public TelemetryHandler(NodeDatabase nodeDb, MeshEventDispatcher dispatcher) {
         super(nodeDb, dispatcher);

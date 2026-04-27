@@ -176,7 +176,7 @@ public class InMemoryNodeDatabase extends AbstractNodeDatabase {
     }
 
     /**
-     *
+     * Clears all cached nodes and notifies observers that the local cache was purged.
      */
     @Override
     public void clear() {
@@ -185,8 +185,9 @@ public class InMemoryNodeDatabase extends AbstractNodeDatabase {
     }
 
     /**
+     * Removes nodes whose radio-seen and app-seen timestamps are both older than the supplied cutoff.
      *
-     * @param cutoffMs
+     * @param cutoffMs epoch-millisecond cutoff timestamp.
      */
     @Override
     protected void performPurge(long cutoffMs) {
@@ -202,8 +203,9 @@ public class InMemoryNodeDatabase extends AbstractNodeDatabase {
     }
 
     /**
+     * Returns immutable DTO snapshots for all known nodes.
      *
-     * @return
+     * @return collection of node snapshots.
      */
     @Override
     public Collection<MeshNode> getAllNodes() {
@@ -213,9 +215,10 @@ public class InMemoryNodeDatabase extends AbstractNodeDatabase {
     }
 
     /**
+     * Returns one immutable node snapshot by id.
      *
-     * @param id
-     * @return
+     * @param id node id to look up.
+     * @return matching node snapshot, if present.
      */
     @Override
     public Optional<MeshNode> getNode(int id) {

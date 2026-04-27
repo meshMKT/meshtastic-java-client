@@ -284,7 +284,7 @@
           <attributes>
             <project-name>${project.artifactId}</project-name>
             <project-version>${project.version}</project-version>
-            <javadocs-url>../apidocs/index.html</javadocs-url>
+            <javadocs-url>../reports/apidocs/index.html</javadocs-url>
             <sectanchors>true</sectanchors>
             <toc>left</toc>
             <icons>font</icons>

@@ -10,6 +10,8 @@ import com.meshmkt.meshtastic.client.transport.stream.tcp.TcpConfig;
 import com.meshmkt.meshtastic.client.transport.stream.tcp.TcpTransport;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Sample code how to show an example of an greeting/echo bot
@@ -26,6 +28,11 @@ import java.util.concurrent.TimeUnit;
  * </ul>
  */
 public final class EchoBotExample {
+    static {
+        configureSimpleLoggerDefaults();
+    }
+
+    private static final Logger log = LoggerFactory.getLogger(EchoBotExample.class);
 
     private static final String LISTEN_CHANNEL = "LISTEN_CHANNEL";
     private static final String HOST_KEY = "MESHTASTIC_TCP_HOST";
@@ -43,8 +50,6 @@ public final class EchoBotExample {
      * @throws Exception when startup or shutdown fails.
      */
     public static void main(String[] args) throws Exception {
-        configureSimpleLoggerDefaults();
-
         String host = requiredSetting(HOST_KEY);
         int port = intSetting(PORT_KEY, 4403);
         int connectTimeoutMs = intSetting(CONNECT_TIMEOUT_KEY, 5000);
@@ -59,7 +64,7 @@ public final class EchoBotExample {
         client.addEventListener(new MeshtasticEventListener() {
             @Override
             public void onStartupStateChanged(StartupState previousState, StartupState newState) {
-                System.out.printf("[STARTUP] %s -> %s%n", previousState, newState);
+                log.info("STARTUP {} -> {}", previousState, newState);
                 if (newState == StartupState.READY) {
                     readyLatch.countDown();
                 }
@@ -67,8 +72,8 @@ public final class EchoBotExample {
 
             @Override
             public void onTextMessage(ChatMessageEvent event) {
-                System.out.printf(
-                        "[INCOMING TEXT] packetId=%d from=%s to=%s channel=%d direct=%s text=%s%n",
+                log.info(
+                        "INCOMING_TEXT packetId={} from={} to={} channel={} direct={} text={}",
                         event.getRawPacket().getId(),
                         MeshUtils.formatId(event.getNodeId()),
                         MeshUtils.formatId(event.getDestinationId()),
@@ -86,7 +91,7 @@ public final class EchoBotExample {
                     return;
                 }
 
-                System.out.printf("[TEXT] from=%s text=%s%n", MeshUtils.formatId(event.getNodeId()), event.getText());
+                log.info("TEXT from={} text={}", MeshUtils.formatId(event.getNodeId()), event.getText());
 
                 String longName =
                         db.getNode(event.getNodeId()).map(MeshNode::getLongName).orElse("N/A");
@@ -107,10 +112,10 @@ public final class EchoBotExample {
                             try {
                                 client.shutdown();
                             } catch (Exception ex) {
-                                System.err.printf("[SHUTDOWN] %s%n", ex.getMessage());
+                                log.error("SHUTDOWN failed", ex);
                             }
                         },
-                        "echo-bot-shutdown"));
+                        "Mesh-EchoBot-Shutdown"));
 
         TcpConfig config = TcpConfig.builder()
                 .host(host)
@@ -119,19 +124,17 @@ public final class EchoBotExample {
                 .outboundPacingDelayMs(pacingMs)
                 .build();
 
-        System.out.printf(
-                "[TCP] Connecting to %s:%d (timeout=%dms pacing=%dms)%n", host, port, connectTimeoutMs, pacingMs);
+        log.info("TCP connecting to {}:{} (timeout={}ms pacing={}ms)", host, port, connectTimeoutMs, pacingMs);
         client.connect(new TcpTransport(config));
 
         boolean ready = readyLatch.await(readyTimeoutSec, TimeUnit.SECONDS);
         if (ready) {
-            System.out.printf("[TCP] Client reached READY within %ds.%n", readyTimeoutSec);
+            log.info("TCP client reached READY within {}s.", readyTimeoutSec);
         } else {
-            System.out.printf(
-                    "[TCP] Client did not reach READY within %ds. Check startup/sync logs.%n", readyTimeoutSec);
+            log.warn("TCP client did not reach READY within {}s. Check startup/sync logs.", readyTimeoutSec);
         }
 
-        System.out.println("[TCP] Running. Press Ctrl+C to stop.");
+        log.info("Echo bot example is running. Press Ctrl+C to stop.");
         Thread.currentThread().join();
     }
 
@@ -144,7 +147,9 @@ public final class EchoBotExample {
         setIfMissing("org.slf4j.simpleLogger.showDateTime", "true");
         setIfMissing("org.slf4j.simpleLogger.dateTimeFormat", "HH:mm:ss.SSS");
         setIfMissing("org.slf4j.simpleLogger.showThreadName", "true");
-        setIfMissing("org.slf4j.simpleLogger.showLogName", "true");
+        setIfMissing("org.slf4j.simpleLogger.levelInBrackets", "true");
+        setIfMissing("org.slf4j.simpleLogger.showShortLogName", "true");
+        setIfMissing("org.slf4j.simpleLogger.showLogName", "false");
         setIfMissing("org.slf4j.simpleLogger.defaultLogLevel", "info");
         setIfMissing("org.slf4j.simpleLogger.log.com.meshmkt.meshtastic.client", "error");
         setIfMissing(

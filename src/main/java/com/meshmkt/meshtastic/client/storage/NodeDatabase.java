@@ -14,90 +14,103 @@ public interface NodeDatabase {
 
     /**
      * Updates user identity (Names/Hardware).
-     * @param user
-     * @param ctx
+     *
+     * @param user user payload from the radio.
+     * @param ctx packet context used to associate signal metadata and timestamps.
      */
     void updateUser(User user, PacketContext ctx);
 
     /**
      * Updates geographic coordinates and triggers distance recalculation.
-     * @param position
-     * @param ctx
+     *
+     * @param position position payload from the radio.
+     * @param ctx packet context used to associate signal metadata and timestamps.
      */
     void updatePosition(Position position, PacketContext ctx);
 
     /**
      * Updates device battery and health vitals.
-     * @param metrics
-     * @param ctx
+     *
+     * @param metrics device metrics payload from the radio.
+     * @param ctx packet context used to associate signal metadata and timestamps.
      */
     void updateMetrics(DeviceMetrics metrics, PacketContext ctx);
 
     /**
      * Updates sensor data (Temp/Humidity/Pressure).
-     * @param env
-     * @param ctx
+     *
+     * @param env environmental metrics payload from the radio.
+     * @param ctx packet context used to associate signal metadata and timestamps.
      */
     void updateEnvMetrics(EnvironmentMetrics env, PacketContext ctx);
 
     /**
      * Updates signal metadata (SNR/RSSI) without changing payload data.
-     * @param ctx
+     *
+     * @param ctx packet context containing the latest signal metadata.
      */
     void updateSignal(PacketContext ctx);
 
     /**
+     * Sets the local node id once the client learns its own identity from startup sync.
      *
-     * @param nodeId
+     * @param nodeId local node id.
      */
     void setSelfNodeId(int nodeId);
 
     /**
+     * Returns the current local node id.
      *
-     * @return
+     * @return local node id, or {@code 0} when unknown.
      */
     int getSelfNodeId();
 
     /**
+     * Returns whether the supplied node id refers to the local node.
      *
-     * @param nodeId
-     * @return
+     * @param nodeId node id to compare.
+     * @return {@code true} when {@code nodeId} matches the current local node id.
      */
     boolean isSelfNode(int nodeId);
 
     /**
+     * Looks up one node by id.
      *
-     * @param nodeId
-     * @return
+     * @param nodeId node id to look up.
+     * @return matching node, if present.
      */
     Optional<MeshNode> getNode(int nodeId);
 
     /**
+     * Returns the current local node snapshot, if available.
      *
-     * @return
+     * @return local node snapshot.
      */
     Optional<MeshNode> getSelfNode();
 
     /**
+     * Returns all known node snapshots.
      *
-     * @return
+     * @return collection view of known nodes.
      */
     Collection<MeshNode> getAllNodes();
 
     /**
-     *
+     * Clears all locally cached nodes from the database implementation.
      */
     void clear();
 
     /**
+     * Registers an observer that should receive node update callbacks.
      *
-     * @param observer
+     * @param observer observer to add.
      */
     void addObserver(NodeDatabaseObserver observer);
 
     /**
+     * Removes a previously registered observer.
      *
-     * @param observer
+     * @param observer observer to remove.
      */
     void removeObserver(NodeDatabaseObserver observer);
 

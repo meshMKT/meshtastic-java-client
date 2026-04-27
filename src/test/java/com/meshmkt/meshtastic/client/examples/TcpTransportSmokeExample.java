@@ -14,6 +14,8 @@ import com.meshmkt.meshtastic.client.transport.stream.tcp.TcpConfig;
 import com.meshmkt.meshtastic.client.transport.stream.tcp.TcpTransport;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Small manual smoke example for exercising {@link TcpTransport} against a real radio.
@@ -30,6 +32,11 @@ import java.util.concurrent.TimeUnit;
  * </ul>
  */
 public final class TcpTransportSmokeExample {
+    static {
+        configureSimpleLoggerDefaults();
+    }
+
+    private static final Logger log = LoggerFactory.getLogger(TcpTransportSmokeExample.class);
 
     private static final String HOST_KEY = "MESHTASTIC_TCP_HOST";
     private static final String PORT_KEY = "MESHTASTIC_TCP_PORT";
@@ -46,8 +53,6 @@ public final class TcpTransportSmokeExample {
      * @throws Exception when startup or shutdown fails.
      */
     public static void main(String[] args) throws Exception {
-        configureSimpleLoggerDefaults();
-
         String host = requiredSetting(HOST_KEY);
         int port = intSetting(PORT_KEY, 4403);
         int connectTimeoutMs = intSetting(CONNECT_TIMEOUT_KEY, 5000);
@@ -61,7 +66,7 @@ public final class TcpTransportSmokeExample {
         client.addEventListener(new MeshtasticEventListener() {
             @Override
             public void onStartupStateChanged(StartupState previousState, StartupState newState) {
-                System.out.printf("[STARTUP] %s -> %s%n", previousState, newState);
+                log.info("STARTUP {} -> {}", previousState, newState);
                 if (newState == StartupState.READY) {
                     readyLatch.countDown();
                 }
@@ -69,25 +74,26 @@ public final class TcpTransportSmokeExample {
 
             @Override
             public void onNodeDiscovery(NodeDiscoveryEvent event) {
-                System.out.printf("[NODE] %s (%s)%n", event.getLongName(), MeshUtils.formatId(event.getNodeId()));
+                log.info("NODE {} ({})", event.getLongName(), MeshUtils.formatId(event.getNodeId()));
             }
 
             @Override
             public void onTextMessage(ChatMessageEvent event) {
-                System.out.printf("[TEXT] from=%s text=%s%n", MeshUtils.formatId(event.getNodeId()), event.getText());
+                log.info("TEXT from={} text={}", MeshUtils.formatId(event.getNodeId()), event.getText());
             }
 
             @Override
             public void onPositionUpdate(PositionUpdateEvent event) {
-                System.out.printf(
-                        "[POS] from=%s lat=%.6f lon=%.6f%n",
-                        MeshUtils.formatId(event.getNodeId()), event.getLatitude(), event.getLongitude());
+                log.info(
+                        "POS from={} lat={} lon={}",
+                        MeshUtils.formatId(event.getNodeId()),
+                        String.format("%.6f", event.getLatitude()),
+                        String.format("%.6f", event.getLongitude()));
             }
 
             @Override
             public void onTelemetryUpdate(TelemetryUpdateEvent event) {
-                System.out.printf(
-                        "[TELE] from=%s variant=%s%n", MeshUtils.formatId(event.getNodeId()), event.getVariant());
+                log.info("TELE from={} variant={}", MeshUtils.formatId(event.getNodeId()), event.getVariant());
             }
         });
 
@@ -97,10 +103,10 @@ public final class TcpTransportSmokeExample {
                             try {
                                 client.shutdown();
                             } catch (Exception ex) {
-                                System.err.printf("[SHUTDOWN] %s%n", ex.getMessage());
+                                log.error("SHUTDOWN failed", ex);
                             }
                         },
-                        "tcp-smoke-shutdown"));
+                        "Mesh-TcpSmoke-Shutdown"));
 
         TcpConfig config = TcpConfig.builder()
                 .host(host)
@@ -109,19 +115,17 @@ public final class TcpTransportSmokeExample {
                 .outboundPacingDelayMs(pacingMs)
                 .build();
 
-        System.out.printf(
-                "[TCP] Connecting to %s:%d (timeout=%dms pacing=%dms)%n", host, port, connectTimeoutMs, pacingMs);
+        log.info("TCP connecting to {}:{} (timeout={}ms pacing={}ms)", host, port, connectTimeoutMs, pacingMs);
         client.connect(new TcpTransport(config));
 
         boolean ready = readyLatch.await(readyTimeoutSec, TimeUnit.SECONDS);
         if (ready) {
-            System.out.printf("[TCP] Client reached READY within %ds.%n", readyTimeoutSec);
+            log.info("TCP client reached READY within {}s.", readyTimeoutSec);
         } else {
-            System.out.printf(
-                    "[TCP] Client did not reach READY within %ds. Check startup/sync logs.%n", readyTimeoutSec);
+            log.warn("TCP client did not reach READY within {}s. Check startup/sync logs.", readyTimeoutSec);
         }
 
-        System.out.println("[TCP] Running. Press Ctrl+C to stop.");
+        log.info("TCP smoke example is running. Press Ctrl+C to stop.");
         Thread.currentThread().join();
     }
 
@@ -134,7 +138,9 @@ public final class TcpTransportSmokeExample {
         setIfMissing("org.slf4j.simpleLogger.showDateTime", "true");
         setIfMissing("org.slf4j.simpleLogger.dateTimeFormat", "HH:mm:ss.SSS");
         setIfMissing("org.slf4j.simpleLogger.showThreadName", "true");
-        setIfMissing("org.slf4j.simpleLogger.showLogName", "true");
+        setIfMissing("org.slf4j.simpleLogger.levelInBrackets", "true");
+        setIfMissing("org.slf4j.simpleLogger.showShortLogName", "true");
+        setIfMissing("org.slf4j.simpleLogger.showLogName", "false");
         setIfMissing("org.slf4j.simpleLogger.defaultLogLevel", "info");
         setIfMissing("org.slf4j.simpleLogger.log.com.meshmkt.meshtastic.client", "debug");
         setIfMissing(

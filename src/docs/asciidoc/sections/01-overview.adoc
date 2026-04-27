@@ -9,31 +9,29 @@
 - admin/config/channel APIs through `AdminService`
 - utility request APIs (fire-and-forget and payload-await)
 - BLE transport SPI for platform-specific BLE backends
+- Automatic chunking of large text sending into smaller packets if desired
 
 Javadocs are generated at link:{javadocs-url}[API Javadocs].
 
 == Why This Project Exists
 
-This library exists because there was no clean, reusable low-level Meshtastic Java client readily available for normal
-Java applications.
+This library exists because there was no clean, reusable low-level Meshtastic Java client readily available for normal Java applications.
 
-The Java code that did exist was largely embedded inside the Android client, which is useful as an application but not
-ideal as a standalone library for:
+The Java code that did exist was largely embedded inside the Meshtastic Android client, which is useful as a full blown application but not ideal as a standalone library for:
 
 - headless services
 - bots that listen and respond to mesh messages
 - server-side Java integrations
 - custom desktop Java UI clients
 
-The original motivation for this project was simple: build a Meshtastic bot in Java that could listen on the mesh and
-respond to messages without having to repurpose an application codebase.
+My motivation for this project was simple: build a Meshtastic bot in Java that could listen on the mesh and respond to messages.
 
 That led to a broader goal:
 
 - provide a clean event-driven core for headless and bot-style applications
 - expose enough API surface to build a full Java desktop/mobile UI client on top
 
-The architecture is intentionally designed to balance those two use cases. It tries to stay low-level enough to be
+Using the Python and Android codebases as feature guides, I made the architecture intentionally designed to balance those two use cases. It tries to stay low-level enough to be
 flexible, while still offering the higher-level helpers most Meshtastic apps end up needing in practice.
 
 [NOTE]
@@ -44,16 +42,19 @@ feedback are welcome.
 
 == Current Scope And Gaps
 
-Today, this project is strongest as a serial/TCP Meshtastic client library.
+Today, this project is strongest as a serial/TCP Meshtastic client library with the following features:
 
-- Production-ready now:
-  - Serial and TCP transports
-  - Event-driven client model
-  - Admin/config/channel refresh + write APIs
-  - Request lifecycle + startup lifecycle signaling
+- Serial and TCP transports
+- Event-driven client model
+- Admin/config/channel refresh + write APIs
+- Request lifecycle + startup lifecycle signaling
+- Built-in automatic retry connection logic
 
-- Pending major items:
+
+Items that are not included
+
   - bundled production BLE backend (BLE SPI exists)
+  - firmware handling/flashing, etc.
 
 [NOTE]
 ====
@@ -69,6 +70,8 @@ application-specific integration work rather than part of this core client.
 ====
 
 == Feature Map
+
+This is a quick breakdown of the high-level pieces of the client.
 
 [cols="1,1,3",options="header"]
 |===
@@ -121,7 +124,31 @@ Use this quick map when building app-level abstractions:
 
 == Node Database Extension Point
 
-`NodeDatabase` is a public extension point for applications, not just an internal detail.
+`NodeDatabase` is the central place where we keep track of everything we know about nodes in the mesh.
+
+All updates flow through this interface, and importantly, they’re always tied to a PacketContext. That’s intentional, because node data without signal context (RSSI/SNR, source, timing) is basically incomplete, so this forces callers to provide both together.
+
+The interface breaks node state updates into a few categories—identity, position, device metrics, environmental data, and signal-only updates—but ultimately they all contribute to building up a single, evolving view of each node.
+
+`AbstractNodeDatabase` is the shared base class for `NodeDatabase` implementations. It handles the stuff every implementation needs, so the concrete databases can focus on storage details instead of repeating lifecycle and bookkeeping code.
+
+At a high level, it provides:
+
+* self-node tracking
+* observer registration and notifications
+* scheduled stale-node cleanup
+* cleanup shutdown handling
+* shared distance calculation logic
+* a hook for refreshing node distances when the local node moves
+
+The class does not decide how nodes are stored. That part is left to subclasses. An in-memory implementation, SQL-backed implementation, or something else can all use this base class and only implement the storage-specific pieces.
+
+The cleanup support is worth calling out. AbstractNodeDatabase owns a daemon scheduler that can periodically purge stale nodes based on a NodeCleanupPolicy. The actual purge operation is delegated to performPurge(...), because only the concrete implementation knows how to remove nodes from its backing store.
+
+Distance handling is another shared responsibility. When the local node’s position changes, the class triggers a refresh of distances for known nodes. The actual iteration/update mechanism is delegated to `refreshDistancesRelativeto(...)`, but the distance calculation itself is centralized in `calculateDistance(...)`. That keeps special cases consistent, like MQTT nodes, the self node, nodes without GPS, and unknown distance values.
+
+So the main purpose of this class is to provide the common operational behavior for node databases, while leaving persistence and mutation details to the subclass.
+At a high level, this interface exists to ensure we have one consistent, context-aware source of truth for node state, instead of letting that logic get scattered across the codebase.
 
 At a glance:
 
@@ -133,10 +160,13 @@ At a glance:
 | `NodeDatabase`
 | Extension point for node storage, freshness tracking, and snapshot reads.
 
-| `InMemoryNodeDatabase`
-| Default implementation used by the quick-start examples.
+| `AbstractNodeDatabase`
+| Base class that implements default common behavior that can be used for future implementations.
 
-| Custom implementations
+| `InMemoryNodeDatabase`
+| Default implementation and extension of `AbstractNodeDatabase` which stores mesh nodes in memory only.
+
+| `Custom implementations`
 | Useful when an app needs persistence, custom retention rules, or integration with another data layer.
 |===
 
@@ -147,8 +177,7 @@ Common reasons to implement your own `NodeDatabase` include:
 - customizing retention/eviction behavior
 - supporting application-specific indexing or query patterns
 
-For most applications, `InMemoryNodeDatabase` is the right place to start. If you need different storage behavior,
-create `MeshtasticClient` with your own implementation.
+For most applications, `InMemoryNodeDatabase` should be the right place to start. If you need different storage behavior, instantiate a `MeshtasticClient` with your own implementation.
 
 Quick API reference:
 

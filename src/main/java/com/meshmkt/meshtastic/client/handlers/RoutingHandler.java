@@ -19,9 +19,10 @@ import lombok.extern.slf4j.Slf4j;
 public class RoutingHandler extends BaseMeshHandler {
 
     /**
+     * Creates a routing-status handler.
      *
-     * @param nodeDb
-     * @param dispatcher
+     * @param nodeDb node database used for identity lookups.
+     * @param dispatcher event dispatcher used to publish routing status events.
      */
     public RoutingHandler(NodeDatabase nodeDb, MeshEventDispatcher dispatcher) {
         super(nodeDb, dispatcher);

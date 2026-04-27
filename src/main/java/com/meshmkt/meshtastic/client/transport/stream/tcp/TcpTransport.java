@@ -30,8 +30,9 @@ public class TcpTransport extends StreamTransport {
     private final AtomicBoolean retryLoopActive = new AtomicBoolean(false);
 
     /**
+     * Creates a TCP transport for radios exposed over Wi-Fi or Ethernet.
      *
-     * @param config
+     * @param config TCP transport configuration.
      */
     public TcpTransport(TcpConfig config) {
         super(TCP_STALLED_FRAME_TIMEOUT_MS);
@@ -41,7 +42,6 @@ public class TcpTransport extends StreamTransport {
 
     /**
      * Establishes the underlying transport connection.
-     *
      */
     @Override
     protected void connect() throws Exception {
@@ -57,7 +57,7 @@ public class TcpTransport extends StreamTransport {
         outputStream = socket.getOutputStream();
         connected = true;
 
-        Thread reader = new Thread(this::readLoop, "TcpReader-" + config.getHost());
+        Thread reader = new Thread(this::readLoop, "Mesh-TcpReader-" + config.getHost());
         reader.setDaemon(true);
         reader.start();
     }
@@ -89,8 +89,9 @@ public class TcpTransport extends StreamTransport {
 
     /**
      * Physical implementation of the framed write.
-     * @param framedData
-     * @throws java.io.IOException
+     *
+     * @param framedData framed outbound packet bytes.
+     * @throws IOException when the socket write fails.
      */
     @Override
     protected void writeToPhysicalLayer(byte[] framedData) throws IOException {
@@ -123,7 +124,6 @@ public class TcpTransport extends StreamTransport {
 
     /**
      * Starts the reconnect retry loop after unexpected link loss.
-     *
      */
     private void startRetryLoop() {
         if (!retryLoopActive.compareAndSet(false, true)) {
@@ -133,13 +133,13 @@ public class TcpTransport extends StreamTransport {
         Thread retryThread = new Thread(
                 () -> {
                     try {
-                        log.debug(">>> TCP Link lost. Retrying {}...", config.getHost());
+                        log.debug("TCP link lost. Retrying {}...", config.getHost());
                         while (running && !isConnected()) {
                             try {
                                 Thread.sleep(5000); // 5-second backoff
                                 attemptConnection();
                                 if (isConnected()) {
-                                    log.debug(">>> TCP Link Restored!");
+                                    log.debug("TCP link restored for {}.", config.getHost());
                                     notifyConnected();
                                     break;
                                 }
@@ -151,14 +151,13 @@ public class TcpTransport extends StreamTransport {
                         retryLoopActive.set(false);
                     }
                 },
-                "TcpRetryThread");
+                "Mesh-TcpRetry-" + config.getHost());
         retryThread.setDaemon(true);
         retryThread.start();
     }
 
     /**
      * Closes the underlying transport connection and releases resources.
-     *
      */
     @Override
     protected void disconnect() throws Exception {

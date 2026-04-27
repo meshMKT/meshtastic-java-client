@@ -38,17 +38,16 @@ public final class MeshUtils {
 
     /**
      * Utility class; not intended to be instantiated.
-     *
      */
     private MeshUtils() {
         // Prevent instantiation
     }
 
     /**
-     * Converts byte array to Hex String
+     * Converts a byte array into a lowercase hexadecimal string without separators.
      *
-     * @param bytes
-     * @return
+     * @param bytes raw bytes to encode.
+     * @return hexadecimal representation of {@code bytes}.
      */
     public static String bytesToHex(byte[] bytes) {
         StringBuilder sb = new StringBuilder();
@@ -59,10 +58,10 @@ public final class MeshUtils {
     }
 
     /**
-     * Converts !ddac (hex) or 371903 (decimal) to the raw integer ID
+     * Parses a Meshtastic node identifier string into the raw integer node id.
      *
-     * @param input
-     * @return
+     * @param input node id string such as {@code !ddac} or {@code ddac}.
+     * @return parsed raw node id, or {@code 0} when input is {@code null}.
      */
     public static int parseId(String input) {
         if (input == null) {
@@ -87,8 +86,8 @@ public final class MeshUtils {
     /**
      * Formats a raw 32-bit Node ID into the standard Meshtastic hex string.
      *
-     * @param nodeId
-     * @return
+     * @param nodeId raw 32-bit node id.
+     * @return Meshtastic-style node id such as {@code !abcdef12}, or {@code Unknown} for {@code 0}.
      */
     public static String formatId(int nodeId) {
         if (nodeId == 0) {
@@ -100,8 +99,8 @@ public final class MeshUtils {
     /**
      * Resolves the best possible display name from a MeshNode value object.
      *
-     * @param node
-     * @return
+     * @param node node record to inspect.
+     * @return long name, short name, or formatted node id in that order of preference.
      */
     public static String resolveName(MeshNode node) {
         Objects.requireNonNull(node, "MeshNode cannot be null");
@@ -118,9 +117,9 @@ public final class MeshUtils {
     /**
      * Resolves a name using raw components.
      *
-     * @param nodeId
-     * @param user
-     * @return
+     * @param nodeId fallback node id used when user names are absent.
+     * @param user protobuf user payload that may contain long or short names.
+     * @return long name, short name, or formatted node id in that order of preference.
      */
     public static String resolveName(int nodeId, User user) {
         if (user != null) {
@@ -140,11 +139,10 @@ public final class MeshUtils {
      * string. Includes a guard for "Epoch 0" timestamps common in devices
      * without GPS sync.
      *
-     * @param millis The epoch milliseconds.
-     * @param relative If true, returns "5m ago". If false, returns "2024-02-11
-     * 14:20:00".
-     * @return A formatted string or "Unknown (No Clock Sync)" if the timestamp
-     * is invalid.
+     * @param millis epoch milliseconds.
+     * @param relative when {@code true}, returns a relative value such as {@code 5m ago};
+     *                 otherwise returns an absolute timestamp.
+     * @return formatted timestamp or {@code Unknown (No Clock Sync)} when the timestamp is invalid.
      */
     public static String formatTimestamp(long millis, boolean relative) {
         // Handle Epoch 0 or values very close to it (indicates no clock sync on device)
@@ -178,8 +176,8 @@ public final class MeshUtils {
     /**
      * Formats total seconds into a hierarchical string (e.g., "1d 4h 20m 5s").
      *
-     * @param totalSeconds
-     * @return
+     * @param totalSeconds uptime duration in seconds.
+     * @return formatted hierarchical uptime string.
      */
     public static String formatUptime(int totalSeconds) {
         if (totalSeconds <= 0) {
@@ -212,8 +210,8 @@ public final class MeshUtils {
     /**
      * Calculates seconds elapsed since a given millisecond timestamp.
      *
-     * @param lastSeenMs
-     * @return
+     * @param lastSeenMs timestamp in epoch milliseconds.
+     * @return whole seconds elapsed since {@code lastSeenMs}, or {@link Long#MAX_VALUE} when unknown.
      */
     public static long getSecondsSince(long lastSeenMs) {
         if (lastSeenMs <= 0) {
@@ -225,21 +223,23 @@ public final class MeshUtils {
 
     // --- Geographic Mathematics ---
     /**
+     * Converts a Meshtastic fixed-point coordinate into decimal degrees.
      *
-     * @param scaledInt
-     * @return
+     * @param scaledInt coordinate encoded as {@code degrees * 1e7}.
+     * @return decimal degrees, or {@code 0.0} when the protobuf field is unset.
      */
     public static double toDecimal(int scaledInt) {
         return (scaledInt == 0) ? 0.0 : scaledInt / COORD_SCALE;
     }
 
     /**
+     * Calculates the great-circle distance between two geographic coordinates in kilometers.
      *
-     * @param lat1
-     * @param lon1
-     * @param lat2
-     * @param lon2
-     * @return
+     * @param lat1 first latitude in decimal degrees.
+     * @param lon1 first longitude in decimal degrees.
+     * @param lat2 second latitude in decimal degrees.
+     * @param lon2 second longitude in decimal degrees.
+     * @return distance in kilometers.
      */
     public static double calculateDistance(double lat1, double lon1, double lat2, double lon2) {
         double dLat = Math.toRadians(lat2 - lat1);
@@ -257,45 +257,50 @@ public final class MeshUtils {
 
     // --- Unit Conversions ---
     /**
+     * Converts kilometers to miles while preserving negative sentinel values unchanged.
      *
-     * @param km
-     * @return
+     * @param km distance in kilometers or a negative sentinel marker.
+     * @return distance in miles, or the original sentinel value.
      */
     public static double convertKmToMiles(double km) {
         return (km < 0) ? km : km * KM_TO_MILES;
     }
 
     /**
+     * Converts kilometers to meters while preserving negative sentinel values unchanged.
      *
-     * @param km
-     * @return
+     * @param km distance in kilometers or a negative sentinel marker.
+     * @return distance in meters, or the original sentinel value.
      */
     public static double convertKmToMeters(double km) {
         return (km < 0) ? km : km * 1000.0;
     }
 
     /**
+     * Converts Celsius to Fahrenheit.
      *
-     * @param celsius
-     * @return
+     * @param celsius temperature in Celsius.
+     * @return temperature in Fahrenheit.
      */
     public static float celsiusToFahrenheit(float celsius) {
         return (celsius * 9 / 5) + 32;
     }
 
     /**
+     * Converts pressure from hectopascals to inches of mercury.
      *
-     * @param hpa
-     * @return
+     * @param hpa pressure in hectopascals.
+     * @return pressure in inches of mercury.
      */
     public static float hpaToInHg(float hpa) {
         return hpa * HPA_TO_INHG;
     }
 
     /**
+     * Converts pressure from hectopascals to millimeters of mercury.
      *
-     * @param hpa
-     * @return
+     * @param hpa pressure in hectopascals.
+     * @return pressure in millimeters of mercury.
      */
     public static float hpaToMmHg(float hpa) {
         return hpa * HPA_TO_MMHG;
@@ -303,18 +308,20 @@ public final class MeshUtils {
 
     // --- Logical Categorization ---
     /**
+     * Clamps a battery percentage into the normal {@code 0..100} range.
      *
-     * @param rawPercent
-     * @return
+     * @param rawPercent raw battery percentage.
+     * @return normalized battery percentage.
      */
     public static int normalizeBattery(int rawPercent) {
         return Math.max(0, Math.min(100, rawPercent));
     }
 
     /**
+     * Maps a battery voltage into the library's coarse battery-health buckets.
      *
-     * @param voltage
-     * @return
+     * @param voltage measured battery voltage.
+     * @return battery-health bucket index.
      */
     public static int getBatteryHealth(float voltage) {
         if (voltage <= 0) {
@@ -333,9 +340,10 @@ public final class MeshUtils {
     }
 
     /**
+     * Maps SNR into a coarse signal-quality bucket.
      *
-     * @param snr
-     * @return
+     * @param snr signal-to-noise ratio in dB.
+     * @return signal-quality bucket index.
      */
     public static int getSignalQuality(float snr) {
         if (snr <= -15) {
@@ -356,8 +364,8 @@ public final class MeshUtils {
     /**
      * Resolves a symbolic representation for the node's operational role.
      *
-     * @param role
-     * @return
+     * @param role Meshtastic device role.
+     * @return short symbolic label suitable for compact UI displays.
      */
     public static String getRoleSymbol(Config.DeviceConfig.Role role) {
         if (role == null) {
@@ -382,9 +390,10 @@ public final class MeshUtils {
     }
 
     /**
+     * Maps a gas-resistance reading into a coarse air-quality bucket.
      *
-     * @param gasResistance
-     * @return
+     * @param gasResistance gas resistance sensor value.
+     * @return air-quality bucket index.
      */
     public static int getAirQualityLevel(float gasResistance) {
         if (gasResistance <= 0) {

@@ -123,6 +123,19 @@ Listener --> UI: update store/view model
 
 This workflow is recommended for bots, services, and integrations without a GUI.
 
+If you want a concrete starting point instead of an architecture sketch, start with the runnable samples in:
+
+- `examples/jbang/AnnounceResponder.java`
+- `examples/jbang/WeatherBeacon.java`
+
+Those two examples cover the most common headless shape:
+
+- wait for `READY`
+- react to text events
+- run scheduled background work
+- send direct replies or channel broadcasts
+- shut down cleanly
+
 1. Connect client with the target transport.
 2. Await `READY` before operational tasks.
 3. Use listeners for streaming behavior (telemetry, text, node updates).
@@ -167,6 +180,10 @@ jobs.scheduleAtFixedRate(() ->
 );
 ----
 
+That is the general service shape. For a more realistic text-driven bot, the announce responder example in
+`examples/jbang/AnnounceResponder.java` is the better next step because it shows the full event-to-reply flow using the
+current public API.
+
 [plantuml,headless-workflow,svg]
 ----
 @startuml
@@ -185,4 +202,3 @@ Job -> Client: request/refresh/write APIs
 Client --> Job: futures complete/fail
 @enduml
 ----
-
