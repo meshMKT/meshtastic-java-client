@@ -9,6 +9,17 @@ This project aims to be:
 - conservative about protocol behavior and radio safety
 - explicit about what belongs in core versus platform-specific extensions
 
+## Licensing
+
+This project is licensed under `GPL-3.0`.
+
+The reason is straightforward: the published library now depends on and redistributes generated classes derived from
+the Meshtastic protobuf definitions, and those upstream protobuf definitions are distributed by the Meshtastic project
+under GPL-3.0.
+
+If you contribute code or documentation here, you should assume your contribution is being made under that same
+project license.
+
 ## Architecture Guidelines
 
 Keep the public surface simple and push complexity inward.

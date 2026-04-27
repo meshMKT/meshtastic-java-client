@@ -69,6 +69,18 @@ tools such as the web flasher. If you need to build a custom upgrade workflow in
 application-specific integration work rather than part of this core client.
 ====
 
+== Licensing Note
+
+This project is aligned to `GPL-3.0` because it now depends on and distributes generated code derived from the
+Meshtastic protobuf definitions.
+
+That is an important change from the earlier Apache-2.0 licensing story. The library began as an independent Java
+client implementation, but once the published artifact started shipping generated classes from the Meshtastic schema
+definitions, the licensing expectations for distribution changed as well.
+
+The goal of the license update is not to make the project harder to use. It is simply to keep this repository and its
+published artifacts honest about the upstream licensing of the protobuf definitions they are built from.
+
 == Feature Map
 
 This is a quick breakdown of the high-level pieces of the client.
