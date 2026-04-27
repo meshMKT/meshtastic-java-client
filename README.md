@@ -23,7 +23,7 @@ This library was built to fill that gap with a Java-first client that is practic
 
 ## Licensing Note
 
-This project moved from Apache-2.0 to GPL-3.0 to match the licensing of the Meshtastic protobuf definitions it now depends on and generates code from.
+This project is GPL-3.0 to match the licensing of the Meshtastic protobuf definitions it now depends on and generates code from.
 
 
 ## What It Supports
