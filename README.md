@@ -40,7 +40,7 @@ Note:
 
 To use this library, you will need:
 
-- JDK 21+
+- JDK 17+
 - a Meshtastic-compatible radio such as a HELTEC V3, T-DECK, or similar device
 
 ## Installation
