@@ -5,7 +5,7 @@
 
   <groupId>com.meshmkt.meshtastic</groupId>
   <artifactId>meshtastic-java-client</artifactId>
-  <version>1.0.2-SNAPSHOT</version>
+  <version>1.0.3-SNAPSHOT</version>
   <name>meshtastic-java-client</name>
   <description>Meshtastic Java client library.</description>
   <url>https://github.com/meshMKT/meshtastic-java-client</url>
@@ -45,11 +45,11 @@
     <maven.compiler.encoding>${project.build.sourceEncoding}</maven.compiler.encoding>
     <maven.compiler.source>17</maven.compiler.source>
     <maven.compiler.target>17</maven.compiler.target>
-    <protobuf.version>4.34.1</protobuf.version>
+    <protobuf.version>4.35.0</protobuf.version>
     <lombok.version>1.18.46</lombok.version>
     <jserialcomm.version>2.11.4</jserialcomm.version>
-    <slf4j.version>2.0.17</slf4j.version>
-    <junit.jupiter.version>6.0.3</junit.jupiter.version>
+    <slf4j.version>2.0.18</slf4j.version>
+    <junit.jupiter.version>6.1.0</junit.jupiter.version>
     <os.maven.plugin.version>1.7.1</os.maven.plugin.version>
     <maven.compiler.plugin.version>3.15.0</maven.compiler.plugin.version>
     <maven.surefire.plugin.version>3.5.5</maven.surefire.plugin.version>
@@ -57,12 +57,12 @@
     <maven.source.plugin.version>3.4.0</maven.source.plugin.version>
     <maven.javadoc.plugin.version>3.12.0</maven.javadoc.plugin.version>
     <maven.deploy.plugin.version>3.1.4</maven.deploy.plugin.version>
-    <spotless.maven.plugin.version>3.4.0</spotless.maven.plugin.version>
+    <spotless.maven.plugin.version>3.5.1</spotless.maven.plugin.version>
     <palantir.java.format.version>2.71.0</palantir.java.format.version>
     <asciidoctor.maven.plugin.version>3.2.0</asciidoctor.maven.plugin.version>
     <asciidoctorj.diagram.version>3.2.1</asciidoctorj.diagram.version>
     <asciidoctorj.diagram.plantuml.version>1.2026.2</asciidoctorj.diagram.plantuml.version>
-    <jreleaser.maven.plugin.version>1.23.0</jreleaser.maven.plugin.version>
+    <jreleaser.maven.plugin.version>1.24.0</jreleaser.maven.plugin.version>
   </properties>
 
   <dependencies>
@@ -71,7 +71,7 @@
     <dependency>
       <groupId>build.buf.gen</groupId>
       <artifactId>meshtastic_protobufs_protocolbuffers_java</artifactId>
-      <version>34.1.0.1.20260428231557.417128abbfc5</version>
+      <version>34.1.0.1.20260518202505.3658d46ea92f</version>
     </dependency>
 
     <!-- Lombok -->
