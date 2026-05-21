@@ -110,7 +110,7 @@ Client --> Listener: onStartupStateChanged(..., SYNC_LOCAL_CONFIG)
 Client --> Listener: onStartupStateChanged(..., SYNC_MESH_CONFIG)
 Client --> Listener: onStartupStateChanged(..., READY)
 
-UI -> Admin: getSnapshot()/typed snapshot getters
+UI -> Admin: typed snapshot getters
 Admin --> UI: immediate cached model
 
 UI -> Admin: refresh section on page open
@@ -170,8 +170,8 @@ readyLatch.await(45, TimeUnit.SECONDS);
 // Periodic task: refresh security + mqtt every 10 minutes.
 ScheduledExecutorService jobs = Executors.newSingleThreadScheduledExecutor();
 jobs.scheduleAtFixedRate(() ->
-        admin.refreshSecurityConfig()
-             .thenCompose(cfgSec -> admin.refreshMqttConfig())
+        admin.refreshConfig(AdminMessage.ConfigType.SECURITY_CONFIG)
+             .thenCompose(cfgSec -> admin.refreshModuleConfig(AdminMessage.ModuleConfigType.MQTT_CONFIG))
              .exceptionally(ex -> {
                  log.warn("Periodic refresh failed: {}", ex.getMessage());
                  return null;

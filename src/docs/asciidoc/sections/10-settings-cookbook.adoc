@@ -48,7 +48,7 @@ Recommended open flow:
 admin.getConfigSnapshot(ConfigType.SECURITY_CONFIG)
      .ifPresent(this::renderSecuritySnapshot);
 
-admin.refreshSecurityConfig().thenAccept(config -> {
+admin.refreshConfig(AdminMessage.ConfigType.SECURITY_CONFIG).thenAccept(config -> {
     if (config.hasSecurity()) {
         renderSecurity(config.getSecurity());
     }
@@ -62,12 +62,10 @@ Recommended write:
 Config.SecurityConfig security = Config.SecurityConfig.newBuilder()
         .setAdminChannelEnabled(true)
         .build();
+Config securityPayload = Config.newBuilder().setSecurity(security).build();
 
-admin.setSecurityConfig(security, true)
-     .thenAccept(applied -> {
-         if (applied) showSuccess("Security settings applied.");
-         else showWarning("Security settings accepted but not verified.");
-     });
+admin.setConfig(securityPayload, AdminWriteMode.VERIFY_APPLIED)
+     .thenAccept(this::handleWriteResult);
 ----
 
 === MQTT Page
@@ -85,7 +83,7 @@ admin.getModuleConfigSnapshot(ModuleConfigType.MQTT_CONFIG)
          }
      });
 
-admin.refreshMqttConfig().thenAccept(moduleConfig -> {
+admin.refreshModuleConfig(AdminMessage.ModuleConfigType.MQTT_CONFIG).thenAccept(moduleConfig -> {
     if (moduleConfig.hasMqtt()) {
         renderMqtt(moduleConfig.getMqtt());
     }
@@ -102,14 +100,10 @@ ModuleConfig.MQTTConfig mqtt = ModuleConfig.MQTTConfig.newBuilder()
         .setUsername("mesh-user")
         // set password/tls/root fields as required by your deployment
         .build();
+ModuleConfig mqttPayload = ModuleConfig.newBuilder().setMqtt(mqtt).build();
 
-admin.setMqttConfig(mqtt, true).thenAccept(applied -> {
-    if (applied) {
-        showSuccess("MQTT settings applied.");
-    } else {
-        showWarning("MQTT settings accepted but read-back mismatch.");
-    }
-});
+admin.setModuleConfig(mqttPayload, AdminWriteMode.VERIFY_APPLIED)
+     .thenAccept(this::handleWriteResult);
 ----
 
 How MQTT settings are used in a client app:
@@ -121,21 +115,25 @@ How MQTT settings are used in a client app:
 
 === Device / LoRa / Network / Display Pages
 
-Use typed config refresh/write wrappers:
+Use generic config refresh/write operations with wrapper payloads:
 
 [source,java]
 ----
 // open page
-admin.refreshDeviceConfig().thenAccept(this::renderDevice);
-admin.refreshLoraConfig().thenAccept(this::renderLora);
-admin.refreshNetworkConfig().thenAccept(this::renderNetwork);
-admin.refreshDisplayConfig().thenAccept(this::renderDisplay);
+admin.refreshConfig(AdminMessage.ConfigType.DEVICE_CONFIG).thenAccept(config -> renderDevice(config.getDevice()));
+admin.refreshConfig(AdminMessage.ConfigType.LORA_CONFIG).thenAccept(config -> renderLora(config.getLora()));
+admin.refreshConfig(AdminMessage.ConfigType.NETWORK_CONFIG).thenAccept(config -> renderNetwork(config.getNetwork()));
+admin.refreshConfig(AdminMessage.ConfigType.DISPLAY_CONFIG).thenAccept(config -> renderDisplay(config.getDisplay()));
 
 // save page
-admin.setDeviceConfig(deviceConfig, true).thenAccept(this::handleBooleanWrite);
-admin.setLoraConfig(loraConfig, true).thenAccept(this::handleBooleanWrite);
-admin.setNetworkConfig(networkConfig, true).thenAccept(this::handleBooleanWrite);
-admin.setDisplayConfig(displayConfig, true).thenAccept(this::handleBooleanWrite);
+admin.setConfig(Config.newBuilder().setDevice(deviceConfig).build(), AdminWriteMode.VERIFY_APPLIED)
+     .thenAccept(this::handleWriteResult);
+admin.setConfig(Config.newBuilder().setLora(loraConfig).build(), AdminWriteMode.VERIFY_APPLIED)
+     .thenAccept(this::handleWriteResult);
+admin.setConfig(Config.newBuilder().setNetwork(networkConfig).build(), AdminWriteMode.VERIFY_APPLIED)
+     .thenAccept(this::handleWriteResult);
+admin.setConfig(Config.newBuilder().setDisplay(displayConfig).build(), AdminWriteMode.VERIFY_APPLIED)
+     .thenAccept(this::handleWriteResult);
 ----
 
 === Modules Page (Full Refresh)
@@ -144,18 +142,19 @@ For a consolidated modules page:
 
 [source,java]
 ----
-admin.refreshModules().thenAccept(model -> {
-    renderModules(admin.getModuleConfigSnapshots());
-});
+admin.refreshAllModuleConfigs().thenAccept(moduleConfigs -> renderModules(moduleConfigs));
 ----
 
 For specific module cards, prefer targeted calls:
 
 [source,java]
 ----
-admin.refreshTelemetryModuleConfig().thenAccept(this::renderTelemetryModule);
-admin.refreshSerialModuleConfig().thenAccept(this::renderSerialModule);
-admin.refreshStoreForwardModuleConfig().thenAccept(this::renderStoreForwardModule);
+admin.refreshModuleConfig(AdminMessage.ModuleConfigType.TELEMETRY_CONFIG)
+     .thenAccept(module -> renderTelemetryModule(module.getTelemetry()));
+admin.refreshModuleConfig(AdminMessage.ModuleConfigType.SERIAL_CONFIG)
+     .thenAccept(module -> renderSerialModule(module.getSerial()));
+admin.refreshModuleConfig(AdminMessage.ModuleConfigType.STOREFORWARD_CONFIG)
+     .thenAccept(module -> renderStoreForwardModule(module.getStoreForward()));
 ----
 
 === Write Result Handling Pattern
@@ -175,4 +174,3 @@ private void handleWriteResult(AdminWriteResult result) {
     }
 }
 ----
-

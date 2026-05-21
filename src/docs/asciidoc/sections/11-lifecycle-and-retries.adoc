@@ -4,8 +4,7 @@ Use snapshot getters for immediate rendering, and refresh methods when you want 
 
 [source,java]
 ----
-RadioModel model = admin.getSnapshot();
-Map<Integer, Channel> channels = model.getChannels();
+List<Channel> channels = admin.getChannelSnapshots();
 Map<ConfigType, Config> configs = admin.getConfigSnapshots();
 ----
 
@@ -155,7 +154,7 @@ client.addEventListener(new MeshtasticEventListener() {
             }
             case OWNER -> admin.refreshOwner().thenAccept(MainPresenter.this::renderOwner);
             case CONFIG -> admin.refreshCoreConfigs().thenAccept(cfg -> renderConfig(admin.getConfigSnapshots()));
-            case MODULE_CONFIG -> admin.refreshModules().thenAccept(m -> renderModules(admin.getModuleConfigSnapshots()));
+            case MODULE_CONFIG -> admin.refreshAllModuleConfigs().thenAccept(MainPresenter.this::renderModules);
             case DEVICE_METADATA -> admin.refreshMetadata().thenAccept(MainPresenter.this::renderMetadata);
             case LOCAL_NODE -> { /* optional local node update handling */ }
         }

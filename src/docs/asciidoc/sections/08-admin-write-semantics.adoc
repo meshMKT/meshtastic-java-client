@@ -2,26 +2,25 @@
 
 These are the main write entry points:
 
-- `setChannelResult(index, channel, verifyApplied)`
-- `setConfigResult(config, verifyApplied)`
-- `setModuleConfigResult(moduleConfig, verifyApplied)`
-- `setOwnerResult(targetNodeId, longName, shortName, verifyApplied)`
-
-Boolean-returning variants are also available when you do not need structured result details:
-
-- `setChannel(index, channel, verifyApplied)`
-- `setConfig(config, verifyApplied)`
-- `setModuleConfig(moduleConfig, verifyApplied)`
-- `setOwner(targetNodeId, longName, shortName, verifyApplied)`
+- `setChannel(index, channel, mode)`
+- `setConfig(config, mode)`
+- `setModuleConfig(moduleConfig, mode)`
+- `setOwner(targetNodeId, longName, shortName, mode)`
 
 The key choice is whether you only care that the radio accepted the request, or whether you want the library to read
-the value back and confirm that it really showed up. That is what `verifyApplied` controls, and the result-returning
-methods expose the outcome through `AdminWriteResult`.
+the value back and confirm that it really showed up. That is what `AdminWriteMode` controls, and every canonical write
+returns an `AdminWriteResult`.
+
+Modes:
+
+- `AdminWriteMode.ACCEPT_ONLY`
+- `AdminWriteMode.VERIFY_APPLIED`
 
 === Eventual-Consistency Verification Policy
 
 Some firmware and radio combinations apply writes a little later than you would expect. To avoid reporting a false
-failure too early, `AdminService` supports configurable read-back retries when `verifyApplied=true`.
+failure too early, `AdminService` supports configurable read-back retries when
+`mode=AdminWriteMode.VERIFY_APPLIED`.
 
 Defaults:
 
@@ -57,7 +56,7 @@ For UI code and anything user-facing, the result-returning write methods are usu
 [source,java]
 ----
 CompletableFuture<AdminWriteResult> resultFuture =
-        admin.setConfigResult(configPayload, true);
+        admin.setConfig(configPayload, AdminWriteMode.VERIFY_APPLIED);
 
 resultFuture.thenAccept(result -> {
     switch (result.status()) {
@@ -90,21 +89,21 @@ participant "AdminService" as Admin
 participant "MeshtasticClient" as Client
 participant "Radio" as Radio
 
-UI -> Admin: setConfig(payload, verifyApplied)
+UI -> Admin: setConfig(payload, mode)
 Admin -> Client: executeAdminRequest(SET_CONFIG, expectAdminResponse=false)
 Client -> Radio: ADMIN_APP set_config
 Radio --> Client: ROUTING_APP status (NONE/error)
 Client --> Admin: request accepted/failure
 
-alt verifyApplied = false
+alt mode = ACCEPT_ONLY
   Admin --> UI: complete success on acceptance
-else verifyApplied = true
+else mode = VERIFY_APPLIED
   Admin -> Client: executeAdminRequest(GET_CONFIG(type), expectAdminResponse=true)
   Client -> Radio: ADMIN_APP get_config
   Radio --> Client: ADMIN_APP get_config_response
   Client --> Admin: parsed payload
   Admin -> Admin: compare requested vs observed section
-  Admin --> UI: true/false
+  Admin --> UI: AdminWriteResult
 end
 
 @enduml

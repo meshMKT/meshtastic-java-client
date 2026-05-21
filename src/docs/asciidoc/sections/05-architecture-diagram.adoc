@@ -23,7 +23,7 @@ Transport --> Client: node + mesh snapshots
 Client -> Client: startup state = READY
 Client --> UI: onStartupStateChanged(..., READY)
 
-UI -> Admin: refreshChannelsAndSecurity()
+UI -> Admin: refreshLikelyActiveChannels() + refresh security/mqtt
 Admin -> Client: executeAdminRequest(GET_CHANNEL likely-active slots)
 Admin -> Client: executeAdminRequest(GET_CONFIG SECURITY)
 Admin -> Client: executeAdminRequest(GET_MODULE_CONFIG MQTT)
@@ -33,4 +33,3 @@ UI -> Admin: getChannelSnapshots()/getConfigSnapshot()/getModuleConfigSnapshot()
 
 @enduml
 ----
-

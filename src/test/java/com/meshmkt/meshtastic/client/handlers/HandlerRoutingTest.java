@@ -41,8 +41,10 @@ class HandlerRoutingTest {
         assertTrue(handler.handle(config));
 
         assertEquals(4321, db.getSelfNodeId());
-        assertEquals(4321, admin.getSnapshot().getNodeId());
-        assertEquals(3, admin.getSnapshot().getLoraConfig().getHopLimit());
+        assertEquals(4321, admin.getNodeId());
+        Config loraConfig =
+                admin.getConfigSnapshot(AdminMessage.ConfigType.LORA_CONFIG).orElseThrow();
+        assertEquals(3, loraConfig.getLora().getHopLimit());
     }
 
     /**

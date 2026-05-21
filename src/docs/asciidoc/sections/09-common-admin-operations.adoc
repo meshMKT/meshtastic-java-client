@@ -24,12 +24,11 @@ if (!issues.isEmpty()) {
 
 [source,java]
 ----
-// Name update (default verifies by readback)
-admin.setChannelName(2, "meshMKT");
+admin.setChannelName(2, "meshMKT", AdminWriteMode.VERIFY_APPLIED);
 
 // Password/PSK update
-admin.setChannelPassword(2, "shared-secret");
-admin.setPrimaryChannelPassword("primary-secret");
+admin.setChannelPassword(2, "shared-secret", AdminWriteMode.VERIFY_APPLIED);
+admin.setPrimaryChannelPassword("primary-secret", AdminWriteMode.VERIFY_APPLIED);
 ----
 
 === Security + MQTT Helpers
@@ -39,25 +38,26 @@ admin.setPrimaryChannelPassword("primary-secret");
 Config.SecurityConfig security = Config.SecurityConfig.newBuilder()
         .setAdminChannelEnabled(true)
         .build();
-admin.setSecurityConfig(security, true);
+Config securityPayload = Config.newBuilder().setSecurity(security).build();
+admin.setConfig(securityPayload, AdminWriteMode.VERIFY_APPLIED);
 
 ModuleConfig.MQTTConfig mqtt = ModuleConfig.MQTTConfig.newBuilder()
         .setEnabled(true)
         .setAddress("mqtt.example.com")
         .setUsername("mesh-user")
         .build();
-admin.setMqttConfig(mqtt, true);
+ModuleConfig mqttPayload = ModuleConfig.newBuilder().setMqtt(mqtt).build();
+admin.setModuleConfig(mqttPayload, AdminWriteMode.VERIFY_APPLIED);
 ----
 
 === Structured Result Variants
 
-All major write paths have result-returning variants:
+All canonical write paths already return `AdminWriteResult`:
 
 [source,java]
 ----
-admin.setChannelResult(2, channel, true);
-admin.setConfigResult(config, true);
-admin.setModuleConfigResult(moduleConfig, true);
-admin.setOwnerResult(targetNodeId, "Long Name", "short", true);
+admin.setChannel(2, channel, AdminWriteMode.VERIFY_APPLIED);
+admin.setConfig(config, AdminWriteMode.VERIFY_APPLIED);
+admin.setModuleConfig(moduleConfig, AdminWriteMode.VERIFY_APPLIED);
+admin.setOwner(targetNodeId, "Long Name", "short", AdminWriteMode.VERIFY_APPLIED);
 ----
-
