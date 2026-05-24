@@ -68,7 +68,7 @@ client.getAdminService().setVerificationPolicy(
 );
 ----
 
-This setting can also be changed at runtime and affects future `verifyApplied=true` admin writes.
+This setting can also be changed at runtime and affects future `AdminWriteMode.VERIFY_APPLIED` admin writes.
 
 Example TRACE output when timing diagnostics are enabled:
 

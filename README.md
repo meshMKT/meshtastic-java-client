@@ -96,6 +96,7 @@ The full project documentation is available through the generated user guide and
 
 - User guide: GitHub Pages / generated AsciiDoc documentation
 - API reference: generated Javadocs
+- Migration guide: `MIGRATION.md`
 - Contributor guide: `CONTRIBUTING.md`
 
 The user guide covers topics such as:
@@ -107,6 +108,10 @@ The user guide covers topics such as:
 - transport behavior and reconnect expectations
 - extension points such as BLE and custom node database implementations
 - hardware integration testing
+
+If you are upgrading across a major version boundary, see:
+
+- `MIGRATION.md`
 
 ## Third-Party Dependencies
 

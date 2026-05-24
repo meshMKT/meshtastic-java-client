@@ -35,7 +35,7 @@ admin.setChannelPassword(2, "shared-secret")
      .thenAccept(applied -> refreshChannelsUi());
 
 // full channel payload update with structured status
-admin.setChannelResult(2, updatedChannel, true)
+admin.setChannel(2, updatedChannel, AdminWriteMode.VERIFY_APPLIED)
      .thenAccept(this::handleWriteResult);
 ----
 
