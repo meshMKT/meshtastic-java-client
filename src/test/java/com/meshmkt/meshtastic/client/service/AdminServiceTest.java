@@ -93,8 +93,9 @@ class AdminServiceTest {
                         .build())
                 .build());
 
-        boolean applied = service.setChannel(2, requested).join();
-        assertFalse(applied);
+        AdminWriteResult result =
+                service.setChannel(2, requested, AdminWriteMode.VERIFY_APPLIED).join();
+        assertStatus(result, AdminWriteStatus.VERIFICATION_FAILED);
 
         assertEquals(6, gateway.requests.size());
         assertTrue(gateway.requests.get(0).hasGetDeviceMetadataRequest());
@@ -127,8 +128,9 @@ class AdminServiceTest {
         gateway.enqueueAdminResponse(
                 AdminMessage.newBuilder().setGetChannelResponse(requested).build());
 
-        boolean applied = service.setChannel(1, requested).join();
-        assertTrue(applied);
+        AdminWriteResult result =
+                service.setChannel(1, requested, AdminWriteMode.VERIFY_APPLIED).join();
+        assertStatus(result, AdminWriteStatus.VERIFIED_APPLIED);
         assertEquals(3, gateway.requests.size());
     }
 
@@ -270,8 +272,9 @@ class AdminServiceTest {
         gateway.enqueueAdminResponse(
                 AdminMessage.newBuilder().setGetChannelResponse(requested).build());
 
-        boolean applied = service.setChannel(2, requested, true).join();
-        assertTrue(applied);
+        AdminWriteResult result =
+                service.setChannel(2, requested, AdminWriteMode.VERIFY_APPLIED).join();
+        assertStatus(result, AdminWriteStatus.VERIFIED_APPLIED);
         assertEquals(3, gateway.requests.size());
         assertTrue(gateway.requests.get(0).hasGetDeviceMetadataRequest());
         assertTrue(gateway.requests.get(1).hasSetChannel());
@@ -432,8 +435,9 @@ class AdminServiceTest {
                         .build())
                 .build());
 
-        boolean applied = service.setOwner(1234, "Red Cypress", "rcyp", true).join();
-        assertTrue(applied);
+        AdminWriteResult result = service.setOwner(1234, "Red Cypress", "rcyp", AdminWriteMode.VERIFY_APPLIED)
+                .join();
+        assertStatus(result, AdminWriteStatus.VERIFIED_APPLIED);
         assertEquals(2, gateway.requests.size());
         assertTrue(gateway.requests.get(0).hasSetOwner());
         assertTrue(gateway.requests.get(1).hasGetOwnerRequest());
@@ -457,8 +461,9 @@ class AdminServiceTest {
                         .build())
                 .build());
 
-        boolean applied = service.setOwner(1234, "Red Cypress", "rcyp", true).join();
-        assertFalse(applied);
+        AdminWriteResult result = service.setOwner(1234, "Red Cypress", "rcyp", AdminWriteMode.VERIFY_APPLIED)
+                .join();
+        assertStatus(result, AdminWriteStatus.VERIFICATION_FAILED);
         assertEquals(2, gateway.requests.size());
         assertTrue(gateway.requests.get(0).hasSetOwner());
         assertTrue(gateway.requests.get(1).hasGetOwnerRequest());
@@ -481,8 +486,9 @@ class AdminServiceTest {
                         .build())
                 .build());
 
-        boolean applied = service.setOwner(1234, "Red Cypress", "rcyp", true).join();
-        assertTrue(applied);
+        AdminWriteResult result = service.setOwner(1234, "Red Cypress", "rcyp", AdminWriteMode.VERIFY_APPLIED)
+                .join();
+        assertStatus(result, AdminWriteStatus.VERIFIED_APPLIED);
         assertEquals(2, gateway.requests.size());
         assertTrue(gateway.requests.get(0).hasSetOwner());
         assertTrue(gateway.requests.get(1).hasGetOwnerRequest());
@@ -504,9 +510,9 @@ class AdminServiceTest {
                 .shortName("ralp")
                 .build());
 
-        boolean applied =
-                service.setOwner(0xABCDEF01, "Remote Alpha", "ralp", true).join();
-        assertTrue(applied);
+        AdminWriteResult result = service.setOwner(0xABCDEF01, "Remote Alpha", "ralp", AdminWriteMode.VERIFY_APPLIED)
+                .join();
+        assertStatus(result, AdminWriteStatus.VERIFIED_APPLIED);
         assertEquals(1, gateway.requests.size());
         assertTrue(gateway.requests.get(0).hasSetOwner());
     }
@@ -531,8 +537,9 @@ class AdminServiceTest {
                 .build());
         gateway.enqueueAdminResponse(AdminMessage.newBuilder().build());
 
-        boolean applied = service.setChannel(3, requested, false).join();
-        assertTrue(applied);
+        AdminWriteResult result =
+                service.setChannel(3, requested, AdminWriteMode.ACCEPT_ONLY).join();
+        assertStatus(result, AdminWriteStatus.ACCEPTED);
         assertEquals(2, gateway.requests.size());
         assertTrue(gateway.requests.get(0).hasGetDeviceMetadataRequest());
         assertTrue(gateway.requests.get(1).hasSetChannel());
@@ -553,8 +560,8 @@ class AdminServiceTest {
                         ChannelSettings.newBuilder().setName("Timmy9922-Yahoo").build())
                 .build();
 
-        IllegalArgumentException ex =
-                assertThrows(IllegalArgumentException.class, () -> service.setChannel(2, requested, true));
+        IllegalArgumentException ex = assertThrows(
+                IllegalArgumentException.class, () -> service.setChannel(2, requested, AdminWriteMode.VERIFY_APPLIED));
         assertTrue(ex.getMessage().contains("Channel name must be <="));
         assertTrue(gateway.requests.isEmpty());
     }
@@ -590,8 +597,9 @@ class AdminServiceTest {
                 .build());
         gateway.enqueueAdminResponse(AdminMessage.newBuilder().build());
 
-        boolean applied = service.setChannel(2, requested, false).join();
-        assertTrue(applied);
+        AdminWriteResult result =
+                service.setChannel(2, requested, AdminWriteMode.ACCEPT_ONLY).join();
+        assertStatus(result, AdminWriteStatus.ACCEPTED);
         assertEquals(2, gateway.requests.size());
         assertTrue(gateway.requests.get(1).hasSetChannel());
         assertEquals(
@@ -621,8 +629,9 @@ class AdminServiceTest {
         gateway.enqueueAdminResponse(
                 AdminMessage.newBuilder().setGetConfigResponse(requested).build());
 
-        boolean applied = service.setConfig(requested, true).join();
-        assertTrue(applied);
+        AdminWriteResult result =
+                service.setConfig(requested, AdminWriteMode.VERIFY_APPLIED).join();
+        assertStatus(result, AdminWriteStatus.VERIFIED_APPLIED);
         assertEquals(2, gateway.requests.size());
         assertTrue(gateway.requests.get(0).hasSetConfig());
         assertEquals(
@@ -655,8 +664,9 @@ class AdminServiceTest {
         gateway.enqueueAdminResponse(
                 AdminMessage.newBuilder().setGetConfigResponse(observed).build());
 
-        boolean applied = service.setConfig(requested, true).join();
-        assertFalse(applied);
+        AdminWriteResult result =
+                service.setConfig(requested, AdminWriteMode.VERIFY_APPLIED).join();
+        assertStatus(result, AdminWriteStatus.VERIFICATION_FAILED);
         assertEquals(2, gateway.requests.size());
         assertTrue(gateway.requests.get(0).hasSetConfig());
         assertEquals(
@@ -683,8 +693,9 @@ class AdminServiceTest {
         gateway.enqueueAdminResponse(
                 AdminMessage.newBuilder().setGetConfigResponse(requested).build());
 
-        boolean applied = service.setConfig(requested, true).join();
-        assertTrue(applied);
+        AdminWriteResult result =
+                service.setConfig(requested, AdminWriteMode.VERIFY_APPLIED).join();
+        assertStatus(result, AdminWriteStatus.VERIFIED_APPLIED);
         assertEquals(2, gateway.requests.size());
         assertTrue(gateway.requests.get(0).hasSetConfig());
         assertEquals(
@@ -725,8 +736,9 @@ class AdminServiceTest {
         gateway.enqueueAdminResponse(
                 AdminMessage.newBuilder().setGetConfigResponse(requested).build());
 
-        boolean applied = service.setConfig(requested, true).join();
-        assertTrue(applied);
+        AdminWriteResult result =
+                service.setConfig(requested, AdminWriteMode.VERIFY_APPLIED).join();
+        assertStatus(result, AdminWriteStatus.VERIFIED_APPLIED);
         assertEquals(3, gateway.requests.size());
         assertTrue(gateway.requests.get(0).hasSetConfig());
         assertEquals(
@@ -755,8 +767,9 @@ class AdminServiceTest {
         gateway.enqueueAdminResponse(
                 AdminMessage.newBuilder().setGetModuleConfigResponse(requested).build());
 
-        boolean applied = service.setModuleConfig(requested, true).join();
-        assertTrue(applied);
+        AdminWriteResult result = service.setModuleConfig(requested, AdminWriteMode.VERIFY_APPLIED)
+                .join();
+        assertStatus(result, AdminWriteStatus.VERIFIED_APPLIED);
         assertEquals(2, gateway.requests.size());
         assertTrue(gateway.requests.get(0).hasSetModuleConfig());
         assertEquals(
@@ -788,8 +801,9 @@ class AdminServiceTest {
         gateway.enqueueAdminResponse(
                 AdminMessage.newBuilder().setGetModuleConfigResponse(observed).build());
 
-        boolean applied = service.setModuleConfig(requested, true).join();
-        assertFalse(applied);
+        AdminWriteResult result = service.setModuleConfig(requested, AdminWriteMode.VERIFY_APPLIED)
+                .join();
+        assertStatus(result, AdminWriteStatus.VERIFICATION_FAILED);
         assertEquals(2, gateway.requests.size());
         assertTrue(gateway.requests.get(0).hasSetModuleConfig());
         assertEquals(
@@ -817,8 +831,9 @@ class AdminServiceTest {
         gateway.enqueueAdminResponse(
                 AdminMessage.newBuilder().setGetModuleConfigResponse(requested).build());
 
-        boolean applied = service.setModuleConfig(requested, true).join();
-        assertTrue(applied);
+        AdminWriteResult result = service.setModuleConfig(requested, AdminWriteMode.VERIFY_APPLIED)
+                .join();
+        assertStatus(result, AdminWriteStatus.VERIFIED_APPLIED);
         assertEquals(2, gateway.requests.size());
         assertTrue(gateway.requests.get(0).hasSetModuleConfig());
         assertEquals(
@@ -845,7 +860,7 @@ class AdminServiceTest {
      * Verifies MQTT convenience write wrapper emits module-config admin writes and verifies by read-back.
      */
     @Test
-    void setMqttConfigAndVerifyUsesModuleConfigWritePath() {
+    void setModuleConfigWithMqttPayloadAndVerifyUsesModuleConfigWritePath() {
         StubGateway gateway = new StubGateway(1234);
         AdminService service = new AdminService(gateway);
 
@@ -860,8 +875,10 @@ class AdminServiceTest {
                         ModuleConfig.newBuilder().setMqtt(mqtt).build())
                 .build());
 
-        boolean applied = service.setMqttConfig(mqtt, true).join();
-        assertTrue(applied);
+        AdminWriteResult result = service.setModuleConfig(
+                        ModuleConfig.newBuilder().setMqtt(mqtt).build(), AdminWriteMode.VERIFY_APPLIED)
+                .join();
+        assertStatus(result, AdminWriteStatus.VERIFIED_APPLIED);
         assertEquals(2, gateway.requests.size());
         assertTrue(gateway.requests.get(0).hasSetModuleConfig());
         assertEquals(
@@ -904,9 +921,10 @@ class AdminServiceTest {
                         .build())
                 .build());
 
-        boolean applied = service.setChannelPsk(2, ByteString.copyFromUtf8("AAAABBBBCCCCDDDD"), true)
+        AdminWriteResult result = service.setChannelPsk(
+                        2, ByteString.copyFromUtf8("AAAABBBBCCCCDDDD"), AdminWriteMode.VERIFY_APPLIED)
                 .join();
-        assertTrue(applied);
+        assertStatus(result, AdminWriteStatus.VERIFIED_APPLIED);
         assertEquals(3, gateway.requests.size());
         assertTrue(gateway.requests.get(1).hasSetChannel());
         assertEquals(
@@ -951,8 +969,9 @@ class AdminServiceTest {
                         .build())
                 .build());
 
-        boolean applied = service.setPrimaryChannelPassword("FEDCBA0987654321").join();
-        assertTrue(applied);
+        AdminWriteResult result = service.setPrimaryChannelPassword("FEDCBA0987654321", AdminWriteMode.VERIFY_APPLIED)
+                .join();
+        assertStatus(result, AdminWriteStatus.VERIFIED_APPLIED);
         assertTrue(gateway.requests.get(1).hasSetChannel());
         assertEquals(0, gateway.requests.get(1).getSetChannel().getIndex());
         assertEquals(
@@ -964,7 +983,7 @@ class AdminServiceTest {
      * Verifies security-config convenience write wrapper verifies through config read-back.
      */
     @Test
-    void setSecurityConfigAndVerifyUsesConfigWritePath() {
+    void setConfigWithSecurityPayloadAndVerifyUsesConfigWritePath() {
         StubGateway gateway = new StubGateway(1234);
         AdminService service = new AdminService(gateway);
 
@@ -976,8 +995,10 @@ class AdminServiceTest {
                 .setGetConfigResponse(Config.newBuilder().setSecurity(security).build())
                 .build());
 
-        boolean applied = service.setSecurityConfig(security, true).join();
-        assertTrue(applied);
+        AdminWriteResult result = service.setConfig(
+                        Config.newBuilder().setSecurity(security).build(), AdminWriteMode.VERIFY_APPLIED)
+                .join();
+        assertStatus(result, AdminWriteStatus.VERIFIED_APPLIED);
         assertEquals(2, gateway.requests.size());
         assertTrue(gateway.requests.get(0).hasSetConfig());
         assertEquals(
@@ -1010,7 +1031,7 @@ class AdminServiceTest {
      * Verifies typed refresh wrapper for serial module config requests the correct module type.
      */
     @Test
-    void refreshSerialModuleConfigRequestsSerialModuleType() {
+    void refreshModuleConfigRequestsSerialModuleType() {
         StubGateway gateway = new StubGateway(1234);
         AdminService service = new AdminService(gateway);
 
@@ -1022,9 +1043,9 @@ class AdminServiceTest {
                         ModuleConfig.newBuilder().setSerial(serialConfig).build())
                 .build());
 
-        ModuleConfig.SerialConfig refreshed =
-                service.refreshSerialModuleConfig().join();
-        assertEquals(serialConfig, refreshed);
+        ModuleConfig refreshed = service.refreshModuleConfig(AdminMessage.ModuleConfigType.SERIAL_CONFIG)
+                .join();
+        assertEquals(serialConfig, refreshed.getSerial());
         assertEquals(1, gateway.requests.size());
         assertEquals(
                 AdminMessage.ModuleConfigType.SERIAL_CONFIG,
@@ -1048,8 +1069,9 @@ class AdminServiceTest {
                         Config.newBuilder().setDeviceUi(deviceUiConfig).build())
                 .build());
 
-        boolean applied = service.setDeviceUiConfig(deviceUiConfig, true).join();
-        assertTrue(applied);
+        AdminWriteResult result = service.setDeviceUiConfig(deviceUiConfig, AdminWriteMode.VERIFY_APPLIED)
+                .join();
+        assertStatus(result, AdminWriteStatus.VERIFIED_APPLIED);
         assertTrue(gateway.requests.get(0).hasSetConfig());
         assertEquals(
                 AdminMessage.ConfigType.DEVICEUI_CONFIG, gateway.requests.get(1).getGetConfigRequest());
@@ -1059,7 +1081,7 @@ class AdminServiceTest {
      * Verifies typed serial module writer maps to set/get module-config calls for SERIAL.
      */
     @Test
-    void setSerialModuleConfigVerifyUsesSerialModuleReadback() {
+    void setModuleConfigWithSerialPayloadVerifyUsesSerialModuleReadback() {
         StubGateway gateway = new StubGateway(1234);
         AdminService service = new AdminService(gateway);
 
@@ -1074,8 +1096,10 @@ class AdminServiceTest {
                         ModuleConfig.newBuilder().setSerial(serialConfig).build())
                 .build());
 
-        boolean applied = service.setSerialModuleConfig(serialConfig, true).join();
-        assertTrue(applied);
+        AdminWriteResult result = service.setModuleConfig(
+                        ModuleConfig.newBuilder().setSerial(serialConfig).build(), AdminWriteMode.VERIFY_APPLIED)
+                .join();
+        assertStatus(result, AdminWriteStatus.VERIFIED_APPLIED);
         assertTrue(gateway.requests.get(0).hasSetModuleConfig());
         assertEquals(
                 AdminMessage.ModuleConfigType.SERIAL_CONFIG,
@@ -1108,7 +1132,8 @@ class AdminServiceTest {
         gateway.enqueueAdminResponse(
                 AdminMessage.newBuilder().setGetConfigResponse(observed).build());
 
-        AdminWriteResult result = service.setConfigResult(requested, true).join();
+        AdminWriteResult result =
+                service.setConfig(requested, AdminWriteMode.VERIFY_APPLIED).join();
         assertEquals(AdminWriteStatus.VERIFICATION_FAILED, result.getStatus());
     }
 
@@ -1129,7 +1154,8 @@ class AdminServiceTest {
                         .build())
                 .build();
 
-        AdminWriteResult result = service.setConfigResult(requested, false).join();
+        AdminWriteResult result =
+                service.setConfig(requested, AdminWriteMode.ACCEPT_ONLY).join();
         assertEquals(AdminWriteStatus.REJECTED, result.getStatus());
     }
 
@@ -1148,7 +1174,8 @@ class AdminServiceTest {
                         Config.DisplayConfig.newBuilder().setScreenOnSecs(30).build())
                 .build();
 
-        AdminWriteResult result = service.setConfigResult(requested, false).join();
+        AdminWriteResult result =
+                service.setConfig(requested, AdminWriteMode.ACCEPT_ONLY).join();
         assertEquals(AdminWriteStatus.TIMEOUT, result.getStatus());
     }
 
@@ -1172,14 +1199,14 @@ class AdminServiceTest {
                         .build())
                 .build();
 
-        assertTrue(service.removeNodeByNum(0x00abc123).join());
-        assertTrue(service.addContact(contact).join());
-        assertTrue(service.setFavoriteNode(0x00abc123).join());
-        assertTrue(service.removeFavoriteNode(0x00abc123).join());
-        assertTrue(service.setIgnoredNode(0x00abc123).join());
-        assertTrue(service.removeIgnoredNode(0x00abc123).join());
-        assertTrue(service.toggleMutedNode(0x00abc123).join());
-        assertTrue(service.resetNodeDb(true).join());
+        assertStatus(service.removeNodeByNum(0x00abc123).join(), AdminWriteStatus.ACCEPTED);
+        assertStatus(service.addContact(contact).join(), AdminWriteStatus.ACCEPTED);
+        assertStatus(service.setFavoriteNode(0x00abc123).join(), AdminWriteStatus.ACCEPTED);
+        assertStatus(service.removeFavoriteNode(0x00abc123).join(), AdminWriteStatus.ACCEPTED);
+        assertStatus(service.setIgnoredNode(0x00abc123).join(), AdminWriteStatus.ACCEPTED);
+        assertStatus(service.removeIgnoredNode(0x00abc123).join(), AdminWriteStatus.ACCEPTED);
+        assertStatus(service.toggleMutedNode(0x00abc123).join(), AdminWriteStatus.ACCEPTED);
+        assertStatus(service.resetNodeDb(true).join(), AdminWriteStatus.ACCEPTED);
 
         assertEquals(8, gateway.requests.size());
         assertEquals(0x00abc123, gateway.requests.get(0).getRemoveByNodenum());
@@ -1210,9 +1237,9 @@ class AdminServiceTest {
                 .setAltitude(123)
                 .build();
 
-        assertTrue(service.setFixedPosition(explicit).join());
-        assertTrue(service.setFixedPosition(40.4321d, -73.9876d, 123).join());
-        assertTrue(service.removeFixedPosition().join());
+        assertStatus(service.setFixedPosition(explicit).join(), AdminWriteStatus.ACCEPTED);
+        assertStatus(service.setFixedPosition(40.4321d, -73.9876d, 123).join(), AdminWriteStatus.ACCEPTED);
+        assertStatus(service.removeFixedPosition().join(), AdminWriteStatus.ACCEPTED);
 
         assertEquals(explicit, gateway.requests.get(0).getSetFixedPosition());
         assertEquals(
@@ -1285,5 +1312,9 @@ class AdminServiceTest {
             }
             return CompletableFuture.completedFuture(next);
         }
+    }
+
+    private static void assertStatus(AdminWriteResult result, AdminWriteStatus expected) {
+        assertEquals(expected, result.getStatus(), () -> "Unexpected write result: " + result);
     }
 }

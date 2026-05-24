@@ -68,7 +68,7 @@ client.getAdminService().setVerificationPolicy(
 );
 ----
 
-This setting can also be changed at runtime and affects future `verifyApplied=true` admin writes.
+This setting can also be changed at runtime and affects future `AdminWriteMode.VERIFY_APPLIED` admin writes.
 
 Example TRACE output when timing diagnostics are enabled:
 
@@ -282,10 +282,10 @@ Why this layer exists:
 
 What `AdminService` gives you:
 
-- a live `RadioModel` snapshot via `getSnapshot()`
+- typed snapshot accessors for owner, metadata, channels, configs, and module configs
 - typed snapshot accessors for channels/config/module-config sections
 - explicit async refresh methods for page-specific data loads
-- typed write helpers for channel/config/module/owner operations
+- canonical write helpers for channel/config/module/owner operations via `AdminWriteMode`
 - optional verify-applied semantics with structured `AdminWriteResult`
 
 The simplest mental model is:

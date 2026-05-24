@@ -1,0 +1,199 @@
+== Migration Guide
+
+=== 1.x to 2.0.0
+
+`2.0.0` includes a breaking cleanup of `AdminService`.
+
+The main goals were:
+
+- remove broad mutable snapshot access
+- remove overlapping convenience APIs
+- standardize writes on `AdminWriteMode` and `AdminWriteResult`
+- make callers choose explicit config/module refresh operations instead of grouped helpers
+
+=== What Changed
+
+==== Snapshot access
+
+Removed:
+
+- `getSnapshot()`
+
+Use instead:
+
+- `getNodeId()`
+- `getOwnerSnapshot()`
+- `getMetadataSnapshot()`
+- `getDeviceUiSnapshot()`
+- `getConfigSnapshot(...)`
+- `getModuleConfigSnapshot(...)`
+- `getChannelSnapshot(...)`
+- `getChannelSnapshots()`
+
+==== Grouped refresh helpers
+
+Removed:
+
+- `refreshCore()`
+- `refreshChannelsAndSecurity()`
+- `refreshAllChannelsAndSecurity()`
+- `refreshModules()`
+
+Callers should now explicitly refresh the sections they care about.
+
+==== Typed refresh wrappers
+
+Removed config refresh wrappers such as:
+
+- `refreshDeviceConfig()`
+- `refreshLoraConfig()`
+- `refreshSecurityConfig()`
+
+Use instead:
+
+- `refreshConfig(AdminMessage.ConfigType type)`
+
+Removed module refresh wrappers such as:
+
+- `refreshMqttConfig()`
+- `refreshTelemetryModuleConfig()`
+- `refreshSerialModuleConfig()`
+
+Use instead:
+
+- `refreshModuleConfig(AdminMessage.ModuleConfigType type)`
+
+==== Write API cleanup
+
+Removed:
+
+- boolean-based writes such as `setConfig(config, true)`
+- structured companion methods such as `setConfigResult(...)`
+- typed config/module write helpers such as `setDeviceConfig(...)` and `setMqttConfig(...)`
+
+Use instead:
+
+- `setConfig(Config config, AdminWriteMode mode)`
+- `setModuleConfig(ModuleConfig moduleConfig, AdminWriteMode mode)`
+- `setChannel(int index, Channel updatedChannel, AdminWriteMode mode)`
+- `setDeviceUiConfig(DeviceUIConfig deviceUiConfig, AdminWriteMode mode)`
+- `setOwner(int targetNodeId, String longName, String shortName, AdminWriteMode mode)`
+
+=== Before and After
+
+==== Cached owner
+
+[source,java]
+----
+// before
+User owner = admin.getSnapshot().getOwner();
+
+// after
+User owner = admin.getOwnerSnapshot().orElse(User.getDefaultInstance());
+----
+
+==== Cached local node id
+
+[source,java]
+----
+// before
+int nodeId = admin.getSnapshot().getNodeId();
+
+// after
+int nodeId = admin.getNodeId();
+----
+
+==== Refresh a config section
+
+[source,java]
+----
+// before
+Config.DeviceConfig device = admin.refreshDeviceConfig().join();
+
+// after
+Config config = admin.refreshConfig(AdminMessage.ConfigType.DEVICE_CONFIG).join();
+Config.DeviceConfig device = config.getDevice();
+----
+
+==== Refresh a module config section
+
+[source,java]
+----
+// before
+ModuleConfig.TelemetryConfig telemetry = admin.refreshTelemetryModuleConfig().join();
+
+// after
+ModuleConfig module = admin
+        .refreshModuleConfig(AdminMessage.ModuleConfigType.TELEMETRY_CONFIG)
+        .join();
+ModuleConfig.TelemetryConfig telemetry = module.getTelemetry();
+----
+
+==== Write a config section
+
+[source,java]
+----
+// before
+admin.setConfig(config, true).join();
+
+// after
+admin.setConfig(config, AdminWriteMode.VERIFY_APPLIED).join();
+----
+
+==== Write a nested module section
+
+[source,java]
+----
+// before
+admin.setTelemetryModuleConfig(telemetryConfig, true).join();
+
+// after
+ModuleConfig module = ModuleConfig.newBuilder()
+        .setTelemetry(telemetryConfig)
+        .build();
+
+admin.setModuleConfig(module, AdminWriteMode.VERIFY_APPLIED).join();
+----
+
+==== Write owner settings
+
+[source,java]
+----
+// before
+admin.setOwnerAndVerify(nodeId, "Radio", "RDIO").join();
+
+// after
+admin.setOwner(nodeId, "Radio", "RDIO", AdminWriteMode.VERIFY_APPLIED).join();
+----
+
+=== Return Type Changes
+
+Many admin write methods now return:
+
+[source,java]
+----
+CompletableFuture<AdminWriteResult>
+----
+
+instead of:
+
+- `CompletableFuture<Boolean>`
+- `CompletableFuture<Void>`
+
+This gives callers one consistent way to handle:
+
+- accepted-only writes
+- verify-applied writes
+- timeouts
+- routing rejections
+- verification failures
+
+=== Recommended Upgrade Order
+
+1. Replace `getSnapshot()` calls with typed snapshot getters.
+2. Replace typed refresh helpers with `refreshConfig(...)` or `refreshModuleConfig(...)`.
+3. Replace boolean write flags with `AdminWriteMode`.
+4. Update success handling to inspect `AdminWriteResult`.
+5. Build `Config` and `ModuleConfig` wrappers explicitly when writing nested sections.
+
+For GitHub-facing release notes, see the repository `MIGRATION.md` file for the same upgrade guidance in Markdown form.

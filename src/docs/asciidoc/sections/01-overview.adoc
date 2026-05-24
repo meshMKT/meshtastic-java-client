@@ -108,7 +108,7 @@ This is a quick breakdown of the high-level pieces of the client.
 | Accepted-only and verify-applied variants + structured `AdminWriteResult`.
 
 | Snapshot model
-| `AdminService.getSnapshot()` + typed getters
+| Typed snapshot getters on `AdminService`
 | Fast read path for UI rendering before a refresh finishes.
 
 | Utility requests

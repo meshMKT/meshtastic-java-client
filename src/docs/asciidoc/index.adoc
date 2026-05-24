@@ -34,3 +34,5 @@ include::sections/12-ota-framework.adoc[]
 include::sections/13-ble-transport.adoc[]
 
 include::sections/14-contributor-conventions.adoc[]
+
+include::sections/15-migration-guide.adoc[]

@@ -14,7 +14,7 @@ import lombok.Getter;
  * <p>
  * To keep the public event compact, only the most commonly used fields such as battery,
  * voltage, temperature, and humidity are flattened. Less common telemetry payloads remain
- * available through {@link #getRawTelemetry()}.
+ * available through the {@code rawTelemetry} payload.
  * </p>
  */
 @Getter
@@ -140,7 +140,7 @@ public class TelemetryUpdateEvent extends MeshEvent {
     /**
      * Helper to check if this event contains power/battery info.
      *
-     * @return {@code true} when {@link #getVariant()} is {@link TelemetryVariant#DEVICE_METRICS}.
+     * @return {@code true} when the telemetry {@code variant} is {@link TelemetryVariant#DEVICE_METRICS}.
      */
     public boolean isDeviceMetrics() {
         return variant == TelemetryVariant.DEVICE_METRICS;
@@ -149,7 +149,7 @@ public class TelemetryUpdateEvent extends MeshEvent {
     /**
      * Helper to check if this event contains weather/env info.
      *
-     * @return {@code true} when {@link #getVariant()} is {@link TelemetryVariant#ENVIRONMENT_METRICS}.
+     * @return {@code true} when the telemetry {@code variant} is {@link TelemetryVariant#ENVIRONMENT_METRICS}.
      */
     public boolean isEnvironmentMetrics() {
         return variant == TelemetryVariant.ENVIRONMENT_METRICS;

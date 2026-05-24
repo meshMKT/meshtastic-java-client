@@ -262,7 +262,9 @@ class RealRadioAdminIT {
 
         try {
             AdminWriteResult write = awaitWithRetry(
-                    () -> adminService.setOwnerResult(originalSelfNodeId, proposedLong, proposedShort, false), 2);
+                    () -> adminService.setOwner(
+                            originalSelfNodeId, proposedLong, proposedShort, AdminWriteMode.ACCEPT_ONLY),
+                    2);
             assertTrue(write.isSuccess(), "Owner write request did not succeed: " + write.getMessage());
 
             try {
@@ -311,9 +313,9 @@ class RealRadioAdminIT {
                 .build();
 
         try {
-            assertTrue(
-                    awaitWithRetry(() -> adminService.setChannel(mutableChannelIndex, updated, false), 3),
-                    "Channel write request was not accepted.");
+            AdminWriteResult write = awaitWithRetry(
+                    () -> adminService.setChannel(mutableChannelIndex, updated, AdminWriteMode.ACCEPT_ONLY), 3);
+            assertTrue(write.isSuccess(), "Channel write request was not accepted: " + write.getMessage());
 
             Channel observed = awaitChannelName(mutableChannelIndex, proposedName, READBACK_POLL_WINDOW);
             assertTrue(
@@ -338,7 +340,7 @@ class RealRadioAdminIT {
         requireAssumption(
                 enableSecurityWriteTest, "Set MESHTASTIC_TEST_ENABLE_SECURITY_WRITE=true to enable security write IT.");
 
-        Config current = awaitWithRetry(adminService::refreshSecurityConfig, 2);
+        Config current = awaitWithRetry(() -> adminService.refreshConfig(AdminMessage.ConfigType.SECURITY_CONFIG), 2);
         requireAssumption(current != null && current.hasSecurity(), "Security config is unavailable on this device.");
         Config.SecurityConfig original = current.getSecurity();
 
@@ -348,11 +350,12 @@ class RealRadioAdminIT {
         Config writePayload = Config.newBuilder().setSecurity(updated).build();
 
         try {
-            AdminWriteResult write = awaitWithRetry(() -> adminService.setConfigResult(writePayload, false), 2);
+            AdminWriteResult write =
+                    awaitWithRetry(() -> adminService.setConfig(writePayload, AdminWriteMode.ACCEPT_ONLY), 2);
             assertTrue(write.isSuccess(), "Security config write request did not succeed: " + write.getMessage());
 
             awaitBooleanCondition(
-                    () -> awaitWithRetry(adminService::refreshSecurityConfig, 2)
+                    () -> awaitWithRetry(() -> adminService.refreshConfig(AdminMessage.ConfigType.SECURITY_CONFIG), 2)
                                     .getSecurity()
                                     .getDebugLogApiEnabled()
                             == proposed,
@@ -360,9 +363,9 @@ class RealRadioAdminIT {
                     "Timed out waiting for security.debug_log_api_enabled to update.");
         } finally {
             Config restorePayload = Config.newBuilder().setSecurity(original).build();
-            awaitWithRetry(() -> adminService.setConfigResult(restorePayload, false), 2);
+            awaitWithRetry(() -> adminService.setConfig(restorePayload, AdminWriteMode.ACCEPT_ONLY), 2);
             awaitBooleanCondition(
-                    () -> awaitWithRetry(adminService::refreshSecurityConfig, 2)
+                    () -> awaitWithRetry(() -> adminService.refreshConfig(AdminMessage.ConfigType.SECURITY_CONFIG), 2)
                                     .getSecurity()
                                     .getDebugLogApiEnabled()
                             == original.getDebugLogApiEnabled(),
@@ -384,7 +387,8 @@ class RealRadioAdminIT {
     void reversibleMqttModuleConfigWriteReadbackWhenEnabled() throws Exception {
         requireAssumption(enableMqttWriteTest, "Set MESHTASTIC_TEST_ENABLE_MQTT_WRITE=true to enable MQTT write IT.");
 
-        ModuleConfig current = awaitWithRetry(adminService::refreshMqttConfig, 2);
+        ModuleConfig current =
+                awaitWithRetry(() -> adminService.refreshModuleConfig(AdminMessage.ModuleConfigType.MQTT_CONFIG), 2);
         requireAssumption(current != null && current.hasMqtt(), "MQTT module config is unavailable on this device.");
         ModuleConfig.MQTTConfig original = current.getMqtt();
 
@@ -394,11 +398,15 @@ class RealRadioAdminIT {
         ModuleConfig writePayload = ModuleConfig.newBuilder().setMqtt(updated).build();
 
         try {
-            AdminWriteResult write = awaitWithRetry(() -> adminService.setModuleConfigResult(writePayload, false), 2);
+            AdminWriteResult write =
+                    awaitWithRetry(() -> adminService.setModuleConfig(writePayload, AdminWriteMode.ACCEPT_ONLY), 2);
             assertTrue(write.isSuccess(), "MQTT config write request did not succeed: " + write.getMessage());
 
             awaitBooleanCondition(
-                    () -> awaitWithRetry(adminService::refreshMqttConfig, 2)
+                    () -> awaitWithRetry(
+                                            () -> adminService.refreshModuleConfig(
+                                                    AdminMessage.ModuleConfigType.MQTT_CONFIG),
+                                            2)
                                     .getMqtt()
                                     .getJsonEnabled()
                             == proposed,
@@ -407,9 +415,12 @@ class RealRadioAdminIT {
         } finally {
             ModuleConfig restorePayload =
                     ModuleConfig.newBuilder().setMqtt(original).build();
-            awaitWithRetry(() -> adminService.setModuleConfigResult(restorePayload, false), 2);
+            awaitWithRetry(() -> adminService.setModuleConfig(restorePayload, AdminWriteMode.ACCEPT_ONLY), 2);
             awaitBooleanCondition(
-                    () -> awaitWithRetry(adminService::refreshMqttConfig, 2)
+                    () -> awaitWithRetry(
+                                            () -> adminService.refreshModuleConfig(
+                                                    AdminMessage.ModuleConfigType.MQTT_CONFIG),
+                                            2)
                                     .getMqtt()
                                     .getJsonEnabled()
                             == original.getJsonEnabled(),
@@ -478,8 +489,8 @@ class RealRadioAdminIT {
                 "Set MESHTASTIC_TEST_ENABLE_REBOOT_TEST=true to enable reboot resilience IT.");
         requireAssumption(isKnownSelfNodeId(client.getSelfNodeId()), "Self node ID is unavailable.");
 
-        boolean accepted = awaitWithRetry(() -> adminService.reboot(1), 2);
-        assertTrue(accepted, "Reboot request was not accepted.");
+        AdminWriteResult reboot = awaitWithRetry(() -> adminService.reboot(1), 2);
+        assertTrue(reboot.isSuccess(), "Reboot request was not accepted: " + reboot.getMessage());
 
         awaitReadyState(Duration.ofSeconds(180));
         requireAssumption(awaitKnownSelfNodeId(Duration.ofSeconds(45)), "Self node ID did not recover after reboot.");
@@ -505,12 +516,18 @@ class RealRadioAdminIT {
         Integer targetNodeId = awaitNonSelfNodeId(NODE_DISCOVERY_WAIT_TIMEOUT);
         requireAssumption(targetNodeId != null, "No non-self node discovered for node-db mutation test.");
 
-        assertTrue(awaitWithRetry(() -> adminService.setFavoriteNode(targetNodeId), 2));
-        assertTrue(awaitWithRetry(() -> adminService.removeFavoriteNode(targetNodeId), 2));
-        assertTrue(awaitWithRetry(() -> adminService.setIgnoredNode(targetNodeId), 2));
-        assertTrue(awaitWithRetry(() -> adminService.removeIgnoredNode(targetNodeId), 2));
-        assertTrue(awaitWithRetry(() -> adminService.toggleMutedNode(targetNodeId), 2));
-        assertTrue(awaitWithRetry(() -> adminService.toggleMutedNode(targetNodeId), 2));
+        assertTrue(awaitWithRetry(() -> adminService.setFavoriteNode(targetNodeId), 2)
+                .isSuccess());
+        assertTrue(awaitWithRetry(() -> adminService.removeFavoriteNode(targetNodeId), 2)
+                .isSuccess());
+        assertTrue(awaitWithRetry(() -> adminService.setIgnoredNode(targetNodeId), 2)
+                .isSuccess());
+        assertTrue(awaitWithRetry(() -> adminService.removeIgnoredNode(targetNodeId), 2)
+                .isSuccess());
+        assertTrue(awaitWithRetry(() -> adminService.toggleMutedNode(targetNodeId), 2)
+                .isSuccess());
+        assertTrue(awaitWithRetry(() -> adminService.toggleMutedNode(targetNodeId), 2)
+                .isSuccess());
     }
 
     /**
@@ -528,8 +545,8 @@ class RealRadioAdminIT {
                 enableNodeDbResetTest, "Set MESHTASTIC_TEST_ENABLE_NODEDB_RESET=true to enable node-db reset IT.");
         requireAssumption(isKnownSelfNodeId(client.getSelfNodeId()), "Self node ID is unavailable.");
 
-        boolean accepted = awaitWithRetry(() -> adminService.resetNodeDb(true), 2);
-        assertTrue(accepted, "Node-db reset request was not accepted.");
+        AdminWriteResult reset = awaitWithRetry(() -> adminService.resetNodeDb(true), 2);
+        assertTrue(reset.isSuccess(), "Node-db reset request was not accepted: " + reset.getMessage());
 
         awaitReadyState(Duration.ofSeconds(180));
         requireAssumption(
@@ -875,7 +892,9 @@ class RealRadioAdminIT {
         for (int attempt = 1; attempt <= RESTORE_ATTEMPTS; attempt++) {
             try {
                 AdminWriteResult result = awaitWithRetry(
-                        () -> adminService.setOwnerResult(selfNodeId, originalLong, originalShort, false), 2);
+                        () -> adminService.setOwner(
+                                selfNodeId, originalLong, originalShort, AdminWriteMode.ACCEPT_ONLY),
+                        2);
                 if (!result.isSuccess()) {
                     throw new IllegalStateException("Owner restore write not accepted: " + result.getMessage());
                 }
@@ -910,9 +929,10 @@ class RealRadioAdminIT {
         Exception last = null;
         for (int attempt = 1; attempt <= RESTORE_ATTEMPTS; attempt++) {
             try {
-                boolean accepted = awaitWithRetry(() -> adminService.setChannel(channelIndex, original, false), 2);
-                if (!accepted) {
-                    throw new IllegalStateException("Channel restore write not accepted.");
+                AdminWriteResult result = awaitWithRetry(
+                        () -> adminService.setChannel(channelIndex, original, AdminWriteMode.ACCEPT_ONLY), 2);
+                if (!result.isSuccess()) {
+                    throw new IllegalStateException("Channel restore write not accepted: " + result.getMessage());
                 }
 
                 awaitChannelName(channelIndex, original.getSettings().getName(), RESTORE_READBACK_WINDOW);

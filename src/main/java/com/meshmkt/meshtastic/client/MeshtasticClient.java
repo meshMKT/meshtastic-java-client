@@ -211,7 +211,7 @@ public class MeshtasticClient implements AdminClientAccess {
 
         // Fallback for startup races/firmware variants where owner identity is available before my_info
         // is reflected into NodeDatabase.
-        int adminSnapshotNodeId = adminService.getSnapshot().getNodeId();
+        int adminSnapshotNodeId = adminService.getNodeId();
         return isKnownSelfNodeId(adminSnapshotNodeId) ? adminSnapshotNodeId : MeshConstants.ID_UNKNOWN;
     }
 
@@ -802,7 +802,7 @@ public class MeshtasticClient implements AdminClientAccess {
         log.warn("[SYNC] Radio reboot detected. Resetting state and re-syncing.");
         stopHeartbeatTask();
         cancelAllPending();
-        adminService.getSnapshot().reset();
+        adminService.resetSnapshotState();
         primeStartupSync();
         /*
          * Event-driven restart:
