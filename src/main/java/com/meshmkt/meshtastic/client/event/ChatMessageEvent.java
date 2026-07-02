@@ -1,12 +1,12 @@
 package com.meshmkt.meshtastic.client.event;
 
-import build.buf.gen.meshtastic.Data;
-import build.buf.gen.meshtastic.MeshPacket;
-import build.buf.gen.meshtastic.PortNum;
 import com.meshmkt.meshtastic.client.storage.PacketContext;
 import lombok.AccessLevel;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
+import org.meshtastic.proto.MeshProtos.Data;
+import org.meshtastic.proto.MeshProtos.MeshPacket;
+import org.meshtastic.proto.Portnums.PortNum;
 
 /**
  * Represents a text-based chat message. Provides quick access to content and

@@ -1,15 +1,15 @@
 package com.meshmkt.meshtastic.client.handlers;
 
-import build.buf.gen.meshtastic.FromRadio;
-import build.buf.gen.meshtastic.MeshPacket;
-import build.buf.gen.meshtastic.PortNum;
-import build.buf.gen.meshtastic.Routing;
 import com.meshmkt.meshtastic.client.MeshUtils;
 import com.meshmkt.meshtastic.client.event.MeshEventDispatcher;
 import com.meshmkt.meshtastic.client.event.MessageStatusEvent;
 import com.meshmkt.meshtastic.client.storage.NodeDatabase;
 import com.meshmkt.meshtastic.client.storage.PacketContext;
 import lombok.extern.slf4j.Slf4j;
+import org.meshtastic.proto.MeshProtos.FromRadio;
+import org.meshtastic.proto.MeshProtos.MeshPacket;
+import org.meshtastic.proto.MeshProtos.Routing;
+import org.meshtastic.proto.Portnums.PortNum;
 
 /**
  * Monitors ROUTING_APP packets to track if messages were successfully

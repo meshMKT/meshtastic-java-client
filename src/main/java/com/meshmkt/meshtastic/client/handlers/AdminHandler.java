@@ -1,7 +1,5 @@
 package com.meshmkt.meshtastic.client.handlers;
 
-import build.buf.gen.meshtastic.*;
-import build.buf.gen.meshtastic.AdminMessage.ModuleConfigType;
 import com.meshmkt.meshtastic.client.MeshUtils;
 import com.meshmkt.meshtastic.client.event.AdminModelUpdateEvent;
 import com.meshmkt.meshtastic.client.event.MeshEventDispatcher;
@@ -9,6 +7,13 @@ import com.meshmkt.meshtastic.client.service.AdminService;
 import com.meshmkt.meshtastic.client.storage.NodeDatabase;
 import com.meshmkt.meshtastic.client.storage.PacketContext;
 import lombok.extern.slf4j.Slf4j;
+import org.meshtastic.proto.AdminProtos.AdminMessage;
+import org.meshtastic.proto.AdminProtos.AdminMessage.ModuleConfigType;
+import org.meshtastic.proto.ConfigProtos.Config;
+import org.meshtastic.proto.MeshProtos.FromRadio;
+import org.meshtastic.proto.MeshProtos.MeshPacket;
+import org.meshtastic.proto.ModuleConfigProtos.ModuleConfig;
+import org.meshtastic.proto.Portnums.PortNum;
 
 /**
  * Handles packet-based {@code ADMIN_APP} payloads and forwards decoded admin messages into {@link AdminService}.
@@ -151,7 +156,7 @@ public class AdminHandler extends BaseMeshHandler {
     /**
      * Maps module-config payload oneof variant to admin module config type key.
      */
-    private static ModuleConfigType toModuleConfigType(ModuleConfig moduleConfig) {
+    private static AdminMessage.ModuleConfigType toModuleConfigType(ModuleConfig moduleConfig) {
         if (moduleConfig == null) {
             return null;
         }

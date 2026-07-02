@@ -2,10 +2,10 @@ package com.meshmkt.meshtastic.client;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-import build.buf.gen.meshtastic.Channel;
-import build.buf.gen.meshtastic.ChannelSettings;
 import com.google.protobuf.ByteString;
 import org.junit.jupiter.api.Test;
+import org.meshtastic.proto.ChannelProtos.Channel;
+import org.meshtastic.proto.ChannelProtos.ChannelSettings;
 
 /**
  * Unit tests for {@link ProtocolConstraints}.

@@ -1,12 +1,12 @@
 package com.meshmkt.meshtastic.client.storage;
 
-import build.buf.gen.meshtastic.Position;
 import com.meshmkt.meshtastic.client.MeshConstants;
 import com.meshmkt.meshtastic.client.MeshUtils;
 import java.time.Duration;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.*;
+import org.meshtastic.proto.MeshProtos.Position;
 
 /**
  * Base node-database implementation that provides shared observer, self-node, and stale-node cleanup behavior.

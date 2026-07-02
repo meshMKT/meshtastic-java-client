@@ -2,7 +2,6 @@ package com.meshmkt.meshtastic.client;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-import build.buf.gen.meshtastic.*;
 import com.google.protobuf.ByteString;
 import com.meshmkt.meshtastic.client.storage.InMemoryNodeDatabase;
 import com.meshmkt.meshtastic.client.support.FakeTransport;
@@ -15,6 +14,12 @@ import java.util.concurrent.*;
 import java.util.function.Predicate;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
+import org.meshtastic.proto.MeshProtos.Data;
+import org.meshtastic.proto.MeshProtos.FromRadio;
+import org.meshtastic.proto.MeshProtos.MeshPacket;
+import org.meshtastic.proto.MeshProtos.MyNodeInfo;
+import org.meshtastic.proto.MeshProtos.ToRadio;
+import org.meshtastic.proto.Portnums.PortNum;
 
 /**
  * Integration-lite tests for chunked text send behavior in {@link MeshtasticClient}.

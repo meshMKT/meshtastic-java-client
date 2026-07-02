@@ -1,13 +1,11 @@
 package com.meshmkt.meshtastic.client.event;
 
-import build.buf.gen.meshtastic.MeshPacket;
-import build.buf.gen.meshtastic.Telemetry;
 import com.meshmkt.meshtastic.client.storage.PacketContext;
 import lombok.AccessLevel;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
-// import org.meshtastic.proto.MeshProtos;
-// import org.meshtastic.proto.TelemetryProtos;
+import org.meshtastic.proto.MeshProtos.MeshPacket;
+import org.meshtastic.proto.TelemetryProtos.Telemetry;
 
 /**
  * Represents telemetry data received from a node.

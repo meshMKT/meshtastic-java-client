@@ -1,6 +1,5 @@
 package com.meshmkt.meshtastic.client.storage;
 
-import build.buf.gen.meshtastic.*;
 import com.meshmkt.meshtastic.client.MeshConstants;
 import com.meshmkt.meshtastic.client.MeshUtils;
 import java.util.Collection;
@@ -10,6 +9,10 @@ import java.util.function.Consumer;
 import java.util.stream.Collectors;
 import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
+import org.meshtastic.proto.MeshProtos.Position;
+import org.meshtastic.proto.MeshProtos.User;
+import org.meshtastic.proto.TelemetryProtos.DeviceMetrics;
+import org.meshtastic.proto.TelemetryProtos.EnvironmentMetrics;
 
 /**
  *

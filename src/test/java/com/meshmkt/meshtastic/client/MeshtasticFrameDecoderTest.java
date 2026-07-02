@@ -2,12 +2,12 @@ package com.meshmkt.meshtastic.client;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-import build.buf.gen.meshtastic.FromRadio;
-import build.buf.gen.meshtastic.MyNodeInfo;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
+import org.meshtastic.proto.MeshProtos.FromRadio;
+import org.meshtastic.proto.MeshProtos.MyNodeInfo;
 
 /**
  * Unit tests for {@link MeshtasticFrameDecoder}.

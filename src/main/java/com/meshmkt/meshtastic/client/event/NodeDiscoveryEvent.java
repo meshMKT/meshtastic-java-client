@@ -1,12 +1,12 @@
 package com.meshmkt.meshtastic.client.event;
 
-import build.buf.gen.meshtastic.HardwareModel;
-import build.buf.gen.meshtastic.MeshPacket;
-import build.buf.gen.meshtastic.User;
 import com.meshmkt.meshtastic.client.storage.PacketContext;
 import lombok.AccessLevel;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
+import org.meshtastic.proto.MeshProtos.HardwareModel;
+import org.meshtastic.proto.MeshProtos.MeshPacket;
+import org.meshtastic.proto.MeshProtos.User;
 
 /**
  * Triggered when a node announces its identity. This is used to map 32-bit Node

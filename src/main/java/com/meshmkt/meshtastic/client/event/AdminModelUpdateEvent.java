@@ -1,9 +1,9 @@
 package com.meshmkt.meshtastic.client.event;
 
-import build.buf.gen.meshtastic.AdminMessage;
 import java.time.Instant;
 import lombok.Builder;
 import lombok.Getter;
+import org.meshtastic.proto.AdminProtos.AdminMessage;
 
 /**
  * Event emitted when local admin-facing radio model state changes.

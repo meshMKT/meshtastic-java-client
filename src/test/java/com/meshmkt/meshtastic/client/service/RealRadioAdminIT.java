@@ -3,7 +3,6 @@ package com.meshmkt.meshtastic.client.service;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
-import build.buf.gen.meshtastic.*;
 import com.meshmkt.meshtastic.client.MeshConstants;
 import com.meshmkt.meshtastic.client.MeshtasticClient;
 import com.meshmkt.meshtastic.client.ProtocolConstraints;
@@ -27,6 +26,13 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.function.Supplier;
 import org.junit.jupiter.api.*;
+import org.meshtastic.proto.AdminProtos.AdminMessage;
+import org.meshtastic.proto.ChannelProtos.Channel;
+import org.meshtastic.proto.ChannelProtos.ChannelSettings;
+import org.meshtastic.proto.ConfigProtos.Config;
+import org.meshtastic.proto.MeshProtos.DeviceMetadata;
+import org.meshtastic.proto.MeshProtos.User;
+import org.meshtastic.proto.ModuleConfigProtos.ModuleConfig;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 

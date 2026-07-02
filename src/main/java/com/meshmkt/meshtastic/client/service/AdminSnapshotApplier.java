@@ -1,12 +1,19 @@
 package com.meshmkt.meshtastic.client.service;
 
-import build.buf.gen.meshtastic.*;
 import com.google.protobuf.ByteString;
 import com.meshmkt.meshtastic.client.MeshConstants;
 import com.meshmkt.meshtastic.client.MeshUtils;
 import com.meshmkt.meshtastic.client.model.RadioModel;
 import java.util.List;
 import lombok.extern.slf4j.Slf4j;
+import org.meshtastic.proto.AdminProtos.AdminMessage;
+import org.meshtastic.proto.ChannelProtos.Channel;
+import org.meshtastic.proto.ConfigProtos.Config;
+import org.meshtastic.proto.MeshProtos.DeviceMetadata;
+import org.meshtastic.proto.MeshProtos.FromRadio;
+import org.meshtastic.proto.MeshProtos.NodeInfo;
+import org.meshtastic.proto.MeshProtos.User;
+import org.meshtastic.proto.ModuleConfigProtos.ModuleConfig;
 
 /**
  * Applies inbound admin/local snapshot payloads to the shared {@link RadioModel}.

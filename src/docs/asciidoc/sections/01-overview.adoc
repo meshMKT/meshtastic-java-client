@@ -81,6 +81,31 @@ definitions, the licensing expectations for distribution changed as well.
 The goal of the license update is not to make the project harder to use. It is simply to keep this repository and its
 published artifacts honest about the upstream licensing of the protobuf definitions they are built from.
 
+== Protobuf Source Model
+
+This repository now builds its generated Java protobuf classes from the official Meshtastic `protobufs` repository,
+tracked as a pinned git submodule.
+
+That replaced an earlier approach that consumed a pre-generated `buf.build` Maven artifact.
+
+Why the build changed:
+
+- the `buf.build` generated artifact used Java package names and class layout that did not match the official
+  Meshtastic Java structure
+- when upstream protobuf changes landed, the generated surface could drift in ways that were harder to inspect and
+  harder to keep aligned with the rest of the Meshtastic ecosystem
+- pinning the official source definitions in-repo makes the build inputs explicit, reproducible, and easier to review
+
+For maintainers and contributors, that means a fresh clone should initialize submodules before building:
+
+[source,bash]
+----
+git submodule update --init --recursive
+----
+
+For library consumers, nothing changes about normal usage from Maven Central. The submodule matters only when building
+or modifying this repository itself.
+
 == Feature Map
 
 This is a quick breakdown of the high-level pieces of the client.

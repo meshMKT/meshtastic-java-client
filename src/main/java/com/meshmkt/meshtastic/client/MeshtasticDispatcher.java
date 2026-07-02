@@ -1,12 +1,12 @@
 package com.meshmkt.meshtastic.client;
 
-import build.buf.gen.meshtastic.FromRadio;
 import com.meshmkt.meshtastic.client.handlers.MeshtasticMessageHandler;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import lombok.extern.slf4j.Slf4j;
+import org.meshtastic.proto.MeshProtos.FromRadio;
 
 /**
  * Routes incoming packets to registered handlers asynchronously.

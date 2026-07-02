@@ -1,12 +1,12 @@
 package com.meshmkt.meshtastic.client.event;
 
-import build.buf.gen.meshtastic.MeshPacket;
-import build.buf.gen.meshtastic.Position;
 import com.meshmkt.meshtastic.client.MeshUtils;
 import com.meshmkt.meshtastic.client.storage.PacketContext;
 import lombok.AccessLevel;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
+import org.meshtastic.proto.MeshProtos.MeshPacket;
+import org.meshtastic.proto.MeshProtos.Position;
 
 /**
  * Represents a position update received from a node, exposing both flattened coordinates and the raw payload.

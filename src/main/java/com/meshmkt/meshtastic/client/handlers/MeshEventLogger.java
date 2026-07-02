@@ -1,6 +1,5 @@
 package com.meshmkt.meshtastic.client.handlers;
 
-import build.buf.gen.meshtastic.*;
 import com.meshmkt.meshtastic.client.storage.NodeDatabase;
 import com.meshmkt.meshtastic.client.storage.PacketContext;
 import java.nio.charset.StandardCharsets;
@@ -8,6 +7,13 @@ import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import lombok.extern.slf4j.Slf4j;
+import org.meshtastic.proto.MeshProtos.FromRadio;
+import org.meshtastic.proto.MeshProtos.MeshPacket;
+import org.meshtastic.proto.MeshProtos.NodeInfo;
+import org.meshtastic.proto.MeshProtos.Position;
+import org.meshtastic.proto.MeshProtos.Routing;
+import org.meshtastic.proto.MeshProtos.User;
+import org.meshtastic.proto.Portnums.PortNum;
 
 /**
  * Diagnostic logger that provides a deep-dive into mesh traffic. Standardized

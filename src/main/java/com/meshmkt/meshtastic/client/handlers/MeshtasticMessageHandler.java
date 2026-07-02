@@ -1,6 +1,6 @@
 package com.meshmkt.meshtastic.client.handlers;
 
-import build.buf.gen.meshtastic.FromRadio;
+import org.meshtastic.proto.MeshProtos.FromRadio;
 
 /**
  * Interface for specialized message processing.

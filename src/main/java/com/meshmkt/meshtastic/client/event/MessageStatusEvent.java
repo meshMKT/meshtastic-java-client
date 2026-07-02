@@ -1,11 +1,11 @@
 package com.meshmkt.meshtastic.client.event;
 
-import build.buf.gen.meshtastic.MeshPacket;
-import build.buf.gen.meshtastic.Routing;
 import com.meshmkt.meshtastic.client.storage.PacketContext;
 import lombok.AccessLevel;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
+import org.meshtastic.proto.MeshProtos.MeshPacket;
+import org.meshtastic.proto.MeshProtos.Routing;
 
 /**
  * Monitors the mesh for Routing packets that indicate whether a previously sent

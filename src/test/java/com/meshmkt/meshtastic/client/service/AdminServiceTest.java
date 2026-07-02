@@ -2,7 +2,6 @@ package com.meshmkt.meshtastic.client.service;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-import build.buf.gen.meshtastic.*;
 import com.google.protobuf.ByteString;
 import com.meshmkt.meshtastic.client.MeshUtils;
 import com.meshmkt.meshtastic.client.storage.MeshNode;
@@ -11,6 +10,20 @@ import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeoutException;
 import org.junit.jupiter.api.Test;
+import org.meshtastic.proto.AdminProtos.AdminMessage;
+import org.meshtastic.proto.AdminProtos.SharedContact;
+import org.meshtastic.proto.ChannelProtos.Channel;
+import org.meshtastic.proto.ChannelProtos.ChannelSettings;
+import org.meshtastic.proto.ConfigProtos.Config;
+import org.meshtastic.proto.DeviceUIProtos.DeviceUIConfig;
+import org.meshtastic.proto.DeviceUIProtos.Theme;
+import org.meshtastic.proto.MeshProtos.Data;
+import org.meshtastic.proto.MeshProtos.DeviceMetadata;
+import org.meshtastic.proto.MeshProtos.MeshPacket;
+import org.meshtastic.proto.MeshProtos.Position;
+import org.meshtastic.proto.MeshProtos.User;
+import org.meshtastic.proto.ModuleConfigProtos.ModuleConfig;
+import org.meshtastic.proto.Portnums.PortNum;
 
 /**
  * Unit tests for {@link AdminService} using a stubbed gateway response queue.

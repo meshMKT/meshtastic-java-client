@@ -1,8 +1,5 @@
 package com.meshmkt.meshtastic.client.handlers;
 
-import build.buf.gen.meshtastic.FromRadio;
-import build.buf.gen.meshtastic.MeshPacket;
-import build.buf.gen.meshtastic.PortNum;
 import com.meshmkt.meshtastic.client.MeshUtils;
 import com.meshmkt.meshtastic.client.event.ChatMessageEvent;
 import com.meshmkt.meshtastic.client.event.MeshEventDispatcher;
@@ -10,6 +7,9 @@ import com.meshmkt.meshtastic.client.storage.NodeDatabase;
 import com.meshmkt.meshtastic.client.storage.PacketContext;
 import java.nio.charset.StandardCharsets;
 import lombok.extern.slf4j.Slf4j;
+import org.meshtastic.proto.MeshProtos.FromRadio;
+import org.meshtastic.proto.MeshProtos.MeshPacket;
+import org.meshtastic.proto.Portnums.PortNum;
 
 /**
  * Handles incoming plaintext chat messages.

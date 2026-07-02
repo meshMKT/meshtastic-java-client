@@ -1,6 +1,5 @@
 package com.meshmkt.meshtastic.client;
 
-import build.buf.gen.meshtastic.*;
 import java.time.Duration;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
@@ -13,6 +12,11 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Supplier;
 import lombok.Value;
 import lombok.extern.slf4j.Slf4j;
+import org.meshtastic.proto.MeshProtos.Data;
+import org.meshtastic.proto.MeshProtos.FromRadio;
+import org.meshtastic.proto.MeshProtos.MeshPacket;
+import org.meshtastic.proto.MeshProtos.Routing;
+import org.meshtastic.proto.Portnums.PortNum;
 
 /**
  * Coordinates in-flight request correlation, request timeouts, and single-flight radio locking.

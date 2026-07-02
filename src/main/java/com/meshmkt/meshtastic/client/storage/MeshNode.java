@@ -1,10 +1,14 @@
 package com.meshmkt.meshtastic.client.storage;
 
-import build.buf.gen.meshtastic.*;
 import java.time.Instant;
 import java.util.Objects;
 import lombok.Builder;
 import lombok.Value;
+import org.meshtastic.proto.ConfigProtos.Config;
+import org.meshtastic.proto.MeshProtos.HardwareModel;
+import org.meshtastic.proto.MeshProtos.Position;
+import org.meshtastic.proto.TelemetryProtos.DeviceMetrics;
+import org.meshtastic.proto.TelemetryProtos.EnvironmentMetrics;
 
 /**
  * An immutable data transfer object representing a snapshot of a Meshtastic

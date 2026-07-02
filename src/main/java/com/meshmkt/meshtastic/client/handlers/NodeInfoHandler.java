@@ -1,6 +1,5 @@
 package com.meshmkt.meshtastic.client.handlers;
 
-import build.buf.gen.meshtastic.*;
 import com.meshmkt.meshtastic.client.MeshUtils;
 import com.meshmkt.meshtastic.client.event.MeshEventDispatcher;
 import com.meshmkt.meshtastic.client.event.NodeDiscoveryEvent;
@@ -8,6 +7,11 @@ import com.meshmkt.meshtastic.client.service.AdminService;
 import com.meshmkt.meshtastic.client.storage.NodeDatabase;
 import com.meshmkt.meshtastic.client.storage.PacketContext;
 import lombok.extern.slf4j.Slf4j;
+import org.meshtastic.proto.MeshProtos.FromRadio;
+import org.meshtastic.proto.MeshProtos.MeshPacket;
+import org.meshtastic.proto.MeshProtos.NodeInfo;
+import org.meshtastic.proto.MeshProtos.User;
+import org.meshtastic.proto.Portnums.PortNum;
 
 /**
  * Handles identity discovery. Bridges the gap between "Nodes I'm learning about

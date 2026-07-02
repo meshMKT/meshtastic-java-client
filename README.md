@@ -48,6 +48,47 @@ To use this library, you will need:
 - JDK 17+
 - a Meshtastic-compatible radio such as a HELTEC V3, T-DECK, or similar device
 
+## Building From Source
+
+If you are building this repository itself instead of consuming the published Maven artifact, initialize the protobuf
+submodule first:
+
+```bash
+git submodule update --init --recursive
+```
+
+This project now generates Java protobuf classes from the official Meshtastic `protobufs` repository pinned as a git
+submodule.
+
+Why this changed:
+
+- the previous `buf.build` artifact path introduced generated Java package names and class layout that did not match
+  the official Meshtastic Java structure
+- upstream schema updates could change the generated surface in ways that were harder to audit and reason about from
+  this repository alone
+- pinning the official protobuf source tree in the repo makes builds reproducible, keeps imports aligned with the
+  Meshtastic project itself, and makes the licensing/source relationship explicit
+
+In short: Maven Central consumers still use the normal published library artifact, but maintainers and contributors now
+build the generated protobuf classes from the pinned official source definitions instead of relying on a third-party
+generated artifact layout.
+
+## Breaking Change Note
+
+This protobuf-source change should be treated as a major-version compatibility break.
+
+Why:
+
+- this library exposes Meshtastic protobuf types directly in parts of its public API
+- those types previously came from `build.buf.gen.meshtastic...`
+- they now come from `org.meshtastic.proto...`
+
+That means downstream applications that imported or referenced those protobuf classes directly will need source changes
+even if the higher-level client behavior they use did not otherwise change.
+
+If `2.0.2` is the last release built on the old generated package layout, the next release on this new official
+protobuf layout should be versioned as `3.0.0`.
+
 ## Installation
 
 The library is available on Maven Central.

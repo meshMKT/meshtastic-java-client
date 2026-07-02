@@ -1,9 +1,9 @@
 package com.meshmkt.meshtastic.client.storage;
 
-import build.buf.gen.meshtastic.FromRadio;
-import build.buf.gen.meshtastic.MeshPacket;
 import lombok.Builder;
 import lombok.Value;
+import org.meshtastic.proto.MeshProtos.FromRadio;
+import org.meshtastic.proto.MeshProtos.MeshPacket;
 
 /**
  * Immutable metadata envelope describing how one mesh packet was received and how it should be interpreted.

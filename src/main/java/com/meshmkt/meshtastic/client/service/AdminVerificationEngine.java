@@ -1,9 +1,5 @@
 package com.meshmkt.meshtastic.client.service;
 
-import build.buf.gen.meshtastic.AdminMessage;
-import build.buf.gen.meshtastic.Channel;
-import build.buf.gen.meshtastic.Config;
-import build.buf.gen.meshtastic.ModuleConfig;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -14,6 +10,10 @@ import java.util.concurrent.TimeUnit;
 import java.util.function.Supplier;
 import lombok.Value;
 import lombok.extern.slf4j.Slf4j;
+import org.meshtastic.proto.AdminProtos.AdminMessage;
+import org.meshtastic.proto.ChannelProtos.Channel;
+import org.meshtastic.proto.ConfigProtos.Config;
+import org.meshtastic.proto.ModuleConfigProtos.ModuleConfig;
 
 /**
  * Encapsulates verify-applied retry policy and payload comparison rules for admin writes.

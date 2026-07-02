@@ -1,6 +1,5 @@
 package com.meshmkt.meshtastic.client.service;
 
-import build.buf.gen.meshtastic.*;
 import com.google.protobuf.ByteString;
 import com.meshmkt.meshtastic.client.MeshUtils;
 import com.meshmkt.meshtastic.client.ProtocolConstraints;
@@ -15,6 +14,19 @@ import java.util.concurrent.TimeoutException;
 import java.util.function.Function;
 import java.util.stream.IntStream;
 import lombok.extern.slf4j.Slf4j;
+import org.meshtastic.proto.AdminProtos.AdminMessage;
+import org.meshtastic.proto.AdminProtos.SharedContact;
+import org.meshtastic.proto.ChannelProtos.Channel;
+import org.meshtastic.proto.ChannelProtos.ChannelSettings;
+import org.meshtastic.proto.ConfigProtos.Config;
+import org.meshtastic.proto.DeviceUIProtos.DeviceUIConfig;
+import org.meshtastic.proto.MeshProtos.DeviceMetadata;
+import org.meshtastic.proto.MeshProtos.FromRadio;
+import org.meshtastic.proto.MeshProtos.MeshPacket;
+import org.meshtastic.proto.MeshProtos.NodeInfo;
+import org.meshtastic.proto.MeshProtos.Position;
+import org.meshtastic.proto.MeshProtos.User;
+import org.meshtastic.proto.ModuleConfigProtos.ModuleConfig;
 
 /**
  * Admin/config facade for Meshtastic settings operations.

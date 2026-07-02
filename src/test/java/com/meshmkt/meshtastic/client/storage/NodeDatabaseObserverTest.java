@@ -2,14 +2,14 @@ package com.meshmkt.meshtastic.client.storage;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-import build.buf.gen.meshtastic.Position;
-import build.buf.gen.meshtastic.User;
 import com.meshmkt.meshtastic.client.MeshConstants;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
+import org.meshtastic.proto.MeshProtos.Position;
+import org.meshtastic.proto.MeshProtos.User;
 
 /**
  * Tests observer notification semantics for {@link InMemoryNodeDatabase}.

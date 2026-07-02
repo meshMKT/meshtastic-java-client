@@ -1,10 +1,15 @@
 package com.meshmkt.meshtastic.client.model;
 
-import build.buf.gen.meshtastic.*;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import lombok.Data;
+import org.meshtastic.proto.AdminProtos.AdminMessage;
+import org.meshtastic.proto.ChannelProtos.Channel;
+import org.meshtastic.proto.ConfigProtos.Config;
+import org.meshtastic.proto.MeshProtos.DeviceMetadata;
+import org.meshtastic.proto.MeshProtos.User;
+import org.meshtastic.proto.ModuleConfigProtos.ModuleConfig;
 
 /**
  * Mutable in-memory state holder for the currently connected local radio.

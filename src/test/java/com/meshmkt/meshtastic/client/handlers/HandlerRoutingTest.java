@@ -2,7 +2,6 @@ package com.meshmkt.meshtastic.client.handlers;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-import build.buf.gen.meshtastic.*;
 import com.meshmkt.meshtastic.client.MeshtasticClient;
 import com.meshmkt.meshtastic.client.event.*;
 import com.meshmkt.meshtastic.client.service.AdminService;
@@ -10,6 +9,16 @@ import com.meshmkt.meshtastic.client.storage.InMemoryNodeDatabase;
 import com.meshmkt.meshtastic.client.support.NoOpMeshEventDispatcher;
 import java.util.concurrent.CompletableFuture;
 import org.junit.jupiter.api.Test;
+import org.meshtastic.proto.AdminProtos.AdminMessage;
+import org.meshtastic.proto.ChannelProtos.Channel;
+import org.meshtastic.proto.ConfigProtos.Config;
+import org.meshtastic.proto.MeshProtos.Data;
+import org.meshtastic.proto.MeshProtos.FromRadio;
+import org.meshtastic.proto.MeshProtos.MeshPacket;
+import org.meshtastic.proto.MeshProtos.MyNodeInfo;
+import org.meshtastic.proto.MeshProtos.NodeInfo;
+import org.meshtastic.proto.MeshProtos.User;
+import org.meshtastic.proto.Portnums.PortNum;
 
 /**
  * Focused routing tests for handler matching and local state ingest paths.

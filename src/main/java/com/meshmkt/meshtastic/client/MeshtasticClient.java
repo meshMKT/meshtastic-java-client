@@ -1,6 +1,5 @@
 package com.meshmkt.meshtastic.client;
 
-import build.buf.gen.meshtastic.*;
 import com.google.protobuf.ByteString;
 import com.google.protobuf.InvalidProtocolBufferException;
 import com.google.protobuf.Message;
@@ -24,6 +23,13 @@ import java.util.function.Function;
 import java.util.function.Supplier;
 import lombok.Value;
 import lombok.extern.slf4j.Slf4j;
+import org.meshtastic.proto.AdminProtos.AdminMessage;
+import org.meshtastic.proto.MeshProtos.Data;
+import org.meshtastic.proto.MeshProtos.FromRadio;
+import org.meshtastic.proto.MeshProtos.Heartbeat;
+import org.meshtastic.proto.MeshProtos.MeshPacket;
+import org.meshtastic.proto.MeshProtos.ToRadio;
+import org.meshtastic.proto.Portnums.PortNum;
 
 /**
  * Orchestrates transport lifecycle, request correlation, startup synchronization, and event fan-out.

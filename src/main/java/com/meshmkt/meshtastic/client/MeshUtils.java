@@ -1,7 +1,5 @@
 package com.meshmkt.meshtastic.client;
 
-import build.buf.gen.meshtastic.Config;
-import build.buf.gen.meshtastic.User;
 import com.meshmkt.meshtastic.client.storage.MeshNode;
 import java.time.Duration;
 import java.time.Instant;
@@ -9,6 +7,8 @@ import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.Objects;
+import org.meshtastic.proto.ConfigProtos.Config;
+import org.meshtastic.proto.MeshProtos.User;
 
 /**
  * <h2>MeshUtils</h2>
