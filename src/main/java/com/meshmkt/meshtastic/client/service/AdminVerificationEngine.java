@@ -178,6 +178,7 @@ final class AdminVerificationEngine {
             case TRAFFIC_MANAGEMENT -> requested.getTrafficManagement().equals(observed.getTrafficManagement());
             case TAK -> requested.getTak().equals(observed.getTak());
             case PAYLOADVARIANT_NOT_SET -> false;
+            default -> false;
         };
     }
 

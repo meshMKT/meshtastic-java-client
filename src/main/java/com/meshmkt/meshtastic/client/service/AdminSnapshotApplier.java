@@ -243,6 +243,7 @@ final class AdminSnapshotApplier {
                     case SESSIONKEY -> AdminMessage.ConfigType.SESSIONKEY_CONFIG;
                     case DEVICE_UI -> AdminMessage.ConfigType.DEVICEUI_CONFIG;
                     case PAYLOADVARIANT_NOT_SET -> null;
+                    default -> null;
                 };
         return type == null ? List.of() : List.of(type);
     }
@@ -276,6 +277,7 @@ final class AdminSnapshotApplier {
             case TRAFFIC_MANAGEMENT -> AdminMessage.ModuleConfigType.TRAFFICMANAGEMENT_CONFIG;
             case TAK -> AdminMessage.ModuleConfigType.TAK_CONFIG;
             case PAYLOADVARIANT_NOT_SET -> null;
+            default -> null;
         };
     }
 

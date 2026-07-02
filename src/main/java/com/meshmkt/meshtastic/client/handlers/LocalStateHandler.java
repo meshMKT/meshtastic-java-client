@@ -148,6 +148,7 @@ public class LocalStateHandler extends BaseMeshHandler {
             case SESSIONKEY -> AdminMessage.ConfigType.SESSIONKEY_CONFIG;
             case DEVICE_UI -> AdminMessage.ConfigType.DEVICEUI_CONFIG;
             case PAYLOADVARIANT_NOT_SET -> null;
+            default -> null;
         };
     }
 
@@ -176,6 +177,7 @@ public class LocalStateHandler extends BaseMeshHandler {
             case TRAFFIC_MANAGEMENT -> ModuleConfigType.TRAFFICMANAGEMENT_CONFIG;
             case TAK -> ModuleConfigType.TAK_CONFIG;
             case PAYLOADVARIANT_NOT_SET -> null;
+            default -> null;
         };
     }
 }
