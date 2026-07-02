@@ -53,6 +53,15 @@ public class AdminService {
             AdminMessage.ConfigType.DEVICE_CONFIG,
             AdminMessage.ConfigType.DISPLAY_CONFIG,
             AdminMessage.ConfigType.NETWORK_CONFIG);
+    /**
+     * Module config sections that are currently addressable through the admin API.
+     * <p>
+     * The official protobuf definitions may expose additional {@link ModuleConfig} payload variants before
+     * {@link AdminMessage.ModuleConfigType} grows a matching request/response enum entry. When that happens, the
+     * client keeps defensive fallback handling for forward compatibility, but those sections are intentionally not
+     * exposed through refresh/write helpers until the admin enum can address them explicitly.
+     * </p>
+     */
     private static final List<AdminMessage.ModuleConfigType> SUPPORTED_MODULE_CONFIG_TYPES = List.of(
             AdminMessage.ModuleConfigType.MQTT_CONFIG,
             AdminMessage.ModuleConfigType.SERIAL_CONFIG,
@@ -403,6 +412,11 @@ public class AdminService {
 
     /**
      * Refreshes all currently supported module config sections.
+     * <p>
+     * "Supported" here means module sections that have a concrete {@link AdminMessage.ModuleConfigType} value and can
+     * therefore be requested through the admin protocol. Generated protobuf payload variants without a matching admin
+     * enum entry are intentionally excluded from this helper.
+     * </p>
      *
      * @return future completing with immutable map of refreshed module config payloads keyed by type.
      */

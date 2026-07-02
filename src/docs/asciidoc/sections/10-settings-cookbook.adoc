@@ -145,6 +145,16 @@ For a consolidated modules page:
 admin.refreshAllModuleConfigs().thenAccept(moduleConfigs -> renderModules(moduleConfigs));
 ----
 
+[NOTE]
+====
+`refreshAllModuleConfigs()` only covers module sections that currently have a concrete
+`AdminMessage.ModuleConfigType` admin enum value.
+
+If an upstream protobuf release adds a new `ModuleConfig` payload variant before the admin request enum grows a
+matching entry, that new section may exist in the generated Java classes but still not be refreshable or writable
+through `AdminService` yet.
+====
+
 For specific module cards, prefer targeted calls:
 
 [source,java]
